@@ -106,6 +106,7 @@ public:
         running[current] = true;
         bool tmp = false;
 
+        // Forward tracking
         while (true) {
             bool tmp1 = false;
             for (const string& neighbor : adjList[current]) {
@@ -125,6 +126,7 @@ public:
                     // Update visited[outside cycle] = false, and erase them.
                     auto it = find(path.begin(), path.end(), neighbor);
                     auto delete_before = distance(path.begin(), it);
+                    cout << "delete_before is " << delete_before << endl;
                     for (auto i = 0; i < delete_before; i++) {
                         visited[path[0]] = false;
                         path.pop_front();
@@ -136,6 +138,10 @@ public:
             }
             if(!tmp1) break;
         }
+        // Jump <current> back to <start>
+        current = start;
+
+        // Backward tracking
         while (true) {
             if(tmp) break;
             bool tmp2 = false;
