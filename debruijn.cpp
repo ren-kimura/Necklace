@@ -12,8 +12,10 @@ using AdjList = unordered_map<string, vector<string>>;
 
 class EdgeCentric_DeBruijnGraph {
 public:
-    // Edges of the graph (previous node -> successive node)
-    AdjList ec_adjacenceyList;
+    // Edges of the graph (current node -> successive nodes)
+    AdjList ec_outAdjacencyList;
+    // Edges of the graph (Current node -> previous nodes)
+    AdjList ec_inAdjacencyList;
 
     // Construct edge-centric De Bruijn Graph from the given k-mer sets
     void buildGraph(const vector<string>& kmers) {
@@ -22,14 +24,28 @@ public:
             string prefix = kmer.substr(0, kmer.size() - 1);
             string suffix = kmer.substr(1, kmer.size() - 1);
 
-            // Append the edge (previous node -> successive node)
-            ec_adjacenceyList[prefix].push_back(suffix);
+            // Append the edges (current node -> successive nodes)
+            ec_outAdjacencyList[prefix].push_back(suffix);
+            // Append the edges (current node -> previous nodes)
+            ec_inAdjacencyList[suffix].push_back(prefix);
         }
+    }
+
+    // Count the number of edges to make ecdbg eulerian.
+    int countEdgesToAdd() {
+        int edgesToAdd = 0;
+        for (const auto& pair : ec_outAdjacencyList) {
+            int outMinusIn = ec_outAdjacencyList[pair.first].size() - ec_inAdjacencyList[pair.first].size();
+            if (outMinusIn <= 0) continue;
+            edgesToAdd += outMinusIn;
+        }
+
+        return edgesToAdd;
     }
 
     // Show the graph
     void printGraph() const {
-        for (const auto& pair : ec_adjacenceyList) {
+        for (const auto& pair : ec_outAdjacencyList) {
             const string& node = pair.first;
             const vector<string>& neighbors = pair.second;
             cout << "Node: " << node << " has edges to: ";
@@ -38,6 +54,18 @@ public:
             }
             cout << endl;
         }
+        /*   === To check if <inAdjacencyList> is the inverse of <outAdjacencyList> 
+        cout << endl;
+        for (const auto& pair : ec_inAdjacencyList) {
+            const string& node = pair.first;
+            const vector<string>& neighbors = pair.second;
+            cout << "Node: " << node << " has edges from: ";
+            for (const string & neighbor : neighbors) {
+                cout << neighbor << " ";
+            }
+            cout << endl;
+        }
+        */
     }
 };
 
@@ -57,6 +85,7 @@ public:
             
             // Search for the next nodes
             for (const string& nextKmer : kmers) {
+                if (kmer == nextKmer) continue; // Rule out the edges such as "aaa -> aaa"
                 string nextKmerPrefix = nextKmer.substr(0, nextKmer.size() - 1); // next node's first (k-1) letters
 
                 if (kmerSuffix == nextKmerPrefix) {
@@ -75,6 +104,7 @@ public:
             
             // Search for the next nodes
             for (const string& previousKmer : kmers) {
+                if (kmer == previousKmer) continue; // Rule out the edges such as "aaa <- aaa"
                 string previousKmerSuffix = previousKmer.substr(1); // previous node's last (k-1) letters
 
                 if (kmerPrefix == previousKmerSuffix) {
@@ -97,9 +127,10 @@ public:
         }
     }
 
-    deque<string> greedyPath(const string& start, AdjList& adjList, AdjList& revAdjList, unordered_map<string, bool>& visited, unordered_map<string, bool>& running){
+    pair<deque<string>, bool> greedyPath(const string& start, AdjList& adjList, AdjList& revAdjList, unordered_map<string, bool>& visited, unordered_map<string, bool>& running){
         // Define a deque of string "path" that contains k-mers in a path
         deque<string> path;
+        bool isCycle = false;
         string current = start;
         path.push_back(current);
         visited[current] = true;
@@ -126,11 +157,13 @@ public:
                     // Update visited[outside cycle] = false, and erase them.
                     auto it = find(path.begin(), path.end(), neighbor);
                     auto delete_before = distance(path.begin(), it);
-                    cout << "delete_before is " << delete_before << endl;
                     for (auto i = 0; i < delete_before; i++) {
                         visited[path[0]] = false;
                         path.pop_front();
                     }
+                    // Add an identifier "*" that means this path is an open necklace
+                    path[path.size() - 1].append("*");
+                    isCycle = true;
                     // Skip the reverse search because we already found a cycle.
                     tmp = true;
                     break;
@@ -167,28 +200,39 @@ public:
                         visited[path[path.size() - 1]] = false;
                         path.pop_back();
                     }
+                    // Add an identifier "*" that means this path is an open necklace
+                    path[path.size() - 1].append("*");
+                    isCycle = true;
                     break;
                 }
             }
             if(!tmp2) break;
         }
-        return path;
+        // Update running[all kmers in <path>] = false.
+        for (const string& kmer : path) {
+            running[kmer] = false;
+        }
+        return {path, isCycle};
     }
 
-    vector<deque<string>> findPaths(AdjList& adjList, AdjList& revAdjList) {
+    pair<vector<deque<string>>, int> findPaths(AdjList& adjList, AdjList& revAdjList) {
         unordered_map<string, bool> visited;
         unordered_map<string, bool> running;
         vector<deque<string>> paths;
+        int countCycle = 0;
 
         // Initialize the visiting states of all nodes
         for (const auto& pair : adjList) {
             visited[pair.first] = false;
+            running[pair.first] = false;
         }
 
         // Start greedy search from an unvisited node
         for (const auto& pair : adjList) {
             if (!visited[pair.first]) {
-                deque<string> path = greedyPath(pair.first, adjList, revAdjList, visited, running);
+                auto gpath = greedyPath(pair.first, adjList, revAdjList, visited, running);
+                deque<string> path = gpath.first;
+                if (gpath.second) countCycle++;
                 paths.push_back(path);
             }
         }
@@ -211,60 +255,35 @@ public:
             paths.end()
         );
 
-        return paths;
+        return {paths, countCycle};
     }
 
-    // vector<vector<string>> attachPendants(vector<vector<string>>& paths) {
-    //     // for (size_t i = 0; i < paths.size(); ) {
-    //     //     if (paths[i].size() != 1) {
-    //     //         i++;
-    //     //         continue;
-    //     //     }
-    //     //     for (size_t j = 0; j < paths.size(); j++) {
-    //     //         if (paths[j].size() == 1) continue;
-    //     //         for (size_t k = 0; k < paths[j].size(); k++) {
-    //     //             if (paths[i][0].substr(0, paths[j][k].size() - 1) != paths[j][k].substr(0, paths[j][k].size() - 1)) continue;
-    //     //             paths[j][k] = "(" + paths[j][k] + ", " + paths[i][0] + ")";
-    //     //             // attached.push_back(paths[i][0]);
-    //     //             break;
-    //     //         }
-    //     //         break;
-    //     //     }
-    //     //     vector<int>::iterator it = paths.begin() + i;
-    //     //     paths.erase(it);
-    //     //     // paths.erase(remove_if(paths.begin(), paths.end(), attachedLen1(paths[i][0], attached)), paths.end());
-    //     // }
-
-    //     // list of already attached length-1 path
-    //     vector<string> attached;
-    //     auto attachedLen1 = [](string kmer, vector<string> attached){return (find(attached.begin(), attached.end(), kmer) != attached.end());};
+    vector<deque<string>> attachPendants(vector<deque<string>>& paths) {
+        // list of already attached length-1 path
+        vector<string> attached;
         
-    //     // attach length-1 path to an adjacent path
-    //     for (vector<string>& path : paths) {
-    //         if (path.size() == 1) {
-    //             for (vector<string>& mainPath : paths) {
-    //                 if (mainPath.size() > 2) {
-    //                     for (string& kmer : mainPath) {
-    //                         if (path[0].substr(0, kmer.size() - 1) == kmer.substr(0, kmer.size() - 1)) {
-    //                             kmer = "(" + kmer + ", " + path[0] + ")";
-    //                             attached.push_back(path[0]);
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             // auto itr = paths.begin();
-    //             // while (itr != paths.end()) {
-    //             //     if((*itr) == path){
-    //             //         itr = paths.erase(itr);
-    //             //     }
-    //             //     else itr++;
-    //             // }
-    //         }
-    //     }
-    //     paths.erase(remove_if(paths.begin(), paths.end(), attachedLen1(path, attached)), paths.end());
+        // attach length-1 path to an adjacent path
+        for (deque<string>& path : paths) {
+            if (path.size() != 1) continue;
+            bool attachedToMainPath = false;
+            for (deque<string>& mainPath : paths) {
+                if (mainPath.size() <= 1) continue;
+                for (string& kmer : mainPath) {
+                    if (!(path[0].substr(0, kmer.size() - 1) == kmer.substr(0, kmer.size() - 1))) continue;
+                    kmer = "(" + kmer + ", " + path[0] + ")";
+                    attached.push_back(path[0]);
+                    attachedToMainPath = true;
+                    break;
+                }
+                if (attachedToMainPath) break;
+            }
+        } 
+        paths.erase(remove_if(paths.begin(), paths.end(), [&attached](const deque<string>& path) {
+            return (path.size() == 1 && find(attached.begin(), attached.end(), path[0]) != attached.end());
+        }), paths.end());
         
-    //     return paths;
-    // }
+        return paths;
+    }
 };
 
 
@@ -343,10 +362,12 @@ int main() {
     cout << endl;
 
     // Find paths from a given adjacency list
-    vector<deque<string>> paths = ncdbg.findPaths(ncdbg.nc_outAdjacencyList, ncdbg.nc_inAdjacencyList);
+    auto gpaths = ncdbg.findPaths(ncdbg.nc_outAdjacencyList, ncdbg.nc_inAdjacencyList);
+    auto paths = gpaths.first;
+    auto countCycle = gpaths.second;
     
     // Attach length-1 path to an adjacent path as a pendant
-    // paths = ncdbg.attachPendants(paths);
+    paths = ncdbg.attachPendants(paths);
     
     // Output the resulting paths
     int i = 1, kmers_covered = 0;
@@ -360,7 +381,7 @@ int main() {
         i++;
         kmers_covered += path.size();
     }
-    cout << "Found " << i - 1 << " paths in total!" << endl;
+    cout << "Found " << i - 1 << " necklaces in total! (Letter \"*\" at the end means it is a cycle)" << endl;
 
     if (kmers_covered == kmers.size()) {
         cout << "Successfully covered all kmers!" << endl;
@@ -368,6 +389,12 @@ int main() {
     else {
         cout << "There are " << kmers.size() - kmers_covered << " nodes uncovered..." << endl;
     }
+
+    cout << endl;
+    cout << string(60, '-') << endl;
+    cout << "# Edges to add to make Eulerian: " << ecdbg.countEdgesToAdd() << endl;
+    cout << "# Open necklaces in the obtained Necklace cover: " << i - 1 - countCycle << endl;
+    cout << string(60, '-') << endl;
 
     return 0;
 }
