@@ -140,7 +140,7 @@ public:
         }
     }
 
-    Path greedyPath(const int& start, bool visited[], bool running[]){
+    Path greedyPath(const int64_t start, bool visited[], bool running[]){
         Path path; // Path = pair<deque<pair<int64_t, int64_t>>, bool>;
         path.first = {};
         path.second = false;
