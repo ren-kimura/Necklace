@@ -16,7 +16,9 @@ using Kmers = unordered_map<string,int64_t>;
 using NodeId = vector<int64_t>;
 
 using Path = pair<deque<pair<int64_t, int64_t>>, bool>;
+// Path = deque<int64_t> {(-N, ..., -1, 1, ..., N)^(#nodes in the path including pendants)[,0]}. Pendants are represented as a negative of the corresponding positive <id>. 0 in the end means the path is a cycle.
 using Paths = pair<vector<pair<deque<pair<int64_t, int64_t>>, bool>>, int64_t>;
+// Paths = 
 
 
 class DeBruijnGraph {
@@ -105,7 +107,7 @@ public:
         }
     }
 
-    uint64_t forward(uint64_t id, uint8_t c){
+    int64_t forward(uint64_t id, uint8_t c){
         auto position = idPosition[id];
         string kmerSuffix = sequence.substr(position + 1, K-1); 
         auto next = kmerSuffix.append(to_string(c));
@@ -115,7 +117,7 @@ public:
             return -1; // no outgoing branching exists for c
     }
 
-    uint64_t backward(uint64_t id, uint8_t c){
+    int64_t backward(uint64_t id, uint8_t c){
         auto position = idPosition[id];
         string kmerPrefix = sequence.substr(position, K-1);
         auto previous = to_string(c) + kmerPrefix;
@@ -147,8 +149,8 @@ public:
 
         int current = start;
         path.first.push_back(make_pair(current, -1));
-        visited[current] = false;
-        running[current] = false;
+        visited[current] = true;
+        running[current] = true;
         bool tmp = 0;
 
         // Forward tracking
@@ -225,6 +227,68 @@ public:
             running[path.first[i].first] = false;
         }
         return path;
+    }
+
+    deque<int64_t> greedyPath_rev(const int64_t start, bool visited[], bool running[]){
+        deque<int64_t> path;
+        auto current = start;
+        path.push_back(current);
+        visited[current] = true;
+        running[current] = true;
+        
+        // Forward search
+        for (auto c : Alphabet) { 
+            auto next = forward(current, c);
+            if(next == -1) continue; // skip if there isn't an edge from current to next
+            if(visited[next]){
+                if(!running[next]) break; // break if it is not a cycle (------CASE 1------)
+                // when found a cycle (------CASE 2------)
+                for (auto kmer : path) { // update running[every kmer in the path] = false
+                    running[kmer] = false;
+                }
+                auto itr = path.finds(next);
+                auto delete_before = distance(path.begin(), itr);
+                while (delete_before) { // update visited[kmers outside the cycle] = false, and erase them
+                    visited[0] = false;
+                    path.pop_front();
+                    delete_before--;
+                }
+                path.push_back(0); // add zero meaning cycle in the end of the path 
+                return path;
+            }
+            // when next is not visited (------CASE 3------)
+            visited[next] = true;
+            running[next] = true;
+            path.push_back(next);
+            current = next;
+        }
+        // Backward search
+        for (auto c : Alphabet) { 
+            auto previous = backward(current, c);
+            if(previous == -1) continue; // skip if there isn't an edge from current to previous
+            if(visited[previous]){
+                if(!running[previous]) break; // break if it is not a cycle (------CASE 4------)
+                // when found a cycle (------CASE 5------)
+                for (auto kmer : path) { // update running[every kmer in the path] = false
+                    running[kmer] = false;
+                }
+                auto itr = path.finds(previous);
+                auto delete_from = distance(path.begin(), itr);
+                auto dlt = path.size() - delete_from // how many k-mers do we delete
+                while (dlt) { // update visited[kmers outside the cycle] = false, and erase them
+                    visited[path.size()] = false;
+                    path.pop_back();
+                    dlt--;
+                }
+                path.push_front(0); // add zero meaning cycle in the end of the path 
+                return path;
+            }
+            // when previous is not visited (------CASE 6------)
+            visited[previous] = true;
+            running[previous] = true;
+            path.push_front(previous);
+            current = previous;
+        }
     }
 
     Paths findPaths() {
