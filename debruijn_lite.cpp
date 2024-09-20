@@ -326,7 +326,7 @@ vector<string> getKmers(void) {
     vector<string> rep_kmers;
 
     // Append every k-mer in "sequence"
-    for (int i = 0; i < sequence.length() - k; i++){
+    for (int i = 0; i < sequence.length() - k + 1; i++){
         rep_kmers.push_back(sequence.substr(i, k));
     }
 

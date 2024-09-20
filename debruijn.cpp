@@ -6,6 +6,7 @@
 #include <set>
 #include <algorithm>
 #include <deque>
+#include <variant>
 
 using namespace std;
 using AdjList = unordered_map<string, vector<string>>;
@@ -286,9 +287,7 @@ public:
     }
 };
 
-
-
-int main() {
+vector<string> getKmers(void) {
     // Define k and a filename
     int k;
     string filename;
@@ -300,7 +299,7 @@ int main() {
     ifstream inputFile(filename);
     if (!inputFile) {
         cerr << "Error opening input file." << endl;
-        return 1;
+        return {"1"};
     }
 
     string line;
@@ -328,7 +327,7 @@ int main() {
     vector<string> rep_kmers;
 
     // Append every k-mer in "sequence"
-    for (int i = 0; i < sequence.length() - k; i++){
+    for (int i = 0; i < sequence.length() - k + 1; i++){
         rep_kmers.push_back(sequence.substr(i, k));
     }
 
@@ -346,9 +345,47 @@ int main() {
     // Number of distinct k-mers
     cout << "# k-mers: " << kmers.size() << "\n" << endl;
 
+    return kmers;
+}
+
+void printResult(vector<deque<string>> paths, int countCycle, int kmers_size, int countEdgesToAdd) {
+    // Output the resulting paths
+    int i = 1, kmers_covered = 0;
+    for (const auto& path : paths) {
+        cout << "Path" << i << " : ";
+        for (const string& node : path) {
+            cout << node << " ";
+            if (node[0] == '(') kmers_covered += 1;
+        }
+        cout << endl;
+        i++;
+        kmers_covered += path.size();
+    }
+    cout << "Found " << i - 1 << " necklaces in total! (Letter \"*\" at the end means it is a cycle)" << endl;
+
+    if (kmers_covered == kmers_size) {
+        cout << "Successfully covered all kmers!" << endl;
+    }
+    else {
+        cout << "There are " << kmers_size - kmers_covered << " nodes uncovered..." << endl;
+    }
+
+    cout << endl;
+    cout << string(60, '-') << endl;
+    cout << "# Edges to add to make Eulerian: " << countEdgesToAdd << endl;
+    cout << "# Open necklaces in the obtained Necklace cover: " << i - 1 - countCycle << endl;
+    cout << string(60, '-') << endl;
+}
+
+int main() {
+    // Construct a vector of k-mers from an input FASTA file(.fa).
+    vector<string> kmers = getKmers();
+    int kmers_size = kmers.size();
+
     // Construct and show the edge-centric De Bruijn Graph
     EdgeCentric_DeBruijnGraph ecdbg;
     ecdbg.buildGraph(kmers);
+    int countEdgesToAdd = ecdbg.countEdgesToAdd();
     cout << "Edge-centric De Bruijn Graph:" << endl;
     ecdbg.printGraph();
     cout << endl;
@@ -368,33 +405,9 @@ int main() {
     
     // Attach length-1 path to an adjacent path as a pendant
     paths = ncdbg.attachPendants(paths);
-    
-    // Output the resulting paths
-    int i = 1, kmers_covered = 0;
-    for (const auto& path : paths) {
-        cout << "Path" << i << " : ";
-        for (const string& node : path) {
-            cout << node << " ";
-            if (node[0] == '(') kmers_covered += 1;
-        }
-        cout << endl;
-        i++;
-        kmers_covered += path.size();
-    }
-    cout << "Found " << i - 1 << " necklaces in total! (Letter \"*\" at the end means it is a cycle)" << endl;
 
-    if (kmers_covered == kmers.size()) {
-        cout << "Successfully covered all kmers!" << endl;
-    }
-    else {
-        cout << "There are " << kmers.size() - kmers_covered << " nodes uncovered..." << endl;
-    }
-
-    cout << endl;
-    cout << string(60, '-') << endl;
-    cout << "# Edges to add to make Eulerian: " << ecdbg.countEdgesToAdd() << endl;
-    cout << "# Open necklaces in the obtained Necklace cover: " << i - 1 - countCycle << endl;
-    cout << string(60, '-') << endl;
+    // Output a necklace cover and a comparison with Eulertigs
+    printResult(paths, countCycle, kmers_size, countEdgesToAdd);
 
     return 0;
 }
