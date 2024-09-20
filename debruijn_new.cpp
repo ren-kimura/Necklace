@@ -112,7 +112,7 @@ public:
         if (kmers.find(next) != kmers.end())
             return kmers[next];
         else 
-            return -1; // no branching exists
+            return -1; // no outgoing branching exists for c
     }
 
     uint64_t backward(uint64_t id, uint8_t c){
@@ -122,7 +122,7 @@ public:
         if (kmers.find(previous) != kmers.end())
             return kmers[previous];
         else
-            return -1;
+            return -1; // no incoming branching exists for c
     }
 
     void buildEdgeCentricGraph(const string S, const Kmers& kmers, const NodeId& idPos) {  // Rough invariant: kmers.first == S.substr(kmers.second,k)
@@ -131,9 +131,10 @@ public:
     // Show the graph
     void printGraph() {
         for (auto const &x : kmers) { 
-            cout << "Node: " << x.first << " has edges to: ";
-            for (int j = 0; j < outNeighbors[x.second].size(); j++) {
-                cout << sequence.substr(outNeighbors[x.second][j], K) << " ";
+            cout << "Node: " << x.first << " -> ";  // kmer string
+            for (auto const & idNeigh : outNeighbors[x.second]) {
+                auto position = idPosition[idNeigh];
+                cout << sequence.substr(position, K) << " ";
             }
             cout << endl;
         }
