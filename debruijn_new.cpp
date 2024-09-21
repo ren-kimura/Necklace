@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <deque>
 #include <variant>
+#include <cctype>
 
 #define Alphabet {'A', 'C', 'G', 'T'}
 
@@ -15,25 +16,31 @@ using AdjList = vector<vector<int64_t>>;
 using Kmers = unordered_map<string,int64_t>;
 using NodeId = vector<int64_t>;
 
-using Path = pair<deque<pair<int64_t, int64_t>>, bool>;
-// Path = deque<int64_t> {(-N, ..., -1, 1, ..., N)^(#nodes in the path including pendants)[,0]}. Pendants are represented as a negative of the corresponding positive <id>. 0 in the end means the path is a cycle.
-using Paths = pair<vector<pair<deque<pair<int64_t, int64_t>>, bool>>, int64_t>;
-// Paths = 
-
+using Path = deque<int64_t>;
+// {(-N, ..., -1, 1, ..., N)^(#nodes in the path including pendants)[,0]}. 
+// Pendants are represented as a negative of the corresponding positive <id>. 0 in the end means the path is a cycle.
+using Paths =  vector<deque<int64_t>>;
 
 class DeBruijnGraph {
 public:
-    NodeId idPosition;
+    NodeId idPosition = {0};
+    NodeId pdCands; // candidates of pendants <=> length-1 found paths
     Kmers kmers;
     int K;
     bool isNodeCentric;
     string sequence;  // To store the concatenated sequence
+    int64_t makeEulerian = 0; // Number of edges to make Eulerian
+    int64_t countOpenNecklaces = 0; // Number of open necklaces;
 
     DeBruijnGraph(int _K, bool _isNodeCentric) : K(_K), isNodeCentric(_isNodeCentric)
     {};
 
+    void to_uppercase(string& str) {
+        transform(str.begin(), str.end(), str.begin(),
+                    [](unsigned char c) { return toupper(c); });
+    }
+
     void getKmers(string filename) {
-        // Convert FASTA into a string
         ifstream inputFile(filename);
         if (!inputFile) {
             cerr << "Error opening input file." << endl;
@@ -51,33 +58,43 @@ public:
 
         inputFile.close();
 
-        // Erase letters other than "a,t,g,c"
-        sequence.erase(remove_if(sequence.begin(), sequence.end(), [](char x) {return (x != 'a' && x != 't' && x != 'g' && x != 'c' && x != 'A' && x != 'T' && x != 'G' && x != 'C');}), sequence.end());
+        // Change lower into capital case
+        to_uppercase(sequence);
 
-        // Output the result as a string
-        // cout << "Processed Sequence: " << sequence << "\n" << endl;
+        // Erase letters other than "A, T, G, C"
+        sequence.erase(remove_if(sequence.begin(), sequence.end(), [](char x) 
+            {return (x != 'A' && x != 'T' && x != 'G' && x != 'C');}
+            ), sequence.end());
 
         // Check every k-mer in "sequence"
         for (int i = 0; i < sequence.length() - K + 1; i++){
             auto kmer = sequence.substr(i, K);
             if (kmers.find(kmer) == kmers.end()){
-                kmers[kmer] = idPosition.size();
+                kmers[kmer] = idPosition.size() + 1; // "+ 1" because we want kmers ID starting from 1
                 idPosition.push_back(i);
             }
         }
-
-        
-        // Output all k-mers
-        // cout << "Distinct k-mers: " << endl;
-        // for (const string& kmer : kmers) {
-        //     cout << kmer << " ";
-        // }
-        // cout << endl;
-
-        // Number of distinct k-mers
-        cout << "# k-mers: " << kmers.size() << "\n" << endl;
     }
 
+    int64_t forward(int64_t id, int8_t c){
+        auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
+        string kmerSuffix = sequence.substr(position + 1, K - 1); 
+        auto next = kmerSuffix.append(to_string(c));
+        if (kmers.find(next) != kmers.end())
+            return kmers[next];
+        else 
+            return -1; // no outgoing branching exists for c
+    }
+
+    int64_t backward(int64_t id, int8_t c){
+        auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
+        string kmerPrefix = sequence.substr(position, K - 1);
+        auto previous = to_string(c) + kmerPrefix;
+        if (kmers.find(previous) != kmers.end())
+            return kmers[previous];
+        else
+            return -1; // no incoming branching exists for c
+    }
 
     // Edges of the graph (current node, successive nodes)
     AdjList outNeighbors;
@@ -92,10 +109,9 @@ public:
         for (auto const &x : kmers) {
             auto kmer = x.first;
             auto id = x.second;
-            auto position = idPosition[id];
+            auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
 
-            // Define node as a current looking k-mer, then determine the edges using the last letter
-            auto kmerSuffix = sequence.substr(position + 1, K-1); // k-mer's last (k-1) letters
+            auto kmerSuffix = sequence.substr(position + 1, K - 1); // k-mer's last (k-1) letters
             for (auto& c : Alphabet){
                 auto next = kmerSuffix.append(to_string(c));
                 if (kmers.find(next) != kmers.end()) {
@@ -107,35 +123,15 @@ public:
         }
     }
 
-    int64_t forward(uint64_t id, uint8_t c){
-        auto position = idPosition[id];
-        string kmerSuffix = sequence.substr(position + 1, K-1); 
-        auto next = kmerSuffix.append(to_string(c));
-        if (kmers.find(next) != kmers.end())
-            return kmers[next];
-        else 
-            return -1; // no outgoing branching exists for c
-    }
-
-    int64_t backward(uint64_t id, uint8_t c){
-        auto position = idPosition[id];
-        string kmerPrefix = sequence.substr(position, K-1);
-        auto previous = to_string(c) + kmerPrefix;
-        if (kmers.find(previous) != kmers.end())
-            return kmers[previous];
-        else
-            return -1; // no incoming branching exists for c
-    }
-
-    void buildEdgeCentricGraph(const string S, const Kmers& kmers, const NodeId& idPos) {  // Rough invariant: kmers.first == S.substr(kmers.second,k)
+    void buildEdgeCentricGraph(const string S, const Kmers& kmers, const NodeId& idPos) {  // Rough invariant: kmers.first == S.substr(kmers.second - 1, k)
     }
 
     // Show the graph
     void printGraph() {
         for (auto const &x : kmers) { 
             cout << "Node: " << x.first << " -> ";  // kmer string
-            for (auto const & idNeigh : outNeighbors[x.second]) {
-                auto position = idPosition[idNeigh];
+            for (auto const& idNeigh : outNeighbors[x.second]) {
+                auto position = idPosition[idNeigh - 1]; // "idNeigh - 1" because we have kmers ID starting from 1
                 cout << sequence.substr(position, K) << " ";
             }
             cout << endl;
@@ -143,100 +139,13 @@ public:
     }
 
     Path greedyPath(const int64_t start, bool visited[], bool running[]){
-        Path path; // Path = pair<deque<pair<int64_t, int64_t>>, bool>;
-        path.first = {};
-        path.second = false;
-
-        int current = start;
-        path.first.push_back(make_pair(current, -1));
-        visited[current] = true;
-        running[current] = true;
-        bool tmp = 0;
-
-        // Forward tracking
-        while (true) {
-            bool tmp1 = false;
-            for (int i = 0; i < outNeighbors[current].size(); i++) {
-                if (!visited[outNeighbors[current][i]]) {
-                    visited[outNeighbors[current][i]] = true;
-                    running[outNeighbors[current][i]] = true;
-                    path.first.push_back(make_pair(outNeighbors[current][i], -1));
-                    current = outNeighbors[current][i];
-                    tmp1 = true;
-                    break;
-                }
-                if (running[outNeighbors[current][i]]) {
-                    // Update running[all kmers in path] = 0.
-                    for (int j = 0; j < path.first.size(); j++) {
-                        running[path.first[j].first] = false;
-                    }
-                    // Update visited[outside cycle] = 0, and erase them.
-                    auto it = find(path.first.begin(), path.first.end(), make_pair(outNeighbors[current][i], -1));
-                    auto delete_before = distance(path.first.begin(), it);
-                    for (int j = 0; j < delete_before; j++) {
-                        visited[path.first[0].first] = false;
-                        path.first.pop_front();
-                    }
-                    // Mark the path as a "cycle"
-                    path.second = true;
-                    // Skip the reverse search because we already found a cycle.
-                    tmp = true;
-                    break;
-                }
-            }
-            if(!tmp1) break;
-        }
-        // Jump <current> back to <start>
-        current = start;
-
-        // Backward tracking
-        while (true) {
-            if(tmp) break;
-            bool tmp2 = false;
-            for (int i = 0; i < inNeighbors[current].size(); i++) {
-                if (!visited[inNeighbors[current][i]]) {
-                    visited[inNeighbors[current][i]] = true;
-                    running[inNeighbors[current][i]] = true;
-                    path.first.push_front(make_pair(inNeighbors[current][i], -1));
-                    current = inNeighbors[current][i];
-                    tmp2 = true;
-                    break;
-                }
-                if (running[inNeighbors[current][i]]) {
-                    // Update running[all kmers in <path>] = 0.
-                    for (int j = 0; j < path.first.size(); j++) {
-                        running[path.first[j].first] = false;
-                    }
-                    // Update visited[outside cycle] = 0, and erase them.
-                    auto it = find(path.first.begin(), path.first.end(), make_pair(inNeighbors[current][i], -1));
-                    auto delete_from = distance(path.first.begin(), it); 
-                    auto path_size = path.first.size();
-                    for (int j = path_size - 1; j > delete_from; j--) {
-                        visited[path.first[path.first.size() - 1].first] = false;
-                        path.first.pop_back();
-                    }
-                    // Mark the path as a "cycle"
-                    path.second = true;
-                    break;
-                }
-            }
-            if(!tmp2) break;
-        }
-        // Update running[all kmers in <path>] = 0.
-        for (int i = 0; i < path.first.size(); i++) {
-            running[path.first[i].first] = false;
-        }
-        return path;
-    }
-
-    deque<int64_t> greedyPath_rev(const int64_t start, bool visited[], bool running[]){
-        deque<int64_t> path;
+        Path path;
         auto current = start;
         path.push_back(current);
         visited[current] = true;
         running[current] = true;
         
-        // Forward search
+        // forward search
         for (auto c : Alphabet) { 
             auto next = forward(current, c);
             if(next == -1) continue; // skip if there isn't an edge from current to next
@@ -246,7 +155,7 @@ public:
                 for (auto kmer : path) { // update running[every kmer in the path] = false
                     running[kmer] = false;
                 }
-                auto itr = path.finds(next);
+                auto itr = find(path.begin(), path.end(), next);
                 auto delete_before = distance(path.begin(), itr);
                 while (delete_before) { // update visited[kmers outside the cycle] = false, and erase them
                     visited[0] = false;
@@ -254,7 +163,7 @@ public:
                     delete_before--;
                 }
                 path.push_back(0); // add zero meaning cycle in the end of the path 
-                return path;
+                return path; // return a cycle
             }
             // when next is not visited (------CASE 3------)
             visited[next] = true;
@@ -262,7 +171,9 @@ public:
             path.push_back(next);
             current = next;
         }
-        // Backward search
+        // jump current back to start
+        current = start;
+        // backward search
         for (auto c : Alphabet) { 
             auto previous = backward(current, c);
             if(previous == -1) continue; // skip if there isn't an edge from current to previous
@@ -272,16 +183,16 @@ public:
                 for (auto kmer : path) { // update running[every kmer in the path] = false
                     running[kmer] = false;
                 }
-                auto itr = path.finds(previous);
+                auto itr = find(path.begin(), path.end(), previous);
                 auto delete_from = distance(path.begin(), itr);
-                auto dlt = path.size() - delete_from // how many k-mers do we delete
+                auto dlt = path.size() - delete_from; // how many k-mers do we delete
                 while (dlt) { // update visited[kmers outside the cycle] = false, and erase them
                     visited[path.size()] = false;
                     path.pop_back();
                     dlt--;
                 }
                 path.push_front(0); // add zero meaning cycle in the end of the path 
-                return path;
+                return path; // return a cycle
             }
             // when previous is not visited (------CASE 6------)
             visited[previous] = true;
@@ -289,105 +200,112 @@ public:
             path.push_front(previous);
             current = previous;
         }
+        countOpenNecklaces += 1;
+        // update running[every kmer in the path] = false
+        for (auto kmer : path) {
+            running[kmer] = false;
+        } 
+        return path; // return a non-cyclic path
     }
 
     Paths findPaths() {
-        Paths paths; // Paths = pair<vector<pair<deque<pair<int64_t, int64_t>>, bool>>, int64_t>;
-        paths.first = {};
-        paths.second = 0;
+        Paths paths;
         bool visited[] = {false};
         bool running[] = {false};
 
         // Start greedy search from an unvisited node
-        for (int i = 0; i < kmers.size(); i++) {
-            if (!visited[i]) {
-                Path path = greedyPath(i, visited, running);
-                paths.first.push_back(path);
-                if (path.second) paths.second++;
+        for (auto const &x : kmers) {
+            auto id = x.second;
+            if (!visited[id]) {
+                Path path = greedyPath(id, visited, running);
+                paths.push_back(path);
             }
         }
 
         // Add isolated kmers to paths as "Length-one path"s.
-        for (auto i = 0; i < kmers.size(); i++) {
-            if (!visited[i])
-                paths.first.push_back(make_pair(deque<pair<int64_t, int64_t>>{make_pair(i, -1)}, false));
+        for (auto const &x : kmers) {
+            auto id = x.second;
+            if (!visited[id]) {
+                paths.push_back(deque<int64_t>{id});
+                pdCands.push_back(id);
+            }
         }
 
-        // Delete empty paths.
-        paths.first.erase(
-            remove_if(paths.first.begin(), paths.first.end(), 
-                [](const Path& path) {
-                    return path.first.empty();
-                }
-            ), 
-            paths.first.end()
-        );
+        // // Delete empty paths.
+        // paths.erase(
+        //     remove_if(paths.begin(), paths.end(), 
+        //         [](const Path& path) {
+        //             return path.empty();
+        //         }
+        //     ), 
+        //     paths.end()
+        // );
 
         return paths;
     }
 
-    Paths attachPendants(Paths& paths) {
-        // List of already attached length-1 paths
-        vector<int64_t> attached; 
-        
+    Paths attachPendants(Paths paths) {
         // Attach length-1 paths to an adjacent path
-        for (int i = 0; i < paths.first.size(); i++) {
-            if (paths.first[i].first.size() != 1) continue; // Skip non-length-1 paths
-            bool attachedToMainPath = false;
-            
-            for (int j = 0; j < paths.first.size(); j++) {
-                if (paths.first[j].first.size() <= 1) continue; // Skip short paths
-                
-                for (int k = 0; k < paths.first[j].first.size(); k++) {
-                    // Get k-mer strings
-                    string pendant = sequence.substr(idPosition[paths.first[i].first[0].first], K);
-                    string attachee = sequence.substr(idPosition[paths.first[j].first[k].first], K);
+        for (auto id_cand : pdCands) {
+            for (auto path : paths) {
+                if (path.size() == 1) continue; // Skip pendant candidates 
+
+                for (auto const& id : path) {
+                    if (!id) continue; // skip the already attached pendants
+                    string pendantPrefix = sequence.substr(idPosition[id_cand - 1], K - 1);
+                    string attacheePrefix = sequence.substr(idPosition[id - 1], K - 1);
                     
                     // Check if pendant can be attached to attachee
-                    if (pendant.substr(0, attachee.size() - 1) == attachee.substr(0, attachee.size() - 1)) {
-                        // Attach the pendant
-                        paths.first[j].first[k].second = paths.first[i].first[0].first;
-                        attached.push_back(paths.first[i].first[0].first);
-                        attachedToMainPath = true;
-                        break;
-                    }
+                    if (pendantPrefix != attacheePrefix) continue; // skip kmer which cannot be attached the pendant to 
+                    // Attach the pendant
+                    auto after_this = find(path.begin(), path.end(), id);
+                    path.insert(after_this + 1, -id_cand);
+                    goto next_id_cand;
                 }
-                if (attachedToMainPath) break;
             }
+            next_id_cand:
+            id_cand *= -1;
         }
 
         // Remove length-1 paths that were attached
-        paths.first.erase(
-            remove_if(paths.first.begin(), paths.first.end(), [&attached](const Path& path) {
-                // Check if the path is a length-1 path and if it was attached
-                return (path.first.size() == 1 && find(attached.begin(), attached.end(), path.first[0].first) != attached.end());
-            }),
-            paths.first.end()
+        paths.erase(
+            remove_if(
+                paths.begin(), paths.end(), [this](const Path& path){return is_attached(path, pdCands);}
+            ), paths.end()
         );
         
         return paths;
     }
 
-    void printResult(const Paths& necklaces, int64_t countEdgesToAdd) {
+    bool is_attached(const Path& path, const NodeId& pdCands) {
+        return (path.size() == 1 && find(pdCands.begin(), pdCands.end(), -path[0]) != pdCands.end());
+    }
+
+    void printResult(const Paths& paths) {
         // Output the resulting paths
-        int kmers_covered = 0;
-        for (int i = 0; i < necklaces.first.size(); i++) {
-            cout << "Path" << i + 1 << " : ";
-            for (int j = 0; j < necklaces.first[i].first.size(); j++) {
-                if (necklaces.first[i].first[j].second == -1) {
-                    cout << sequence.substr(idPosition[necklaces.first[i].first[j].first], K) << " ";
+        int64_t kmers_covered = 0;
+        int64_t count = 1;
+        for (auto const& path : paths) {
+            cout << "Path" << count << " : ";
+            for (auto const& id : path) {
+                if (id > 0) {
+                    cout << sequence.substr(idPosition[abs(id) - 1], K) << " ";
                     kmers_covered += 1;
                 }
-                else {
-                    cout << "(" << sequence.substr(idPosition[necklaces.first[i].first[j].first], K) << ", "
-                    << sequence.substr(idPosition[necklaces.first[i].first[j].second], K) << ") ";
+                else if (id < 0) {
+                    cout << "+" << sequence.substr(idPosition[abs(id) - 1], K) << " ";
                     kmers_covered += 2;
                 }
+                else { // id == 0
+                    cout << "*" << endl;
+                }
             }
-            if (necklaces.first[i].second) cout << "*";
-            cout << endl;
+            count++;
         }
-        cout << "Found " << necklaces.first.size() << " necklaces in total! (Letter \"*\" at the end means it is a cycle)" << endl;
+        cout << "Found " << paths.size() 
+             << " necklaces in total!\n" 
+             << "\"*\" at the end means it is a cycle.\n"
+             << "\"+(k-mer)\" are pendants." << endl;
 
         if (kmers_covered == kmers.size()) {
             cout << "Successfully covered all kmers!" << endl;
@@ -398,8 +316,8 @@ public:
 
         cout << endl;
         cout << string(60, '-') << endl;
-        cout << "# Edges to add to make Eulerian: " << countEdgesToAdd << endl;
-        cout << "# Open necklaces in the obtained Necklace cover: " << necklaces.first.size() - necklaces.second << endl;
+        cout << "# Edges to add to make Eulerian: " << makeEulerian << endl;
+        cout << "# Open necklaces: " << countOpenNecklaces << endl;
         cout << string(60, '-') << endl;
     }
 };
@@ -414,7 +332,7 @@ int main() {
     cin >> filename;
     
     // Construct and show the node-centric De Bruijn Graph
-    DeBruijnGraph ncdbg(_K, true);
+    DeBruijnGraph ncdbg = DeBruijnGraph(_K, true);
     ncdbg.getKmers(filename);
     ncdbg.buildNodeCentricGraph();
     cout << "Node-centric De Bruijn Graph:" << endl;
@@ -428,7 +346,7 @@ int main() {
     Paths necklaces = ncdbg.attachPendants(paths);
 
     // Output a necklace cover and a comparison with Eulertigs
-    ncdbg.printResult(necklaces, -1);
+    ncdbg.printResult(necklaces);
 
     return 0;
 }
