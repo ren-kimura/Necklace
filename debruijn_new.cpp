@@ -9,8 +9,6 @@
 #include <variant>
 #include <cctype>
 
-#define Alphabet {'A', 'C', 'G', 'T'}
-
 using namespace std;
 using AdjList = vector<vector<int64_t>>;
 using Kmers = unordered_map<string,int64_t>;
@@ -25,6 +23,7 @@ class DeBruijnGraph {
 public:
     int K;
     bool isNodeCentric; // node-centric or edge-centing dBG?
+    vector<uint8_t> Alphabet('A', 'C', 'G', 'T');
 
     string sequence;  // To store the concatenated sequence
     Kmers kmers;  // pair <kmer string of length k, its unique ID in 1..N>, where N = #distinct kmers in sequence
@@ -148,19 +147,18 @@ public:
         // forward search
         for (auto c : Alphabet) { 
             auto next = forward(current, c);
-            if(next == -1) continue; // skip if there isn't an edge from current to next
+            if(next == 0) continue; // skip if there isn't an edge from current to next
             if(visited[next]){
                 if(!running[next]) break; // break if it is not a cycle (------CASE 1------)
                 // when found a cycle (------CASE 2------)
-                for (auto kmer : path) { // update running[every kmer in the path] = false
-                    running[kmer] = false;
+                for (auto kmerId : path) { // update running[every kmer in the path] = false
+                    running[kmerId] = false;
                 }
                 auto itr = find(path.begin(), path.end(), next);
                 auto delete_before = distance(path.begin(), itr);
-                while (delete_before) { // update visited[kmers outside the cycle] = false, and erase them
-                    visited[0] = false;
+                while (delete_before--) { // update visited[kmers outside the cycle] = false, and erase them
+                    visited[path.front()] = false;
                     path.pop_front();
-                    delete_before--;
                 }
                 path.push_back(0); // add zero meaning cycle in the end of the path 
                 return path; // return a cycle
@@ -176,7 +174,7 @@ public:
         // backward search
         for (auto c : Alphabet) { 
             auto previous = backward(current, c);
-            if(previous == -1) continue; // skip if there isn't an edge from current to previous
+            if(previous == 0) continue; // skip if there isn't an edge from current to previous
             if(visited[previous]){
                 if(!running[previous]) break; // break if it is not a cycle (------CASE 4------)
                 // when found a cycle (------CASE 5------)
