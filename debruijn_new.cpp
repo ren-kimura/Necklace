@@ -1,3 +1,6 @@
+// Ren Kimura, 2024
+// compile as g++ -std=c++17 debruijn_new.cpp 
+
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -178,7 +181,7 @@ public:
         // jump current back to start
         current = start;
         // backward search
-        int64_t i = 0;
+        i = 0;
         while (i < Alphabet.size())
         {
             auto c = Alphabet[i];
@@ -217,21 +220,27 @@ public:
 
     Paths findPaths() {
         Paths paths;
-        bool visited[] = {false};
-        bool running[] = {false};
+        bool visited[kmers.size()];
+        bool running[kmers.size()];
+        for (int64_t id = 0; id < kmers.size(); id++)
+        {
+            visited[id] = running[id] = false;
+        }
 
         // Start greedy search from an unvisited node
-        for (auto const &x : kmers) {
-            auto id = x.second;
+        for (int64_t id = 0; id < kmers.size(); id++)
+        {
             if (!visited[id]) {
                 Path path = greedyPath(id, visited, running);
                 paths.push_back(path);
             }
         }
 
+        // suggestion: maybe you can decide in the loop below where to attach isolated kmers (instead of having attachPendants() )
+
         // Add isolated kmers to paths as "Length-one path"s.
-        for (auto const &x : kmers) {
-            auto id = x.second;
+        for (int64_t id = 0; id < kmers.size(); id++)
+        {
             if (!visited[id]) {
                 paths.push_back(deque<int64_t>{id});
                 pdCands.push_back(id);
