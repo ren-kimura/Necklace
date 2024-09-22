@@ -18,44 +18,44 @@ using NodeId = vector<int64_t>;
 
 using Path = deque<int64_t>;
 // {(-N, ..., -1, 1, ..., N)^(#nodes in the path including pendants)[,0]}. 
-// Pendants are represented as a negative of the corresponding positive <id>. 0 in the end means the path is a cycle.
+// Pendants are represented as a negative of the corresponding positive ID, where 0 in the end means the path is a cycle.
 using Paths =  vector<deque<int64_t>>;
 
 class DeBruijnGraph {
 public:
-    NodeId idPosition = {0};
-    NodeId pdCands; // candidates of pendants <=> length-1 found paths
-    Kmers kmers;
     int K;
-    bool isNodeCentric;
+    bool isNodeCentric; // node-centric or edge-centing dBG?
+
     string sequence;  // To store the concatenated sequence
+    Kmers kmers;  // pair <kmer string of length k, its unique ID in 1..N>, where N = #distinct kmers in sequence
+    NodeId idPosition = {0}; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
+    NodeId pdCands; // candidates of pendants <=> length-1 found paths
+
     int64_t makeEulerian = 0; // Number of edges to make Eulerian
     int64_t countOpenNecklaces = 0; // Number of open necklaces;
 
     DeBruijnGraph(int _K, bool _isNodeCentric) : K(_K), isNodeCentric(_isNodeCentric)
     {};
 
-    void to_uppercase(string& str) {
+    __inline void to_uppercase(string& str) {
         transform(str.begin(), str.end(), str.begin(),
                     [](unsigned char c) { return toupper(c); });
     }
 
     void getKmers(string filename) {
+        // Read input DNA sequence in FASTA format .fa
         ifstream inputFile(filename);
         if (!inputFile) {
             cerr << "Error opening input file." << endl;
             exit(0);
         }
-
         string line;
         sequence = "";  // To store the concatenated sequence
-
         while (getline(inputFile, line)) {
             if (line[0] != '>') {  // Skip header lines
                 sequence += line;
             }
         }
-
         inputFile.close();
 
         // Change lower into capital case
@@ -69,8 +69,8 @@ public:
         // Check every k-mer in "sequence"
         for (int i = 0; i < sequence.length() - K + 1; i++){
             auto kmer = sequence.substr(i, K);
-            if (kmers.find(kmer) == kmers.end()){
-                kmers[kmer] = idPosition.size() + 1; // "+ 1" because we want kmers ID starting from 1
+            if (kmers.find(kmer) == kmers.end()){ // newly found kmer
+                kmers[kmer] = idPosition.size() + 1; // "+ 1" because we want kmers ID starting from 1 to N
                 idPosition.push_back(i);
             }
         }
@@ -79,26 +79,26 @@ public:
     int64_t forward(int64_t id, int8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
         string kmerSuffix = sequence.substr(position + 1, K - 1); 
-        auto next = kmerSuffix.append(to_string(c));
-        if (kmers.find(next) != kmers.end())
+        auto next = kmerSuffix + to_string(c);
+        if (kmers.find(next) != kmers.end()) // kmer exists
             return kmers[next];
         else 
-            return -1; // no outgoing branching exists for c
+            return 0; // no outgoing branching exists for c
     }
 
     int64_t backward(int64_t id, int8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
         string kmerPrefix = sequence.substr(position, K - 1);
         auto previous = to_string(c) + kmerPrefix;
-        if (kmers.find(previous) != kmers.end())
+        if (kmers.find(previous) != kmers.end()) // kmer exists
             return kmers[previous];
         else
-            return -1; // no incoming branching exists for c
+            return 0; // no incoming branching exists for c
     }
 
-    // Edges of the graph (current node, successive nodes)
+    // Edges of the graph (current node, outgoing nodes)
     AdjList outNeighbors;
-    // Edges of the graph (current node, previous nodes)
+    // Edges of the graph (current node, incoming nodes)
     AdjList inNeighbors;
     
     // Construct node-centric De Bruijn Graph from the given UPPERCASE k-mer sets
@@ -113,8 +113,8 @@ public:
 
             auto kmerSuffix = sequence.substr(position + 1, K - 1); // k-mer's last (k-1) letters
             for (auto& c : Alphabet){
-                auto next = kmerSuffix.append(to_string(c));
-                if (kmers.find(next) != kmers.end()) {
+                auto next = kmerSuffix + to_string(c);
+                if (kmers.find(next) != kmers.end()) { // kmer exists, so its node
                     auto nextid = kmers[next];
                     outNeighbors[id].push_back(nextid);
                     inNeighbors[nextid].push_back(id);
@@ -126,7 +126,7 @@ public:
     void buildEdgeCentricGraph(const string S, const Kmers& kmers, const NodeId& idPos) {  // Rough invariant: kmers.first == S.substr(kmers.second - 1, k)
     }
 
-    // Show the graph
+    // Display the graph
     void printGraph() {
         for (auto const &x : kmers) { 
             cout << "Node: " << x.first << " -> ";  // kmer string
@@ -138,7 +138,7 @@ public:
         }
     }
 
-    Path greedyPath(const int64_t start, bool visited[], bool running[]){
+    Path greedyPath(const int64_t start, bool visited[], bool running[]){  // to be initialized as visited = running = { false }
         Path path;
         auto current = start;
         path.push_back(current);
