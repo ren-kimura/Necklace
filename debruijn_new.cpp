@@ -144,8 +144,13 @@ public:
         visited[current] = true;
         running[current] = true;
         
+        // suggestion: from current choose the best neighbor: first choice is cycle, second choice is extend path, and third choice CASE 1 if neither of the first two choices occur.
+
         // forward search
-        for (auto c : Alphabet) { 
+        int64_t i = 0;
+        while (i < Alphabet.size())
+        {
+            auto c = Alphabet[i];
             auto next = forward(current, c);
             if(next == 0) continue; // skip if there isn't an edge from current to next
             if(visited[next]){
@@ -168,11 +173,15 @@ public:
             running[next] = true;
             path.push_back(next);
             current = next;
+            i = 0; // need this to restart the scan of the neighbors of the new current
         }
         // jump current back to start
         current = start;
         // backward search
-        for (auto c : Alphabet) { 
+        int64_t i = 0;
+        while (i < Alphabet.size())
+        {
+            auto c = Alphabet[i];
             auto previous = backward(current, c);
             if(previous == 0) continue; // skip if there isn't an edge from current to previous
             if(visited[previous]){
@@ -182,14 +191,13 @@ public:
                     running[kmer] = false;
                 }
                 auto itr = find(path.begin(), path.end(), previous);
-                auto delete_from = distance(path.begin(), itr);
-                auto dlt = path.size() - delete_from; // how many k-mers do we delete
-                while (dlt) { // update visited[kmers outside the cycle] = false, and erase them
-                    visited[path.size()] = false;
+                auto delete_before = distance(path.begin(), itr);
+                auto delete_from = path.size() - delete_before; // how many k-mers do we delete
+                while (delete_from--) { // update visited[kmers outside the cycle] = false, and erase them
+                    visited[path.back()] = false;
                     path.pop_back();
-                    dlt--;
                 }
-                path.push_front(0); // add zero meaning cycle in the end of the path 
+                path.push_back(0); // add zero meaning cycle in the end of the path 
                 return path; // return a cycle
             }
             // when previous is not visited (------CASE 6------)
@@ -197,6 +205,7 @@ public:
             running[previous] = true;
             path.push_front(previous);
             current = previous;
+            i = 0; // need this to restart the scan of the neighbors of the new current
         }
         countOpenNecklaces += 1;
         // update running[every kmer in the path] = false
