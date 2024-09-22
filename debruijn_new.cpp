@@ -147,7 +147,10 @@ public:
         visited[current] = true;
         running[current] = true;
         
-        // suggestion: from current choose the best neighbor: first choice is cycle, second choice is extend path, and third choice CASE 1 if neither of the first two choices occur.
+        // [suggestion] from current, how to choose the best neighbor: 
+        // - first choice is to get a cycle
+        // - second choice is to extend the path
+        // - third choice is CASE 1 when neither of the first two choices above occur
 
         // forward search
         int64_t i = 0;
@@ -236,7 +239,7 @@ public:
             }
         }
 
-        // suggestion: maybe you can decide in the loop below where to attach isolated kmers (instead of having attachPendants() )
+        // [suggestion] maybe you can decide in the loop below where to attach isolated kmers (instead of having attachPendants() )
 
         // Add isolated kmers to paths as "Length-one path"s.
         for (int64_t id = 0; id < kmers.size(); id++)
@@ -261,6 +264,13 @@ public:
     }
 
     Paths attachPendants(Paths paths) {
+        // [suggestion] Better implementation: 
+        // - store pdCands as hash table
+        // - for each node u in each path: 
+        //     if a neighbor v of u is in pdCand:
+        //        v becomes pendant of u
+        //        remove v from pdCand
+
         // Attach length-1 paths to an adjacent path
         for (auto id_cand : pdCands) {
             for (auto path : paths) {
