@@ -23,7 +23,7 @@ class DeBruijnGraph {
 public:
     int K;
     bool isNodeCentric; // node-centric or edge-centing dBG?
-    vector<uint8_t> Alphabet('A', 'C', 'G', 'T');
+    vector<uint8_t> Alphabet = {'A', 'C', 'G', 'T'};
 
     string sequence;  // To store the concatenated sequence
     Kmers kmers;  // pair <kmer string of length k, its unique ID in 1..N>, where N = #distinct kmers in sequence
