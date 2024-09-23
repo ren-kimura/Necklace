@@ -30,7 +30,7 @@ public:
 
     string sequence;  // To store the concatenated sequence
     Kmers kmers;  // pair <kmer string of length k, its unique ID in 1..N>, where N = #distinct kmers in sequence
-    NodeId idPosition = {0}; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
+    NodeId idPosition; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
     NodeId pdCands; // candidates of pendants <=> length-1 found paths
 
     int64_t makeEulerian = 0; // Number of edges to make Eulerian
@@ -69,29 +69,33 @@ public:
             ), sequence.end());
 
         // Check every k-mer in "sequence"
-        for (int i = 0; i < sequence.length() - K + 1; i++){
+        for (int i = 0; i < sequence.length() - K; i++){
             auto kmer = sequence.substr(i, K);
             if (kmers.find(kmer) == kmers.end()){ // newly found kmer
                 kmers[kmer] = idPosition.size() + 1; // "+ 1" because we want kmers ID starting from 1 to N
                 idPosition.push_back(i);
             }
         }
+
+        for (auto const &x : kmers) {
+            cout << x.second << ": " << x.first << " at position " << idPosition[x.second - 1] << endl;
+        }
     }
 
-    int64_t forward(int64_t id, int8_t c){
+    int64_t forward(int64_t id, uint8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
-        string kmerSuffix = sequence.substr(position + 1, K - 1); 
-        auto next = kmerSuffix + to_string(c);
+        string suffix = sequence.substr(position + 1, K - 1); 
+        auto next = suffix + char(c);
         if (kmers.find(next) != kmers.end()) // kmer exists
             return kmers[next];
         else 
             return 0; // no outgoing branching exists for c
     }
 
-    int64_t backward(int64_t id, int8_t c){
+    int64_t backward(int64_t id, uint8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
-        string kmerPrefix = sequence.substr(position, K - 1);
-        auto previous = to_string(c) + kmerPrefix;
+        string prefix = sequence.substr(position, K - 1);
+        auto previous = char(c) + prefix;
         if (kmers.find(previous) != kmers.end()) // kmer exists
             return kmers[previous];
         else
@@ -115,11 +119,11 @@ public:
 
             auto kmerSuffix = sequence.substr(position + 1, K - 1); // k-mer's last (k-1) letters
             for (auto& c : Alphabet){
-                auto next = kmerSuffix + to_string(c);
+                auto next = kmerSuffix + char(c);
                 if (kmers.find(next) != kmers.end()) { // kmer exists, so its node
                     auto nextid = kmers[next];
-                    outNeighbors[id].push_back(nextid);
-                    inNeighbors[nextid].push_back(id);
+                    outNeighbors[id - 1].push_back(nextid - 1);
+                    inNeighbors[nextid - 1].push_back(id - 1);
                 }       
             }
         }
@@ -131,9 +135,9 @@ public:
     // Display the graph
     void printGraph() {
         for (auto const &x : kmers) { 
-            cout << "Node: " << x.first << " -> ";  // kmer string
-            for (auto const& idNeigh : outNeighbors[x.second]) {
-                auto position = idPosition[idNeigh - 1]; // "idNeigh - 1" because we have kmers ID starting from 1
+            cout << x.first << " -> ";  // kmer string
+            for (auto const& idNeigh_minus1 : outNeighbors[x.second - 1]) {
+                auto position = idPosition[idNeigh_minus1]; // "idNeigh - 1" because we have kmers ID starting from 1
                 cout << sequence.substr(position, K) << " ";
             }
             cout << endl;
@@ -221,20 +225,128 @@ public:
         return path; // return a non-cyclic path
     }
 
+    Path greedyPathRev(const int64_t start, vector<bool>& visited, vector<bool>& running) {
+        Path path;
+        auto current = start;
+        path.push_back(current);
+        visited[current] = true;
+        running[current] = true;
+
+        // forward search
+        for (auto c : Alphabet) {
+            auto next = forward(current, c);
+            if (next == 0) continue;
+            if (!visited[next]) {
+                visited[next] = true;
+                running[next] = true;
+                path.push_back(next);
+                current = next;
+                continue;
+            }
+            if (!running[next]) continue;
+            for (auto v : path) {
+                running[v] = false;
+            }
+            auto itr = find(path.begin(), path.end(), next);
+            auto delete_before = distance(path.begin(), itr);
+            while (delete_before) {
+                visited[path[0]] = false;
+                path.pop_front();
+            }
+            path.push_back(0);
+            return path;
+        }
+        current = start;
+        // backward search
+        for (auto c : Alphabet) {
+            auto prev = backward(current, c);
+            if (prev == 0) continue;
+            if (!visited[prev]) {
+                visited[prev] = true;
+                running[prev] = true;
+                path.push_front(prev);
+                current = prev;
+                continue;
+            }
+            if (!running[prev]) continue;
+            for (auto v : path) {
+                running[v] = false;
+            }
+            auto itr = find(path.begin(), path.end(), prev);
+            auto delete_from = distance(path.begin(), itr);
+            auto path_size = path.size();
+            while (delete_from < path_size) {
+                visited[path[path.size() - 1]] = false;
+                path.pop_back();
+                delete_from++;
+            }
+            path.push_back(0);
+            return path;
+        }
+        countOpenNecklaces += 1;
+        for (auto v : path) {
+            visited[v] = false;
+        }
+        return path;
+    }
+
+    Path greedyPath2(const int64_t start, vector<bool>& visited, vector<bool>& running) {
+        Path path;
+        auto current = start;
+        path.push_back(current);
+        visited[current] = true;
+        running[current] = true;
+        uint8_t c_extend = 0;
+
+        for (int8_t i = 0; i < 4; i++) {
+            uint8_t c = Alphabet[i];
+            auto next = forward(current, c);
+            if (next == 0 || (visited[next] && !running[next])) { // "no edge to c" or "occupied by another path"
+                if (i < 3) continue; // go on the next char c
+                if (!c_extend) break; // proceed to backward search
+                next = forward(current, c_extend);
+                visited[next] = running[next] = true;
+                path.push_back(next);
+                current = next;
+                c_extend = 0;
+                continue;
+            }
+            else if (!visited[next] && !running[next]) { // when extendable
+                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
+                visited[next] = running[next] = true; // for the last alphabet, extend
+                path.push_back(next);
+                current = next;
+                c_extend = 0;
+                continue;
+            }
+            else {
+                for (auto id : path) {
+                    running[id] = false;
+                }
+                auto itr = find(path.begin(), path.end(), next);
+                auto delete_before = distance(path.begin(), itr);
+                while (delete_before) {
+                    visited[path[0]] = false;
+                    path.pop_front();
+                }
+                path.push_back(0);
+                return path;   
+            }                     
+        }
+    }
+
     Paths findPaths() {
         Paths paths;
-        bool visited[kmers.size()];
-        bool running[kmers.size()];
-        for (int64_t id = 0; id < kmers.size(); id++)
-        {
+        vector<bool> visited(kmers.size() + 1);
+        vector<bool> running(kmers.size() + 1);
+        for (int64_t id = 0; id <= kmers.size(); id++) {
             visited[id] = running[id] = false;
         }
 
         // Start greedy search from an unvisited node
-        for (int64_t id = 0; id < kmers.size(); id++)
-        {
+        for (int64_t id = 1; id <= kmers.size(); id++) {
             if (!visited[id]) {
-                Path path = greedyPath(id, visited, running);
+                Path path = greedyPathRev(id, visited, running);
                 paths.push_back(path);
             }
         }
