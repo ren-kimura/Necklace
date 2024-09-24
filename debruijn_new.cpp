@@ -81,7 +81,11 @@ public:
     }
 
     int64_t forward(int64_t id, uint8_t c){
+        if (id <= 0 || id > idPosition.size()) return 0;
+
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
+        if (position + K > sequence.size()) return 0;
+
         string suffix = sequence.substr(position + 1, K - 1); 
         auto next = suffix + static_cast<char>(c);
         if (kmers.find(next) != kmers.end()) // kmer exists
@@ -91,7 +95,11 @@ public:
     }
 
     int64_t backward(int64_t id, uint8_t c){
+        if (id <= 0 || id > idPosition.size()) return 0;
+
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
+        if (position + K > sequence.size()) return 0;
+
         string prefix = sequence.substr(position, K - 1);
         auto previous = static_cast<char>(c) + prefix;
         if (kmers.find(previous) != kmers.end()) // kmer exists
@@ -151,90 +159,118 @@ public:
         }
     }
 
+    // Greedy search for a cycle(if not, a path)
     Path greedyPath(const int64_t start, vector<bool>& visited, vector<bool>& running) {
         Path path;
         auto current = start;
         path.push_back(current);
         visited[current] = true;
         running[current] = true;
-        uint8_t c_extend = 0;
-
-        for (int i = 0; i < 4; i++) {
-            uint8_t c = Alphabet[i];
-            int64_t next = forward(current, c);
-            if (next == current) continue;
-            if (next && visited[next] && running[next]) {
-                for (auto id : path) {
-                    running[id] = false;
+        // stores the last scanned alphabet which leads to a next unvisited & non-running node.
+        uint8_t c_extend;
+        bool deadEnd = false;
+        
+        // forward search
+        while(!deadEnd) {
+            for (int i = 0; i < 4; i++) {
+                uint8_t c = Alphabet[i];
+                int64_t next = forward(current, c);
+                // rule out impossible edges such as "aaa" ->"aaa"
+                if (next == current) continue;            
+                // ------ CASE 1 (Found a cycle) ------
+                if (next && visited[next] && running[next]) {
+                    for (auto id : path) {
+                        running[id] = false; // inactivate all the elements in <path>
+                    }
+                    auto itr = find(path.begin(), path.end(), next);
+                    auto delete_before = distance(path.begin(), itr);
+                    while (delete_before--) { // mark those outside the cycle unvisited and erase them
+                        visited[path[0]] = false;
+                        path.pop_front();
+                    }
+                    path.push_back(0); // add 0 in the end meaning cycle
+                    return path; // return a cycle
                 }
-                auto itr = find(path.begin(), path.end(), next);
-                auto delete_before = distance(path.begin(), itr);
-                while (delete_before--) {
-                    visited[path[0]] = false;
-                    path.pop_front();
-                }
-                path.push_back(0);
-                return path;   
-            }             
-            else if (next && !visited[next] && !running[next]) { // when extendable
-                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
-                visited[next] = running[next] = true; // for the last alphabet, extend
-                path.push_back(next);
-                current = next;
-                c_extend = 0;
-            }     
-            else if (!next || (next && visited[next] && !running[next])) { // "no edge to c" or "occupied by another path"
-                if (i < 3) continue; // go on the next char c
-                if (!c_extend) break; // proceed to backward search
-                next = forward(current, c_extend);
-                visited[next] = running[next] = true;
-                path.push_back(next);
-                current = next;
-                c_extend = 0;
-            }       
+                // ------ CASE 2 (Found an extendable outneighbor) ------
+                else if (next && !visited[next] && !running[next]) {
+                    if(i < 3) {c_extend = c; continue;} // keep c & try other characters
+                    visited[next] = running[next] = true; // for the last alphabet, extend
+                    path.push_back(next);
+                    current = next;
+                    c_extend = 0;
+                } 
+                // ------ CASE 3 (No edge to <next> OR Occupied by another <path>) ------
+                else if (!next || (next && visited[next] && !running[next])) {
+                    if (i < 3) continue; // try another character
+                    if (!c_extend) {
+                        deadEnd = true;
+                        break; // proceed to backward search
+                    }
+                    // extend using <c_extend> found during i < 3
+                    next = forward(current, c_extend);
+                    visited[next] = running[next] = true;
+                    path.push_back(next);
+                    current = next;
+                    c_extend = 0;
+                }       
+            }
         }
+        // jump back to start and run backward search
+        deadEnd = false;
         current = start;
-        for (int i = 0; i < 4; i++) {
-            uint8_t c = Alphabet[i];
-            int64_t prev = backward(current, c);
-            if (prev == current) continue;
-            if (prev && visited[prev] && running[prev]){
-                for (auto id : path) {
-                    running[id] = false;
+        while (!deadEnd) {
+            for (int i = 0; i < 4; i++) {
+                uint8_t c = Alphabet[i];
+                int64_t prev = backward(current, c);
+                // rule out impossible edges such as "aaa" ->"aaa"
+                if (prev == current) continue;
+                // ------ CASE 4 (Found a cycle) ------
+                if (prev && visited[prev] && running[prev]){
+                    for (auto id : path) {
+                        running[id] = false; // inactivate all the elements in <path>
+                    }
+                    auto itr = find(path.begin(), path.end(), prev);
+                    auto delete_from = distance(path.begin(), itr);
+                    auto dlt = path.size() - delete_from - 1;
+                    while (dlt--) { // mark those outside the cycle unvisited and erase them
+                        visited[path[path.size() - 1]] = false;
+                        path.pop_back();
+                    }
+                    path.push_back(0); // add 0 in the end meaning cycle
+                    return path; // return a cycle
                 }
-                auto itr = find(path.begin(), path.end(), prev);
-                auto delete_from = distance(path.begin(), itr);
-                auto dlt = path.size() - delete_from - 1;
-                while (dlt--) {
-                    visited[path[path.size() - 1]] = false;
-                    path.pop_back();
+                // ------ CASE 5 (Found an extendable outneighbor) ------
+                else if (prev && !visited[prev] && !running[prev]) {
+                    if(i < 3) {c_extend = c; continue;} // keep c & try other characters
+                    visited[prev] = running[prev] = true; // for the last alphabet, extend
+                    path.push_front(prev);
+                    current = prev;
+                    c_extend = 0;
                 }
-                path.push_back(0);
-                return path;   
-            }
-            else if (prev && !visited[prev] && !running[prev]) { // when extendable
-                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
-                visited[prev] = running[prev] = true; // for the last alphabet, extend
-                path.push_front(prev);
-                current = prev;
-                c_extend = 0;
-            }
-            else if (!prev || (prev && visited[prev] && !running[prev])) { // "no edge to c" or "occupied by another path"
-                if (i < 3) continue; // go on the next char c
-                if (!c_extend) break; // proceed to the last part
-                prev = backward(current, c_extend);
-                visited[prev] = running[prev] = true;
-                path.push_front(prev);
-                current = prev;
-                c_extend = 0;
+                // ------ CASE 6 (No edge to <next> OR Occupied by another <path>) ------
+                else if (!prev || (prev && visited[prev] && !running[prev])) {
+                    if (i < 3) continue; // try another character
+                    if (!c_extend) {
+                        deadEnd = true;
+                        break; // found a non-cycle path
+                    }
+                    // extend using <c_extend> found during i < 3
+                    prev = backward(current, c_extend);
+                    visited[prev] = running[prev] = true;
+                    path.push_front(prev);
+                    current = prev;
+                    c_extend = 0;
+                }
             }
         }
+        
         if (path.size() > 2) countOpenNecklaces += 1;
-        else pdCands.insert(current); // here it is a len-1 path which means to be a pdCand
+        else pdCands.insert(current); // if len = 1, add to <pdCand>
         // update running[every kmer in the path] = false
         for (auto id : path) {
-            running[id] = false;
+            running[id] = false; // inactivate all the elements in <path>
         }
+        c_extend = 0;
         return path;
     }
 
