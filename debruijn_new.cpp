@@ -25,7 +25,8 @@ using Paths =  vector<deque<int64_t>>;
 
 class DeBruijnGraph {
 public:
-    int K;
+    string filename;
+    int64_t K;
     bool isNodeCentric; // node-centric or edge-centing dBG?
     vector<uint8_t> Alphabet = {'A', 'C', 'G', 'T'};
 
@@ -34,10 +35,10 @@ public:
     NodeId idPosition; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
     unordered_set<int64_t> pdCands;
 
-    int64_t makeEulerian = 0; // Number of edges to make Eulerian
-    int64_t countOpenNecklaces = 0; // Number of open necklaces;
+    int64_t makeEulerian = 0; // # edges to make ecdBG eulerian
+    int64_t countOpenNecklaces = 0; // # open necklaces
 
-    DeBruijnGraph(int _K, bool _isNodeCentric) : K(_K), isNodeCentric(_isNodeCentric)
+    DeBruijnGraph(string _filename, int64_t _K, bool _isNodeCentric) : filename(_filename), K(_K), isNodeCentric(_isNodeCentric)
     {};
 
     __inline void to_uppercase(string& str) {
@@ -45,7 +46,7 @@ public:
                     [](unsigned char c) { return toupper(c); });
     }
 
-    void getKmers(string filename) {
+    void getKmers() {
         // Read input DNA sequence in FASTA format .fa
         ifstream inputFile(filename);
         if (!inputFile) {
@@ -70,23 +71,19 @@ public:
             ), sequence.end());
 
         // Check every k-mer in "sequence"
-        for (int i = 0; i < sequence.length() - K; i++){
+        for (int64_t i = 0; i < (int64_t)(sequence.length() - K + 1); i++){
             auto kmer = sequence.substr(i, K);
             if (kmers.find(kmer) == kmers.end()){ // newly found kmer
-                kmers[kmer] = idPosition.size() + 1; // "+ 1" because we want kmers ID starting from 1 to N
                 idPosition.push_back(i);
+                kmers[kmer] = idPosition.size();
             }
-        }
-
-        for (auto const &x : kmers) {
-            cout << x.second << ": " << x.first << " at position " << idPosition[x.second - 1] << endl;
         }
     }
 
     int64_t forward(int64_t id, uint8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
         string suffix = sequence.substr(position + 1, K - 1); 
-        auto next = suffix + char(c);
+        auto next = suffix + static_cast<char>(c);
         if (kmers.find(next) != kmers.end()) // kmer exists
             return kmers[next];
         else 
@@ -96,7 +93,7 @@ public:
     int64_t backward(int64_t id, uint8_t c){
         auto position = idPosition[id - 1]; // "id - 1" because we have kmers ID starting from 1
         string prefix = sequence.substr(position, K - 1);
-        auto previous = char(c) + prefix;
+        auto previous = static_cast<char>(c) + prefix;
         if (kmers.find(previous) != kmers.end()) // kmer exists
             return kmers[previous];
         else
@@ -109,7 +106,7 @@ public:
     AdjList inNeighbors;
     
     // Construct node-centric De Bruijn Graph from the given UPPERCASE k-mer sets
-    void buildNodeCentricGraph( ){ 
+    void buildGraph(){ 
         outNeighbors.resize(kmers.size());
         inNeighbors.resize(kmers.size());
         // Map current node to next nodes
@@ -120,7 +117,10 @@ public:
 
             auto kmerSuffix = sequence.substr(position + 1, K - 1); // k-mer's last (k-1) letters
             for (auto& c : Alphabet){
-                auto next = kmerSuffix + char(c);
+                auto next = kmerSuffix + static_cast<char>(c);
+                // rule out edges of k-mers not occuring in sequence (Edge centric)
+                if (!isNodeCentric && sequence.find(kmer + static_cast<char>(c)) == string::npos) continue;
+
                 if (kmers.find(next) != kmers.end()) { // kmer exists, so its node
                     auto nextid = kmers[next];
                     outNeighbors[id - 1].push_back(nextid - 1);
@@ -128,11 +128,17 @@ public:
                 }       
             }
         }
+        
+        // count #unbalanced edges(indegree != outdegree) in edge centric dBG
+        if (!isNodeCentric) {
+            for (auto const &x: kmers) {
+                auto id = x.second;
+                int64_t outMinusIn = outNeighbors[id - 1].size() - inNeighbors[id - 1].size();
+                if (outMinusIn > 0) makeEulerian += outMinusIn;
+            }
+        }
     }
-
-    void buildEdgeCentricGraph(const string S, const Kmers& kmers, const NodeId& idPos) {  // Rough invariant: kmers.first == S.substr(kmers.second - 1, k)
-    }
-
+       
     // Display the graph
     void printGraph() {
         for (auto const &x : kmers) { 
@@ -145,153 +151,7 @@ public:
         }
     }
 
-    Path greedyPath(const int64_t start, bool visited[], bool running[]){  // to be initialized as visited = running = { false }
-        Path path;
-        auto current = start;
-        path.push_back(current);
-        visited[current] = true;
-        running[current] = true;
-        
-        // [suggestion] from current, how to choose the best neighbor: 
-        // - first choice is to get a cycle
-        // - second choice is to extend the path
-        // - third choice is CASE 1 when neither of the first two choices above occur
-
-        // forward search
-        int64_t i = 0;
-        while (i < Alphabet.size())
-        {
-            auto c = Alphabet[i];
-            auto next = forward(current, c);
-            if(next == 0) continue; // skip if there isn't an edge from current to next
-            if(visited[next]){
-                if(!running[next]) break; // break if it is not a cycle (------CASE 1------)
-                // when found a cycle (------CASE 2------)
-                for (auto kmerId : path) { // update running[every kmer in the path] = false
-                    running[kmerId] = false;
-                }
-                auto itr = find(path.begin(), path.end(), next);
-                auto delete_before = distance(path.begin(), itr);
-                while (delete_before--) { // update visited[kmers outside the cycle] = false, and erase them
-                    visited[path.front()] = false;
-                    path.pop_front();
-                }
-                path.push_back(0); // add zero meaning cycle in the end of the path 
-                return path; // return a cycle
-            }
-            // when next is not visited (------CASE 3------)
-            visited[next] = true;
-            running[next] = true;
-            path.push_back(next);
-            current = next;
-            i = 0; // need this to restart the scan of the neighbors of the new current
-        }
-        // jump current back to start
-        current = start;
-        // backward search
-        i = 0;
-        while (i < Alphabet.size())
-        {
-            auto c = Alphabet[i];
-            auto previous = backward(current, c);
-            if(previous == 0) continue; // skip if there isn't an edge from current to previous
-            if(visited[previous]){
-                if(!running[previous]) break; // break if it is not a cycle (------CASE 4------)
-                // when found a cycle (------CASE 5------)
-                for (auto kmer : path) { // update running[every kmer in the path] = false
-                    running[kmer] = false;
-                }
-                auto itr = find(path.begin(), path.end(), previous);
-                auto delete_before = distance(path.begin(), itr);
-                auto delete_from = path.size() - delete_before; // how many k-mers do we delete
-                while (delete_from--) { // update visited[kmers outside the cycle] = false, and erase them
-                    visited[path.back()] = false;
-                    path.pop_back();
-                }
-                path.push_back(0); // add zero meaning cycle in the end of the path 
-                return path; // return a cycle
-            }
-            // when previous is not visited (------CASE 6------)
-            visited[previous] = true;
-            running[previous] = true;
-            path.push_front(previous);
-            current = previous;
-            i = 0; // need this to restart the scan of the neighbors of the new current
-        }
-        countOpenNecklaces += 1;
-        // update running[every kmer in the path] = false
-        for (auto kmer : path) {
-            running[kmer] = false;
-        } 
-        return path; // return a non-cyclic path
-    }
-
-    Path greedyPathRev(const int64_t start, vector<bool>& visited, vector<bool>& running) {
-        Path path;
-        auto current = start;
-        path.push_back(current);
-        visited[current] = true;
-        running[current] = true;
-
-        // forward search
-        for (auto c : Alphabet) {
-            auto next = forward(current, c);
-            if (next == 0) continue;
-            if (!visited[next]) {
-                visited[next] = true;
-                running[next] = true;
-                path.push_back(next);
-                current = next;
-                continue;
-            }
-            if (!running[next]) continue;
-            for (auto v : path) {
-                running[v] = false;
-            }
-            auto itr = find(path.begin(), path.end(), next);
-            auto delete_before = distance(path.begin(), itr);
-            while (delete_before) {
-                visited[path[0]] = false;
-                path.pop_front();
-            }
-            path.push_back(0);
-            return path;
-        }
-        current = start;
-        // backward search
-        for (auto c : Alphabet) {
-            auto prev = backward(current, c);
-            if (prev == 0) continue;
-            if (!visited[prev]) {
-                visited[prev] = true;
-                running[prev] = true;
-                path.push_front(prev);
-                current = prev;
-                continue;
-            }
-            if (!running[prev]) continue;
-            for (auto v : path) {
-                running[v] = false;
-            }
-            auto itr = find(path.begin(), path.end(), prev);
-            auto delete_from = distance(path.begin(), itr);
-            auto path_size = path.size();
-            while (delete_from < path_size) {
-                visited[path[path.size() - 1]] = false;
-                path.pop_back();
-                delete_from++;
-            }
-            path.push_back(0);
-            return path;
-        }
-        countOpenNecklaces += 1;
-        for (auto v : path) {
-            visited[v] = false;
-        }
-        return path;
-    }
-
-    Path greedyPath2(const int64_t start, vector<bool>& visited, vector<bool>& running) {
+    Path greedyPath(const int64_t start, vector<bool>& visited, vector<bool>& running) {
         Path path;
         auto current = start;
         path.push_back(current);
@@ -299,9 +159,10 @@ public:
         running[current] = true;
         uint8_t c_extend = 0;
 
-        for (int8_t i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++) {
             uint8_t c = Alphabet[i];
             int64_t next = forward(current, c);
+            if (next == current) continue;
             if (next && visited[next] && running[next]) {
                 for (auto id : path) {
                     running[id] = false;
@@ -333,9 +194,10 @@ public:
             }       
         }
         current = start;
-        for (int8_t i = 0; i < 4; i++) {
+        for (int i = 0; i < 4; i++) {
             uint8_t c = Alphabet[i];
             int64_t prev = backward(current, c);
+            if (prev == current) continue;
             if (prev && visited[prev] && running[prev]){
                 for (auto id : path) {
                     running[id] = false;
@@ -382,31 +244,28 @@ public:
         vector<bool> running(kmers.size() + 1);
 
         // Start greedy search from an unvisited node
-        for (auto const x : kmers) {
+        for (auto const &x : kmers) {
             auto id = x.second;
             if (!visited[id]) {
-                Path path = greedyPath2(id, visited, running);
+                Path path = greedyPath(id, visited, running);
                 if (path.size() > 1) // not adding pdCand to paths
                     paths.push_back(path);
             }
         }
 
-        // [suggestion] maybe you can decide in the loop below where to attach isolated kmers (instead of having attachPendants() )
-
         // attach pendants
-        for (auto& path : paths) {
-            for (auto& id : path) {
+        for (auto &path : paths) {
+            for (auto &id : path) {
                 if (id <= 0) continue;
                 for (auto const &c : Alphabet) {
                     auto next = forward(id, c);
-                    if (next == 0) continue;
-                    if (pdCands.find(next) != pdCands.end()) {
-                        auto it = find(path.begin(), path.end(), id);
-                        if (it != path.end()) {
-                            path.insert(it + 1, -next);
-                            pdCands.erase(next);
-                        }
-                    }
+                    if (next == 0 || next == id) continue;
+                    if (pdCands.find(next) == pdCands.end()) continue;
+                    auto it = find(path.begin(), path.end(), id);
+                    if (it != path.end()) {
+                        path.insert(it + 1, -next);
+                        pdCands.erase(next);
+                    }                    
                 }
             }
         }
@@ -445,35 +304,40 @@ public:
              << " necklaces in total!\n" 
              << "\"*\" at the end means it is a cycle.\n"
              << "\"+(k-mer)\" are pendants." << endl;
-
-        if (kmers_covered == kmers.size()) {
+        
+        int64_t uncovered = kmers.size() - kmers_covered; 
+        if (!uncovered) {
             cout << "Successfully covered all kmers!" << endl;
         }
         else {
-            cout << "There are " << kmers.size() - kmers_covered << " nodes uncovered..." << endl;
+            cout << "There are " << uncovered << " nodes uncovered..." << endl;
         }
-
         cout << endl;
-        cout << string(60, '-') << endl;
-        cout << "# Edges to add to make Eulerian: " << makeEulerian << endl;
-        cout << "# Open necklaces: " << countOpenNecklaces << endl;
-        cout << string(60, '-') << endl;
     }
 };
 
 int main() {
     // Construct a vector of k-mers from an input FASTA file(.fa).
+    string _filename;
     int64_t _K;
-    string filename;
     cout << "Input file: ";
-    cin >> filename;
+    cin >> _filename;
     cout << "Set K to : ";
     cin >> _K;
+    cout << endl;
     
+    // Construct and show the edge-centric De Bruijn Graph
+    DeBruijnGraph ecdbg = DeBruijnGraph(_filename, _K - 1, false);
+    ecdbg.getKmers();
+    ecdbg.buildGraph();
+    cout << "Edge-centric De Bruijn Graph:" << endl;
+    ecdbg.printGraph();
+    cout << endl;
+
     // Construct and show the node-centric De Bruijn Graph
-    DeBruijnGraph ncdbg = DeBruijnGraph(_K, true);
-    ncdbg.getKmers(filename);
-    ncdbg.buildNodeCentricGraph();
+    DeBruijnGraph ncdbg = DeBruijnGraph(_filename , _K, true);
+    ncdbg.getKmers();
+    ncdbg.buildGraph();
     cout << "Node-centric De Bruijn Graph:" << endl;
     ncdbg.printGraph();
     cout << endl;
@@ -483,6 +347,11 @@ int main() {
 
     // Output a necklace cover and a comparison with Eulertigs
     ncdbg.printResult(paths);
+
+    cout << string(60, '-') << endl;
+    cout << "# Edges to add to make Eulerian: " << ecdbg.makeEulerian << endl;
+    cout << "# Open necklaces: " << ncdbg.countOpenNecklaces << endl;
+    cout << string(60, '-') << endl;
 
     return 0;
 }
