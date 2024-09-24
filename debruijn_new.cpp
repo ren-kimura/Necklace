@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <set>
 #include <algorithm>
 #include <deque>
@@ -30,8 +31,8 @@ public:
 
     string sequence;  // To store the concatenated sequence
     Kmers kmers;  // pair <kmer string of length k, its unique ID in 1..N>, where N = #distinct kmers in sequence
-    Kmers pdCands; // hash table: candidates of pendants <=> length-1 found paths
     NodeId idPosition; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
+    unordered_set<int64_t> pdCands;
 
     int64_t makeEulerian = 0; // Number of edges to make Eulerian
     int64_t countOpenNecklaces = 0; // Number of open necklaces;
@@ -300,26 +301,8 @@ public:
 
         for (int8_t i = 0; i < 4; i++) {
             uint8_t c = Alphabet[i];
-            auto next = forward(current, c);
-            if (next == 0 || (visited[next] && !running[next])) { // "no edge to c" or "occupied by another path"
-                if (i < 3) continue; // go on the next char c
-                if (!c_extend) break; // proceed to backward search
-                next = forward(current, c_extend);
-                visited[next] = running[next] = true;
-                path.push_back(next);
-                current = next;
-                c_extend = 0;
-                continue;
-            }
-            else if (!visited[next] && !running[next]) { // when extendable
-                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
-                visited[next] = running[next] = true; // for the last alphabet, extend
-                path.push_back(next);
-                current = next;
-                c_extend = 0;
-                continue;
-            }
-            else {
+            int64_t next = forward(current, c);
+            if (next && visited[next] && running[next]) {
                 for (auto id : path) {
                     running[id] = false;
                 }
@@ -331,31 +314,29 @@ public:
                 }
                 path.push_back(0);
                 return path;   
-            }                     
+            }             
+            else if (next && !visited[next] && !running[next]) { // when extendable
+                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
+                visited[next] = running[next] = true; // for the last alphabet, extend
+                path.push_back(next);
+                current = next;
+                c_extend = 0;
+            }     
+            else if (!next || (next && visited[next] && !running[next])) { // "no edge to c" or "occupied by another path"
+                if (i < 3) continue; // go on the next char c
+                if (!c_extend) break; // proceed to backward search
+                next = forward(current, c_extend);
+                visited[next] = running[next] = true;
+                path.push_back(next);
+                current = next;
+                c_extend = 0;
+            }       
         }
         current = start;
         for (int8_t i = 0; i < 4; i++) {
             uint8_t c = Alphabet[i];
-            auto prev = backward(current, c);
-            if (prev == 0 || (visited[prev] && !running[prev])) { // "no edge to c" or "occupied by another path"
-                if (i < 3) continue; // go on the next char c
-                if (!c_extend) break; // proceed to the last part
-                prev = backward(current, c_extend);
-                visited[prev] = running[prev] = true;
-                path.push_front(prev);
-                current = prev;
-                c_extend = 0;
-                continue;
-            }
-            else if (!visited[prev] && !running[prev]) { // when extendable
-                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
-                visited[prev] = running[prev] = true; // for the last alphabet, extend
-                path.push_front(prev);
-                current = prev;
-                c_extend = 0;
-                continue;
-            }
-            else {
+            int64_t prev = backward(current, c);
+            if (prev && visited[prev] && running[prev]){
                 for (auto id : path) {
                     running[id] = false;
                 }
@@ -369,9 +350,25 @@ public:
                 path.push_back(0);
                 return path;   
             }
+            else if (prev && !visited[prev] && !running[prev]) { // when extendable
+                if(i < 3) {c_extend = c; continue;} // keep c & pend an extension
+                visited[prev] = running[prev] = true; // for the last alphabet, extend
+                path.push_front(prev);
+                current = prev;
+                c_extend = 0;
+            }
+            else if (!prev || (prev && visited[prev] && !running[prev])) { // "no edge to c" or "occupied by another path"
+                if (i < 3) continue; // go on the next char c
+                if (!c_extend) break; // proceed to the last part
+                prev = backward(current, c_extend);
+                visited[prev] = running[prev] = true;
+                path.push_front(prev);
+                current = prev;
+                c_extend = 0;
+            }
         }
         if (path.size() > 2) countOpenNecklaces += 1;
-        else pdCands[sequence.substr(idPosition[current - 1], K)] = current; // here it is a len-1 path which means to be a pdCand
+        else pdCands.insert(current); // here it is a len-1 path which means to be a pdCand
         // update running[every kmer in the path] = false
         for (auto id : path) {
             running[id] = false;
@@ -383,15 +380,13 @@ public:
         Paths paths;
         vector<bool> visited(kmers.size() + 1);
         vector<bool> running(kmers.size() + 1);
-        for (int64_t id = 0; id <= kmers.size(); id++) {
-            visited[id] = running[id] = false;
-        }
 
         // Start greedy search from an unvisited node
-        for (int64_t id = 1; id <= kmers.size(); id++) {
+        for (auto const x : kmers) {
+            auto id = x.second;
             if (!visited[id]) {
                 Path path = greedyPath2(id, visited, running);
-                if (path.size() > 2) // not adding pdCand to paths
+                if (path.size() > 1) // not adding pdCand to paths
                     paths.push_back(path);
             }
         }
@@ -405,12 +400,11 @@ public:
                 for (auto const &c : Alphabet) {
                     auto next = forward(id, c);
                     if (next == 0) continue;
-                    auto nextKmer = sequence.substr(idPosition[next - 1], K);
-                    if (pdCands.find(nextKmer) != pdCands.end()) {
+                    if (pdCands.find(next) != pdCands.end()) {
                         auto it = find(path.begin(), path.end(), id);
                         if (it != path.end()) {
                             path.insert(it + 1, -next);
-                            pdCands.erase(nextKmer);
+                            pdCands.erase(next);
                         }
                     }
                 }
