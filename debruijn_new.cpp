@@ -88,7 +88,7 @@ public:
 
         string suffix = sequence.substr(position + 1, K - 1); 
         auto next = suffix + static_cast<char>(c);
-        if (kmers.find(next) != kmers.end()) // kmer exists
+        if (kmers.find(next) != kmers.end() && kmers[next] != id) // kmer exists AND not current
             return kmers[next];
         else 
             return 0; // no outgoing branching exists for c
@@ -102,7 +102,7 @@ public:
 
         string prefix = sequence.substr(position, K - 1);
         auto previous = static_cast<char>(c) + prefix;
-        if (kmers.find(previous) != kmers.end()) // kmer exists
+        if (kmers.find(previous) != kmers.end() && kmers[previous] != id) // kmer exists AND not current
             return kmers[previous];
         else
             return 0; // no incoming branching exists for c
@@ -131,6 +131,7 @@ public:
 
                 if (kmers.find(next) != kmers.end()) { // kmer exists, so its node
                     auto nextid = kmers[next];
+                    if (nextid == id) continue;
                     outNeighbors[id - 1].push_back(nextid - 1);
                     inNeighbors[nextid - 1].push_back(id - 1);
                 }       
@@ -173,7 +174,6 @@ public:
             for (int i = 0; i < 4; i++) {
                 uint8_t c = Alphabet[i];
                 int64_t next = forward(current, c);
-                if (next == current) continue;  // Avoid self-loop
 
                 // ------ CASE 1 (Found a cycle) ------
                 if (next && visited[next] && running[next]) {
@@ -214,7 +214,6 @@ public:
             for (int i = 0; i < 4; i++) {
                 uint8_t c = Alphabet[i];
                 int64_t prev = backward(current, c);
-                if (prev == current) continue;  // Avoid self-loop
 
                 // ------ CASE 4 (Found a cycle) ------
                 if (prev && visited[prev] && running[prev]) {
@@ -250,7 +249,7 @@ public:
         }
 
         // Handle open necklaces or pendant candidates
-        if (path.size() > 2) {
+        if (path.size() > 1) {
             countOpenNecklaces += 1;
         } else {
             pdCands.insert(current);
@@ -272,7 +271,7 @@ public:
         // Start greedy search from an unvisited node
         for (auto const &x : kmers) {
             auto id = x.second;
-            if (!visited[id]) {
+            while (!visited[id]) {
                 Path path = greedyPath(id, visited, running);
                 if (path.size() > 1) // not adding pdCand to paths
                     paths.push_back(path);
