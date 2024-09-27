@@ -159,118 +159,108 @@ public:
         }
     }
 
-    // Greedy search for a cycle(if not, a path)
     Path greedyPath(const int64_t start, vector<bool>& visited, vector<bool>& running) {
         Path path;
         auto current = start;
         path.push_back(current);
         visited[current] = true;
         running[current] = true;
-        // stores the last scanned alphabet which leads to a next unvisited & non-running node.
-        uint8_t c_extend;
+        uint8_t c_extend = 0;  // Stores the last scanned character that can extend to a valid neighbor
         bool deadEnd = false;
-        
-        // forward search
-        while(!deadEnd) {
+
+        // Forward search
+        while (!deadEnd) {
             for (int i = 0; i < 4; i++) {
                 uint8_t c = Alphabet[i];
                 int64_t next = forward(current, c);
-                // rule out impossible edges such as "aaa" ->"aaa"
-                if (next == current) continue;            
+                if (next == current) continue;  // Avoid self-loop
+
                 // ------ CASE 1 (Found a cycle) ------
                 if (next && visited[next] && running[next]) {
                     for (auto id : path) {
-                        running[id] = false; // inactivate all the elements in <path>
+                        running[id] = false;  // Inactivate all elements in the path
                     }
                     auto itr = find(path.begin(), path.end(), next);
                     auto delete_before = distance(path.begin(), itr);
-                    while (delete_before--) { // mark those outside the cycle unvisited and erase them
+                    while (delete_before--) {  // Mark nodes outside the cycle as unvisited and remove them
                         visited[path[0]] = false;
                         path.pop_front();
                     }
-                    path.push_back(0); // add 0 in the end meaning cycle
-                    return path; // return a cycle
+                    path.push_back(0);  // Add 0 at the end, indicating a cycle
+                    return path;
                 }
-                // ------ CASE 2 (Found an extendable outneighbor) ------
-                else if (next && !visited[next] && !running[next]) {
-                    if(i < 3) {c_extend = c; continue;} // keep c & try other characters
-                    visited[next] = running[next] = true; // for the last alphabet, extend
-                    path.push_back(next);
-                    current = next;
-                    c_extend = 0;
-                } 
-                // ------ CASE 3 (No edge to <next> OR Occupied by another <path>) ------
-                else if (!next || (next && visited[next] && !running[next])) {
-                    if (i < 3) continue; // try another character
-                    if (!c_extend) {
-                        deadEnd = true;
-                        break; // proceed to backward search
-                    }
-                    // extend using <c_extend> found during i < 3
-                    next = forward(current, c_extend);
-                    visited[next] = running[next] = true;
-                    path.push_back(next);
-                    current = next;
-                    c_extend = 0;
-                }       
+                
+                // ------ CASE 2 (Found an extendable neighbor) ------
+                else if (next && !visited[next] && !running[next])
+                    c_extend = c;
+            }
+
+            // ------ CASE 3 (Extendable with Alphabet[0:2] or facing a dead end) ------
+            if (!c_extend) {
+                deadEnd = true;  // If no further extensions, continue on backward search
+            } else {
+                int64_t next = forward(current, c_extend);
+                visited[next] = running[next] = true;
+                path.push_back(next);
+                current = next;
+                c_extend = 0;
             }
         }
-        // jump back to start and run backward search
+
+        // Backward search
         deadEnd = false;
         current = start;
         while (!deadEnd) {
             for (int i = 0; i < 4; i++) {
                 uint8_t c = Alphabet[i];
                 int64_t prev = backward(current, c);
-                // rule out impossible edges such as "aaa" ->"aaa"
-                if (prev == current) continue;
+                if (prev == current) continue;  // Avoid self-loop
+
                 // ------ CASE 4 (Found a cycle) ------
-                if (prev && visited[prev] && running[prev]){
+                if (prev && visited[prev] && running[prev]) {
                     for (auto id : path) {
-                        running[id] = false; // inactivate all the elements in <path>
+                        running[id] = false;  // Inactivate all elements in the path
                     }
                     auto itr = find(path.begin(), path.end(), prev);
                     auto delete_from = distance(path.begin(), itr);
                     auto dlt = path.size() - delete_from - 1;
-                    while (dlt--) { // mark those outside the cycle unvisited and erase them
+                    while (dlt--) {  // Mark nodes outside the cycle as unvisited and remove them
                         visited[path[path.size() - 1]] = false;
                         path.pop_back();
                     }
-                    path.push_back(0); // add 0 in the end meaning cycle
-                    return path; // return a cycle
+                    path.push_back(0);  // Add 0 at the end, indicating a cycle
+                    return path;
                 }
-                // ------ CASE 5 (Found an extendable outneighbor) ------
+                // ------ CASE 5 (Found an extendable neighbor) ------
                 else if (prev && !visited[prev] && !running[prev]) {
-                    if(i < 3) {c_extend = c; continue;} // keep c & try other characters
-                    visited[prev] = running[prev] = true; // for the last alphabet, extend
-                    path.push_front(prev);
-                    current = prev;
-                    c_extend = 0;
-                }
-                // ------ CASE 6 (No edge to <next> OR Occupied by another <path>) ------
-                else if (!prev || (prev && visited[prev] && !running[prev])) {
-                    if (i < 3) continue; // try another character
-                    if (!c_extend) {
-                        deadEnd = true;
-                        break; // found a non-cycle path
-                    }
-                    // extend using <c_extend> found during i < 3
-                    prev = backward(current, c_extend);
-                    visited[prev] = running[prev] = true;
-                    path.push_front(prev);
-                    current = prev;
-                    c_extend = 0;
+                    c_extend = c;
                 }
             }
+
+            // ------ CASE 3 (Extendable with Alphabet[0:2] or facing a dead end) ------
+            if (!c_extend) {
+                deadEnd = true;  // Path found
+            } else {
+                int64_t prev = backward(current, c_extend);
+                visited[prev] = running[prev] = true;
+                path.push_front(prev);
+                current = prev;
+                c_extend = 0;
+            }
         }
-        
-        if (path.size() > 2) countOpenNecklaces += 1;
-        else pdCands.insert(current); // if len = 1, add to <pdCand>
-        // update running[every kmer in the path] = false
+
+        // Handle open necklaces or pendant candidates
+        if (path.size() > 2) {
+            countOpenNecklaces += 1;
+        } else {
+            pdCands.insert(current);
+        }
+
+        // Deactivate all elements in the path
         for (auto id : path) {
-            running[id] = false; // inactivate all the elements in <path>
+            running[id] = false;
         }
-        c_extend = 0;
+
         return path;
     }
 
@@ -305,17 +295,11 @@ public:
                 }
             }
         }
+
         return paths;
     }
 
     void printResult(const Paths& paths) {
-        for (auto const& path : paths) {
-            for (auto const& id : path) {
-                cout << id << " ";
-            }
-            cout << endl;
-        }
-
         int64_t kmers_covered = 0;
         int64_t count = 1;
         for (auto const& path : paths) {
