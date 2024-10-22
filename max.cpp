@@ -195,6 +195,7 @@ public:
             cout << u << " >>> " << match_u[u] << endl;
         }
         cout << "Size: " << matching_size << endl;
+        cout << endl;
 
         // represent
         rep = "$";
@@ -204,8 +205,7 @@ public:
         vector<bool> visited(kmers.size(), false);
 
         // start from u = 0
-        for (auto const& entry: kmers) {
-            auto u = entry.second;
+        for (INT u = 0; u < kmers.size(); u++) {
             if (visited[u]) continue; // skip if already covered
             while (!visited[u] && u != -1) {
                 track.push_back(u);
@@ -250,25 +250,16 @@ int main() {
     DeBruijnGraph ncdbg = DeBruijnGraph(_filename, _K, true);
     ncdbg.getKmers();
     ncdbg.addEdges();
-    // cout << "Node-centric De Bruijn Graph:" << endl;
-    // ncdbg.printGraph();
-    // cout << endl;
-
-    // for debugging
-    for (INT u = 0; u < ncdbg.kmers.size(); ++u) {
-        cout << "(" << u << ") " << ncdbg.sq.substr(ncdbg.idPos[u], ncdbg.K) << " >>> ";
-        for (auto const v : ncdbg.adj[u]) {
-            cout << "(" << v << ") " << ncdbg.sq.substr(ncdbg.idPos[v], ncdbg.K) << " ";
-        }
-        cout << endl;
-    }
+    cout << "Node-centric De Bruijn Graph:" << endl;
+    ncdbg.printGraph();
+    cout << endl;
 
     ncdbg.hopcroft_karp();
     cout << "Processed sequence: " << endl;
     cout << ncdbg.rep << endl;
     cout << "Pointer array: " << endl;
     for (INT i = 0; i < ncdbg.pointer.size(); ++i) {
-        cout << "<" << ncdbg.pointer[i].first << ", " << ncdbg.pointer[i].second << "> ";
+        cout << "(" << ncdbg.pointer[i].first << ", " << ncdbg.pointer[i].second << ") ";
     }
 
     return 0;
