@@ -204,6 +204,11 @@ public:
         VecInt pointee;
         vector<bool> visited(kmers.size(), false);
 
+        if (match_v[0] == -1) {
+            rep += "$" + sq.substr(0, K - 1);
+            pointer.push_back(make_pair(1, 1));
+        }
+
         // start from u = 0
         for (INT u = 0; u < kmers.size(); u++) {
             if (visited[u]) continue; // skip if already covered
@@ -215,7 +220,7 @@ public:
                 u = match_u[u];
             }
             rep += "$"; // separator
-            if (u == -1)
+            if (u == -1 && track[0] != 0)
                 pointee.push_back(track[0]); // store the first element of track to pointee
             track.clear();
         }
