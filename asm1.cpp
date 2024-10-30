@@ -30,7 +30,7 @@ public:
     Parent parent;
 
     Bipartite(Vertex _u, Vertex _v, Edge _edges) 
-        : size_u(_u), size_v(_v), edges(_edges), parent(size_u, nullopt) {};
+        : size_u(_u), size_v(_v), edges(_edges), parent(size_u + size_v, nullopt) {};
 
     Edge asm1() {
         Edge m;
@@ -66,8 +66,10 @@ public:
 
                 // Update parents and add neighbors to the queue
                 for (const auto& neigh : neighs) {
-                    parent[neigh] = w;
-                    q.push(neigh);
+                    if (!parent[neigh].has_value()) {
+                        parent[neigh] = w;
+                        q.push(neigh);
+                    }
                 }
             }
 
@@ -76,6 +78,9 @@ public:
                 Vertex v = *bestV;
                 Vertex u = parent[v].value();
 
+                // Debug output for matching process
+                cout << "Matching vertex " << i << " to " << v << endl;
+
                 m.emplace(u, v);
                 while (u != i && u != -1) {
                     v = parent[u].value();
@@ -83,6 +88,8 @@ public:
                     u = parent[v].value();
                     m.emplace(u, v);
                 }
+            } else {
+                cout << "No match found for vertex " << i << endl;  // Debug output for unmatched case
             }
         }
         return m;
@@ -90,29 +97,41 @@ public:
 
     Vertices neighbors(const Edge& m, Vertex w, bool isWantMatched) {
         Vertices neighs;
-        for (Vertex u = 0; u < size_u; u++) {
-            if (edges.find(make_pair(u, w)) == edges.end()) continue;
-
-            // Check if vertex u is matched
-            bool isMatched = false;
+        // wが左側の頂点か右側の頂点かによって処理を分岐
+        if (w < size_u) {  // 左側の頂点の場合
             for (Vertex v = 0; v < size_v; v++) {
-                if (m.find(make_pair(u, v)) != m.end()) {
-                    isMatched = true;
-                    break;
+                if (edges.find(make_pair(w, v)) != edges.end()) {
+                    // マッチングされていない頂点を探す
+                    bool isMatched = m.find(make_pair(w, v)) != m.end();
+                    if ((isMatched && isWantMatched) || (!isMatched && !isWantMatched)) {
+                        neighs.insert(v);
+                    }
                 }
             }
-
-            if ((isMatched && isWantMatched) || (!isMatched && !isWantMatched)) {
-                neighs.insert(u);
+        } else {  // 右側の頂点の場合
+            for (Vertex u = 0; u < size_u; u++) {
+                if (edges.find(make_pair(u, w)) != edges.end()) {
+                    bool isMatched = false;
+                    for (const auto& edge : m) {
+                        if (edge.first == u && edge.second == w) {
+                            isMatched = true;
+                            break;
+                        }
+                    }
+                    if ((isMatched && isWantMatched) || (!isMatched && !isWantMatched)) {
+                        neighs.insert(u);
+                    }
+                }
             }
         }
         return neighs;
     }
 
+
     uint64_t degM(const Edge& m, Vertex w) {
         uint64_t count = 0;
         for (const auto& edge : m) {
-            if (edge.second == w) {
+            if (edge.second == w) {  // wが右側の頂点の場合
                 count++;
             }
         }
@@ -120,6 +139,11 @@ public:
     }
 
     void print(const Edge& m) {
+        if (m.empty()) {
+            cout << "No matching found" << endl; // Debug output when no matching exists
+            return;
+        }
+
         for (const auto& edge : m) {
             cout << "(" << edge.first << ", " << edge.second << ")" << endl;
         }
