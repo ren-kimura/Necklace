@@ -199,7 +199,6 @@ public:
 
         // represent
         rep = "$";
-        VecInt track; // current track
         VecInt rep_pos(kmers.size(), -1); // rep_pos[v] = position of kmer (id == v) in rep
         VecInt pointee;
         vector<bool> visited(kmers.size(), false);
@@ -212,17 +211,16 @@ public:
         // start from u = 0
         for (INT u = 0; u < kmers.size(); u++) {
             if (visited[u]) continue; // skip if already covered
+            auto head = u;
             while (!visited[u] && u != -1) {
-                track.push_back(u);
                 rep += sq[idPos[u] + K - 1];
                 rep_pos[u] = rep.length() - 1;
                 visited[u] = true;
                 u = match_u[u];
             }
             rep += "$"; // separator
-            if (u == -1 && track[0] != 0)
-                pointee.push_back(track[0]); // store the first element of track to pointee
-            track.clear();
+            if (u == -1 && head)
+                pointee.push_back(head); // store the first element of track to pointee
         }
 
         for (auto const &u : pointee) {
@@ -266,6 +264,7 @@ int main() {
     for (INT i = 0; i < ncdbg.pointer.size(); ++i) {
         cout << "(" << ncdbg.pointer[i].first << ", " << ncdbg.pointer[i].second << ") ";
     }
+    cout << endl;
 
     return 0;
 }
