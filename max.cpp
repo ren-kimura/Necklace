@@ -2,6 +2,8 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <tuple> // sada
+#include <array> // sada
 #include <unordered_map>
 #include <algorithm>
 #include <queue>
