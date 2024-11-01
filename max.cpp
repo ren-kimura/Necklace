@@ -194,7 +194,7 @@ public:
         // for debugging
         cout << "Maximum matching: " << endl;
         for (INT u = 0; u < n; ++u) {
-            cout << u << " >>> " << match_u[u] << endl;
+//            cout << u << " >>> " << match_u[u] << endl;
         }
         cout << "Size: " << matching_size << endl;
         cout << endl;
@@ -214,14 +214,15 @@ public:
         for (INT u = 0; u < kmers.size(); u++) {
             if (visited[u]) continue; // skip if already covered
             auto head = u;
-            while (!visited[u] && u != -1) {
-                rep += sq[idPos[u] + K - 1];
-                rep_pos[u] = rep.length() - 1;
-                visited[u] = true;
-                u = match_u[u];
+            auto utmp = u; // sada
+            while (!visited[utmp] && utmp != -1) {
+                rep += sq[idPos[utmp] + K - 1];
+                rep_pos[utmp] = rep.length() - 1;
+                visited[utmp] = true;
+                utmp = match_u[utmp];
             }
             rep += "$"; // separator
-            if (u == -1 && head)
+            if (utmp == -1 && head)
                 pointee.push_back(head); // store the first element of track to pointee
         }
 
@@ -263,8 +264,8 @@ int main(int argc, char *argv[]) {
     ncdbg.getKmers();
     ncdbg.addEdges();
     cout << "Node-centric De Bruijn Graph:" << endl;
-    ncdbg.printGraph();
-    cout << endl;
+//    ncdbg.printGraph();
+//    cout << endl;
 
     ncdbg.hopcroft_karp();
     cout << "Processed sequence: " << endl;
