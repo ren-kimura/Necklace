@@ -233,14 +233,21 @@ public:
     }
 };
 
-int main() {
+int main(int argc, char *argv[]) {
     string _filename;
-    INT _K;
-    cout << "Input file: ";
-    cin >> _filename;
-    cout << "K = ";
-    cin >> _K;
-    cout << endl;
+    INT _K = 3;
+    if (argc >= 2) {
+      _filename = argv[1];
+      if (argc >= 3) {
+        _K = atoi(argv[2]);
+      }
+    } else {
+      cout << "Input file: ";
+      cin >> _filename;
+      cout << "K = ";
+      cin >> _K;
+      cout << endl;
+    }
 
     /*
     // build edge-centric dBG
