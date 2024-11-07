@@ -200,14 +200,13 @@ public:
         cout << endl;
 
         // represent
-        rep = "$";
         VecInt rep_pos(kmers.size(), -1); // rep_pos[v] = position of kmer (id == v) in rep
         VecInt pointee;
         vector<bool> visited(kmers.size(), false);
 
         if (match_v[0] == -1) {
             rep += "$" + sq.substr(0, K - 1);
-            pointer.push_back(make_pair(1, 1));
+            pointer.push_back(make_pair(0, 0));
         }
 
         // start from u = 0
@@ -230,6 +229,7 @@ public:
             pointer.push_back(make_pair(rep_pos[u], rep_pos[inv_adj[u][0]]));
         }
 
+        rep.pop_back();
         return matching_size;
     }
 };
