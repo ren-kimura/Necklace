@@ -13,7 +13,7 @@ using namespace std;
 using INT = int64_t;
 using Kmers = unordered_map<string,INT>;
 using VecInt = vector<INT>;
-using Adj = vector<VecInt>;
+using VecVecInt = vector<VecInt>;
 
 class DeBruijnGraph{
 public:
@@ -26,10 +26,10 @@ public:
     string sq; // stores the concatenated sequence
     Kmers kmers; // pair <kmer string of length k, its unique ID in 0..N-1>, where N = #distinct kmers in sequence
     VecInt idPos; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
-    Adj adj, inv_adj;
+    VecVecInt adj, inv_adj;
 
     string rep; // representation string for a cover
-    vector<pair<INT, INT>> pointer; // pointer from and to a certain pos in rep
+    VecInt pointers; // pointer from and to a certain pos in rep
 
     DeBruijnGraph(string _filename, INT _K, bool _isNodeCentric): filename(_filename), K(_K), isNodeCentric(_isNodeCentric)
     {};
@@ -128,7 +128,7 @@ public:
     }
 
     // bfs for an augmenting path
-    bool bfs (const Adj& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT n) {
+    bool bfs (const VecVecInt& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT n) {
         queue<INT> q;
         bool found_augpath = false;
 
@@ -160,7 +160,7 @@ public:
     }
 
     // update M by searching for augpath using DFS
-    bool dfs (const Adj& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT u) {
+    bool dfs (const VecVecInt& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT u) {
         for (auto v : adj[u]) {
             if (match_v[v] == -1 || (dist[match_v[v]] == dist[u] + 1 && dfs(adj, dist, match_u, match_v, match_v[v]))) {
                 // update matching
@@ -191,45 +191,171 @@ public:
             }
         }
 
-        // for debugging
-        cout << "Maximum matching: " << endl;
-        for (INT u = 0; u < n; ++u) {
-//            cout << u << " >>> " << match_u[u] << endl;
-        }
-        cout << "Size: " << matching_size << endl;
-        cout << endl;
+        // store cycles and paths
+        VecVecInt cycles;
+        VecVecInt paths;
+        VecInt current_segment;
+        vector<bool> visited(n, false);
 
-        // represent
-        VecInt rep_pos(kmers.size(), -1); // rep_pos[v] = position of kmer (id == v) in rep
-        VecInt pointee;
-        vector<bool> visited(kmers.size(), false);
-
-        if (match_v[0] == -1) {
-            rep += "$" + sq.substr(0, K - 1);
-            pointer.push_back(make_pair(0, 0));
-        }
-
-        // start from u = 0
-        for (INT u = 0; u < kmers.size(); u++) {
-            if (visited[u]) continue; // skip if already covered
-            auto head = u;
-            auto utmp = u; // sada
+        // decompose the matching into cycles and paths
+        for (INT u = 0; u < n; u++) {
+            if (visited[u]) continue;
+            auto utmp = u; //sada
             while (!visited[utmp] && utmp != -1) {
-                rep += sq[idPos[utmp] + K - 1];
-                rep_pos[utmp] = rep.length() - 1;
+                current_segment.push_back(utmp);
                 visited[utmp] = true;
                 utmp = match_u[utmp];
             }
-            rep += "$"; // separator
-            if (utmp == -1 && head)
-                pointee.push_back(head); // store the first element of track to pointee
+            if (utmp == -1) {
+                // path ends here (not part of a cycle)
+                paths.push_back(current_segment);
+            } else {
+                // cycle detected
+                cycles.push_back(current_segment);
+            }
+            current_segment.clear();
         }
 
-        for (auto const &u : pointee) {
-            pointer.push_back(make_pair(rep_pos[u], rep_pos[inv_adj[u][0]]));
+        // for debug
+        cout << "--- cycles ---" << endl;
+        for (const auto& cycle: cycles) {
+            for (const auto& node : cycle) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
         }
 
-        rep.pop_back();
+        // add unmatched nodes to paths
+        for (INT u = 0; u < n; u++) {
+            if (visited[u]) continue; // skip already matched nodes
+            paths.push_back({u});
+        }
+
+        // for debug
+        cout << "--- paths ---" << endl;
+        for (const auto& path: paths) {
+            for (const auto& node : path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+
+        INT current_startpos = 0;
+        VecVecInt sorted_paths;
+        // then, for each cycle, check if it has pointers from paths
+        for (const auto& cycle: cycles) {
+            for (INT i = 0; i < cycle.size(); i++) {
+                const auto& adjs = adj[cycle[i]];
+                // check if cycle[i] has pointer from paths
+                auto it = paths.begin();
+                while (it != paths.end()) {
+                    auto head = (*it)[0];
+                    if (find(adjs.begin(), adjs.end(), head) != adjs.end()) {
+                        sorted_paths.push_back(*it);
+                        pointers.push_back(current_startpos + i);
+                        it = paths.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+            current_startpos += cycle.size() + 1;
+        }
+
+        // for debug
+        cout << "--- paths (right after cycles added) ---" << endl;
+        for (const auto& path: paths) {
+            for (const auto& node : path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+
+        // for debug
+        cout << "--- sorted paths (right after cycles added) ---" << endl;
+        for (const auto& sorted_path: sorted_paths) {
+            for (const auto& node : sorted_path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+
+        // for each path, check if it has pointers from paths
+        INT idx = 0;
+        while (idx < sorted_paths.size()) {
+            auto& sorted_path = sorted_paths[idx];
+            for (INT i = 0; i < sorted_path.size(); i++) {
+                const auto& adjs = adj[sorted_path[i]];
+                // check if path[i] has pointer from paths
+                auto it = paths.begin();
+                while (it != paths.end()) {
+                    auto head = (*it)[0];
+                    if (find(adjs.begin(), adjs.end(), head) != adjs.end()) {
+                        sorted_paths.push_back(*it);
+                        pointers.push_back(current_startpos + i);
+                        it = paths.erase(it);
+                    } else {
+                        ++it;
+                    }
+                }
+            }
+            current_startpos += sorted_path.size() + 1;
+            idx++;
+        }
+
+        // for debug
+        cout << "--- paths (right after paths added) ---" << endl;
+        for (const auto& path: paths) {
+            for (const auto& node : path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+        
+        // for debug
+        cout << "--- sorted paths (right after paths added) ---" << endl;
+        for (const auto& sorted_path: sorted_paths) {
+            for (const auto& node : sorted_path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+
+        // if the very first k-mer doesn't repeat, add the path to the end of sorted_paths
+        bool is_selfpointer = false;
+        if (!paths.empty() && paths[0][0] == 0 && match_v[paths[0][0]] == -1) {
+            sorted_paths.push_back(paths[0]);
+            pointers.push_back(current_startpos + 1);
+            is_selfpointer = true;
+        }
+
+        // for debug
+        cout << "--- paths (after exception) ---" << endl;
+        for (const auto& path: paths) {
+            for (const auto& node : path) {
+                cout << sq[idPos[node] + K - 1];
+            }
+            cout << endl;
+        }
+
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                rep += sq[idPos[node] + K - 1];
+            }
+            rep += "$";
+        }
+
+        for (auto it = sorted_paths.begin(); it != sorted_paths.end(); ++it) {
+            const auto& sorted_path = *it;
+            if (is_selfpointer && it == prev(sorted_paths.end()))
+                rep += "$";
+            for (const auto& node : sorted_path) {
+                rep += sq[idPos[node] + K - 1];
+            }
+            rep += "$";
+        }
+        
+        rep.pop_back();        
         return matching_size;
     }
 };
@@ -263,16 +389,16 @@ int main(int argc, char *argv[]) {
     DeBruijnGraph ncdbg = DeBruijnGraph(_filename, _K, true);
     ncdbg.getKmers();
     ncdbg.addEdges();
-    cout << "Node-centric De Bruijn Graph:" << endl;
-//    ncdbg.printGraph();
-//    cout << endl;
+    // cout << "Node-centric De Bruijn Graph:" << endl;
+    // ncdbg.printGraph();
+    // cout << endl;
 
     ncdbg.hopcroft_karp();
     cout << "Processed sequence: " << endl;
     cout << ncdbg.rep << endl;
     cout << "Pointer array: " << endl;
-    for (INT i = 0; i < ncdbg.pointer.size(); ++i) {
-        cout << "(" << ncdbg.pointer[i].first << ", " << ncdbg.pointer[i].second << ") ";
+    for (INT i = 0; i < ncdbg.pointers.size(); ++i) {
+        cout << ncdbg.pointers[i] << " ";
     }
     cout << endl;
 
