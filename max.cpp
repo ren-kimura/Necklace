@@ -216,28 +216,10 @@ public:
             current_segment.clear();
         }
 
-        // for debug
-        cout << "--- cycles ---" << endl;
-        for (const auto& cycle: cycles) {
-            for (const auto& node : cycle) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
-        }
-
         // add unmatched nodes to paths
         for (INT u = 0; u < n; u++) {
             if (visited[u]) continue; // skip already matched nodes
             paths.push_back({u});
-        }
-
-        // for debug
-        cout << "--- paths ---" << endl;
-        for (const auto& path: paths) {
-            for (const auto& node : path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
         }
 
         INT current_startpos = 0;
@@ -260,24 +242,6 @@ public:
                 }
             }
             current_startpos += cycle.size() + 1;
-        }
-
-        // for debug
-        cout << "--- paths (right after cycles added) ---" << endl;
-        for (const auto& path: paths) {
-            for (const auto& node : path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
-        }
-
-        // for debug
-        cout << "--- sorted paths (right after cycles added) ---" << endl;
-        for (const auto& sorted_path: sorted_paths) {
-            for (const auto& node : sorted_path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
         }
 
         // for each path, check if it has pointers from paths
@@ -303,39 +267,12 @@ public:
             idx++;
         }
 
-        // for debug
-        cout << "--- paths (right after paths added) ---" << endl;
-        for (const auto& path: paths) {
-            for (const auto& node : path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
-        }
-        
-        // for debug
-        cout << "--- sorted paths (right after paths added) ---" << endl;
-        for (const auto& sorted_path: sorted_paths) {
-            for (const auto& node : sorted_path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
-        }
-
         // if the very first k-mer doesn't repeat, add the path to the end of sorted_paths
         bool is_selfpointer = false;
         if (!paths.empty() && paths[0][0] == 0 && match_v[paths[0][0]] == -1) {
             sorted_paths.push_back(paths[0]);
             pointers.push_back(current_startpos + 1);
             is_selfpointer = true;
-        }
-
-        // for debug
-        cout << "--- paths (after exception) ---" << endl;
-        for (const auto& path: paths) {
-            for (const auto& node : path) {
-                cout << sq[idPos[node] + K - 1];
-            }
-            cout << endl;
         }
 
         for (const auto& cycle: cycles) {
@@ -382,7 +319,6 @@ int main(int argc, char *argv[]) {
     ecdbg.getKmers();
     cout << "Edge-centric De Bruijn Graph:" << endl;
     ecdbg.printGraph();
-    cout << endl;
     */
 
     // build node-centric dBG
@@ -391,7 +327,6 @@ int main(int argc, char *argv[]) {
     ncdbg.addEdges();
     // cout << "Node-centric De Bruijn Graph:" << endl;
     // ncdbg.printGraph();
-    // cout << endl;
 
     ncdbg.hopcroft_karp();
     cout << "Processed sequence: " << endl;
