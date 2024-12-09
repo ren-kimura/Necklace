@@ -280,18 +280,18 @@ public:
         // then, for each cycle, check if it has pointers from paths
         INT idx = 1;
         for (const auto& cycle: cycles) {
-            for (INT i = 0; i < cycle.size(); i++) {
-                const auto& adjs = adj[cycle[i]];
-                // check if cycle[i] has pointer from paths
-                unordered_set<VecInt, vector_hash> paths_set(paths.begin(), paths.end());
+            std::unordered_set<VecInt, vector_hash> paths_set(paths.begin(), paths.end());
+            for (INT i = 0; i < cycle.size(); ++i) {
+                std::unordered_set<INT> adjs_set(adj[cycle[i]].begin(), adj[cycle[i]].end());
                 for (auto it = paths_set.begin(); it != paths_set.end(); ) {
                     auto head = (*it)[0];
-                    // if head exists in adjs
-                    if (find(adjs.begin(), adjs.end(), head) != adjs.end()) {
+                    if (adjs_set.count(head)) {
                         sorted_paths.push_back(*it);
                         pointers.push_back(current_startpos + i);
                         it = paths_set.erase(it);
-                    } else ++it;
+                    } else {
+                        ++it;
+                    }
                 }
             }
             print_progress_bar(idx, cycles.size(), "Processing cycles and adding pointers");
