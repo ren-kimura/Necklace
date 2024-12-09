@@ -34,15 +34,22 @@ void generateRandomDNA(const std::string& filename, int64_t length) {
     file.close();
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     std::string filename;
     int64_t x;
 
-    // ファイル名と文字列長を入力
-    std::cout << "Enter the filename (e.g., filename.fa): ";
-    std::cin >> filename;
-    std::cout << "Enter the length of the random DNA sequence: ";
-    std::cin >> x;
+    if (argc >= 2) {
+        filename = argv[1];
+        if (argc >= 3) {
+            x = atoi(argv[2]);
+        }
+    } else {
+        // ファイル名と文字列長を入力
+        std::cout << "Enter the filename (e.g., filename.fa): ";
+        std::cin >> filename;
+        std::cout << "Enter the length of the random DNA sequence: ";
+        std::cin >> x;
+    }
 
     // ランダムDNA配列を生成
     generateRandomDNA(filename, x);
