@@ -279,7 +279,6 @@ public:
         VecVecInt sorted_paths;
         // then, for each cycle, check if it has pointers from paths
         INT idx = 1;
-        total_itetations = 0;
         for (const auto& cycle: cycles) {
             for (INT i = 0; i < cycle.size(); i++) {
                 const auto& adjs = adj[cycle[i]];
@@ -302,21 +301,27 @@ public:
         cout << endl;
 
         // for each path, check if it has pointers from paths
+        std::unordered_map<VecInt, bool, vector_hash> paths_map;
+        for (const auto& path : paths) {
+            paths_map[path] = true;
+        }
+
+        // Iterate over sorted_paths
         idx = 0;
         while (idx < sorted_paths.size()) {
             auto& sorted_path = sorted_paths[idx];
             for (INT i = 0; i < sorted_path.size(); i++) {
                 const auto& adjs = adj[sorted_path[i]];
-                // check if path[i] has pointer from paths
-                auto it = paths.begin();
-                while (it != paths.end()) {
-                    auto head = (*it)[0];
-                    if (find(adjs.begin(), adjs.end(), head) != adjs.end()) {
-                        sorted_paths.push_back(*it);
+                std::unordered_set<INT> adjs_set(adjs.begin(), adjs.end());
+
+                // Use paths_map to find matching paths
+                for (auto& [path, exists] : paths_map) {
+                    if (!exists) continue;
+                    auto head = path[0];
+                    if (adjs_set.count(head)) {
+                        sorted_paths.push_back(path);
                         pointers.push_back(current_startpos + i);
-                        it = paths.erase(it);
-                    } else {
-                        ++it;
+                        paths_map[path] = false;  // Mark as used
                     }
                 }
             }
@@ -325,6 +330,7 @@ public:
             print_progress_bar(idx, cycles.size() + paths.size(), "Sorting segments in pointerwise ASC order");
         }
         cout << endl;
+
 
         // if the very first k-mer doesn't repeat, add the path to the end of sorted_paths
         bool is_selfpointer = false;
