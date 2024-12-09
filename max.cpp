@@ -5,15 +5,43 @@
 #include <tuple> // sada
 #include <array> // sada
 #include <unordered_map>
+#include <unordered_set>
 #include <algorithm>
 #include <queue>
 #include <cstring>
+#include <chrono>
 
 using namespace std;
 using INT = int64_t;
 using Kmers = unordered_map<string,INT>;
 using VecInt = vector<INT>;
 using VecVecInt = vector<VecInt>;
+
+struct vector_hash {
+    template <typename T>
+    size_t operator ( )(const vector<T>& v) const {
+        size_t seed = 0;
+        for (const auto& elem : v) {
+            seed ^= hash<T>{}(elem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+        }
+        return seed;
+    }
+};
+
+void print_progress_bar(INT current_kmer, INT total_kmers, const string& task) {
+    double progress = static_cast<double>(current_kmer) / static_cast<double>(total_kmers);
+    int bar_width = 50;
+    int pos = static_cast<int>(bar_width * progress);
+    cout << "\r" << task << " [";
+    for (int i = 0; i < bar_width; ++i) {
+        if (i < pos)        cout << "=";
+        else if (i == pos)  cout << ">";
+        else                cout << " ";
+    }
+    cout << "] " << static_cast<int>(progress * 100.0) << "%";
+    cout.flush();
+}
+
 
 class DeBruijnGraph{
 public:
@@ -63,13 +91,18 @@ public:
             ), sq.end());
 
         // check every k-mer in sq
-        for (INT i = 0; i <= sq.length() - K; i++) {
+        INT total_kmers = sq.length() - K + 1;
+        for (INT i = 0; i <= total_kmers - 1; i++) {
             auto kmer = sq.substr(i, K);
             if (kmers.find(kmer) == kmers.end()) { // newly found kmer
                 idPos.push_back(i);
                 kmers[kmer] = idPos.size() - 1;
             }
+            if (total_kmers <= 100 || i % (total_kmers / 100) == 0)
+                print_progress_bar(i, total_kmers, "Detecting k-mers");
         }
+        cout << endl;
+
         adj.resize(kmers.size()); // resize adjacency list
         inv_adj.resize(kmers.size());
 
@@ -91,6 +124,9 @@ public:
     }
 
     void addEdges() {
+        INT total_kmers = kmers.size();
+        INT current_kmer = 0;
+
         // add edges in adjacency list format
         for (const auto& entry : kmers) {
             string kmer = entry.first;
@@ -103,7 +139,10 @@ public:
                     inv_adj[next_id].push_back(id);
                 }
             }
+            if (total_kmers <= 100 || ++current_kmer % (total_kmers / 100) == 0)
+                print_progress_bar(current_kmer, total_kmers, "Constructing de Bruijn graph");
         }
+        cout << endl;
     }
 
     void printGraph() {
@@ -183,13 +222,17 @@ public:
         INT matching_size = 0;
 
         // update M as long as augpath exists
+        INT total_itetations = 0;
         while (bfs(adj, dist, match_u, match_v, n)) {
             for (INT u = 0; u < n; ++u) {
                 if (match_u[u] == -1 && dfs(adj, dist, match_u, match_v, u)) {
                     matching_size++; // update M when found an augpath
                 }
             }
+            if (n <= 100 || ++total_itetations % (n / 100) == 0)
+                print_progress_bar(total_itetations, n, "Finding maximum matching");
         }
+        cout << endl;
 
         // store cycles and paths
         VecVecInt cycles;
@@ -198,6 +241,7 @@ public:
         vector<bool> visited(n, false);
 
         // decompose the matching into cycles and paths
+        total_itetations = 0;
         for (INT u = 0; u < n; u++) {
             if (visited[u]) continue;
             auto utmp = u; //sada
@@ -214,38 +258,51 @@ public:
                 cycles.push_back(current_segment);
             }
             current_segment.clear();
+
+            if (n <= 100 || ++total_itetations % (n / 100) == 0)
+                print_progress_bar(u, n, "Matching -> cycles and paths");
         }
+        cout << endl;
 
         // add unmatched nodes to paths
+        total_itetations = 0;
         for (INT u = 0; u < n; u++) {
             if (visited[u]) continue; // skip already matched nodes
             paths.push_back({u});
+
+            if (n <= 100 || ++total_itetations % (n / 100) == 0)
+            print_progress_bar(u, n, "Add unmatched k-mers to paths");
         }
+        cout << endl;
 
         INT current_startpos = 0;
         VecVecInt sorted_paths;
         // then, for each cycle, check if it has pointers from paths
+        INT idx = 1;
+        total_itetations = 0;
         for (const auto& cycle: cycles) {
             for (INT i = 0; i < cycle.size(); i++) {
                 const auto& adjs = adj[cycle[i]];
                 // check if cycle[i] has pointer from paths
-                auto it = paths.begin();
-                while (it != paths.end()) {
+                unordered_set<VecInt, vector_hash> paths_set(paths.begin(), paths.end());
+                for (auto it = paths_set.begin(); it != paths_set.end(); ) {
                     auto head = (*it)[0];
+                    // if head exists in adjs
                     if (find(adjs.begin(), adjs.end(), head) != adjs.end()) {
                         sorted_paths.push_back(*it);
                         pointers.push_back(current_startpos + i);
-                        it = paths.erase(it);
-                    } else {
-                        ++it;
-                    }
+                        it = paths_set.erase(it);
+                    } else ++it;
                 }
             }
+            print_progress_bar(idx, cycles.size(), "Processing cycles and adding pointers");
             current_startpos += cycle.size() + 1;
+            ++idx;
         }
+        cout << endl;
 
         // for each path, check if it has pointers from paths
-        INT idx = 0;
+        idx = 0;
         while (idx < sorted_paths.size()) {
             auto& sorted_path = sorted_paths[idx];
             for (INT i = 0; i < sorted_path.size(); i++) {
@@ -265,7 +322,9 @@ public:
             }
             current_startpos += sorted_path.size() + 1;
             idx++;
+            print_progress_bar(idx, cycles.size() + paths.size(), "Sorting segments in pointerwise ASC order");
         }
+        cout << endl;
 
         // if the very first k-mer doesn't repeat, add the path to the end of sorted_paths
         bool is_selfpointer = false;
@@ -299,7 +358,7 @@ public:
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        cerr << "Usage: " << argv[0] << " [K] [input.fa] [output.bin]" << endl;
+        cerr << "Usage: " << argv[0] << " [K] [input.fa] [output]" << endl;
         return 1;
     }
 
@@ -307,25 +366,23 @@ int main(int argc, char *argv[]) {
     string _in_filename = argv[2];
     string _out_filename = argv[3];
 
-    /*
-    // build edge-centric dBG
-    DeBruijnGraph ecdbg = DeBruijnGraph(_in_filename, _K - 1, false);
-    ecdbg.getKmers();
-    cout << "Edge-centric De Bruijn Graph:" << endl;
-    ecdbg.printGraph();
-    */
-
     // build node-centric dBG
     DeBruijnGraph ncdbg = DeBruijnGraph(_in_filename, _K, true);
     ncdbg.getKmers();
     ncdbg.addEdges();
     // cout << "Node-centric De Bruijn Graph:" << endl;
     // ncdbg.printGraph();
+    auto start_time = chrono::high_resolution_clock::now();
     ncdbg.hopcroft_karp();
+    auto end_time = chrono::high_resolution_clock::now();
 
-    ofstream outputFile(_out_filename, ios::binary);
+    auto duration = chrono::duration_cast<chrono::seconds>(end_time - start_time);
+    cout << "Hopcroft-Karp alg. completed in " << duration.count() << " sec" << endl;
+
+    string bin_filename = _out_filename + ".bin";
+    ofstream outputFile(bin_filename, ios::binary);
     if (!outputFile) {
-        cerr << "Error opening output file: " << _out_filename << endl;
+        cerr << "Error opening output file: " << bin_filename << endl;
         return 1;
     }
 
@@ -340,20 +397,13 @@ int main(int argc, char *argv[]) {
     outputFile.write(reinterpret_cast<const char*>(ncdbg.pointers.data()), pointers_size * sizeof(INT));
 
     outputFile.close();
-    cout << "Data written to " << _out_filename << endl;
+    cout << "Binary data written to " << bin_filename << endl;
 
     // <<debug>> confirm params are correctly stored
-    string _out_txt = _out_filename;
-    size_t dot_pos = _out_txt.rfind('.');
-    if (dot_pos != string::npos) {
-        _out_txt = _out_txt.substr(0, dot_pos) + ".txt";
-    } else {
-        _out_txt += ".txt";
-    }
-
-    ofstream txtFile(_out_txt);
+    string txt_filename = _out_filename + ".txt";
+    ofstream txtFile(txt_filename);
     if (!txtFile) {
-        cerr << "Error: Could not open file " << _out_txt << " for writing.\n";
+        cerr << "Error: Could not open file " << txt_filename << " for writing.\n";
         return 1;
     }
 
@@ -372,7 +422,7 @@ int main(int argc, char *argv[]) {
 
     txtFile.close();
 
-    cout << "Output .txt file created: " << _out_txt << endl;
+    cout << "Text file created: " << txt_filename << endl;
 
     return 0;
 }
