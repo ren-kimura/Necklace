@@ -17,7 +17,7 @@ using VecVecInt = vector<VecInt>;
 
 class DeBruijnGraph{
 public:
-    string filename;
+    string in_filename;
     INT K;
     bool isNodeCentric; // node-centric or edge-centric dBG?
     array<uint8_t, 4> Alphabet = {'A', 'C', 'G', 'T'};
@@ -31,7 +31,7 @@ public:
     string rep; // representation string for a cover
     VecInt pointers; // pointer from and to a certain pos in rep
 
-    DeBruijnGraph(string _filename, INT _K, bool _isNodeCentric): filename(_filename), K(_K), isNodeCentric(_isNodeCentric)
+    DeBruijnGraph(string _in_filename, INT _K, bool _isNodeCentric): in_filename(_in_filename), K(_K), isNodeCentric(_isNodeCentric)
     {};
 
     void to_uppercase(string& str) {
@@ -41,7 +41,7 @@ public:
 
     void getKmers() {
         // read input DNA sequence in FASTA format .fa
-        ifstream inputFile(filename);
+        ifstream inputFile(in_filename);
         if (!inputFile) {
             cerr << "Error opening input file." << endl;
             exit(0);
@@ -298,44 +298,81 @@ public:
 };
 
 int main(int argc, char *argv[]) {
-    string _filename;
-    INT _K = 3;
-    if (argc >= 2) {
-      _filename = argv[1];
-      if (argc >= 3) {
-        _K = atoi(argv[2]);
-      }
-    } else {
-      cout << "Input file: ";
-      cin >> _filename;
-      cout << "K = ";
-      cin >> _K;
-      cout << endl;
+    if (argc < 4) {
+        cerr << "Usage: " << argv[0] << " [K] [input.fa] [output.bin]" << endl;
+        return 1;
     }
+
+    INT _K = atoi(argv[1]);
+    string _in_filename = argv[2];
+    string _out_filename = argv[3];
 
     /*
     // build edge-centric dBG
-    DeBruijnGraph ecdbg = DeBruijnGraph(_filename, _K - 1, false);
+    DeBruijnGraph ecdbg = DeBruijnGraph(_in_filename, _K - 1, false);
     ecdbg.getKmers();
     cout << "Edge-centric De Bruijn Graph:" << endl;
     ecdbg.printGraph();
     */
 
     // build node-centric dBG
-    DeBruijnGraph ncdbg = DeBruijnGraph(_filename, _K, true);
+    DeBruijnGraph ncdbg = DeBruijnGraph(_in_filename, _K, true);
     ncdbg.getKmers();
     ncdbg.addEdges();
     // cout << "Node-centric De Bruijn Graph:" << endl;
     // ncdbg.printGraph();
-
     ncdbg.hopcroft_karp();
-    cout << "Processed sequence: " << endl;
-    cout << ncdbg.rep << endl;
-    cout << "Pointer array: " << endl;
-    for (INT i = 0; i < ncdbg.pointers.size(); ++i) {
-        cout << ncdbg.pointers[i] << " ";
+
+    ofstream outputFile(_out_filename, ios::binary);
+    if (!outputFile) {
+        cerr << "Error opening output file: " << _out_filename << endl;
+        return 1;
     }
-    cout << endl;
+
+    // write rep with size
+    size_t rep_size = ncdbg.rep.size();
+    outputFile.write(reinterpret_cast<const char*>(&rep_size), sizeof(rep_size));
+    outputFile.write(ncdbg.rep.data(), rep_size);
+
+    // write pointers with size
+    size_t pointers_size = ncdbg.pointers.size();
+    outputFile.write(reinterpret_cast<const char*>(&pointers_size), sizeof(pointers_size));
+    outputFile.write(reinterpret_cast<const char*>(ncdbg.pointers.data()), pointers_size * sizeof(INT));
+
+    outputFile.close();
+    cout << "Data written to " << _out_filename << endl;
+
+    // <<debug>> confirm params are correctly stored
+    string _out_txt = _out_filename;
+    size_t dot_pos = _out_txt.rfind('.');
+    if (dot_pos != string::npos) {
+        _out_txt = _out_txt.substr(0, dot_pos) + ".txt";
+    } else {
+        _out_txt += ".txt";
+    }
+
+    ofstream txtFile(_out_txt);
+    if (!txtFile) {
+        cerr << "Error: Could not open file " << _out_txt << " for writing.\n";
+        return 1;
+    }
+
+    if (ncdbg.rep.empty()) {
+        cerr << "Warning: rep is empty.\n";
+    }
+    if (ncdbg.pointers.empty()) {
+        cerr << "Warning: pointers are empty.\n";
+    }
+
+    txtFile << ncdbg.rep << "\n";
+    for (const auto& pointer : ncdbg.pointers) {
+        txtFile << pointer << " ";
+    }
+    txtFile << "\n";
+
+    txtFile.close();
+
+    cout << "Output .txt file created: " << _out_txt << endl;
 
     return 0;
 }
