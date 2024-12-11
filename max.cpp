@@ -10,21 +10,20 @@
 #include <queue>
 #include <cstring>
 #include <chrono>
+#include <cmath>
 
 using namespace std;
 using INT = int64_t;
 using Kmers = unordered_map<string,INT>;
-using VecInt = vector<INT>;
-using VecVecInt = vector<VecInt>;
+using VINT = vector<INT>;
+using VVINT = vector<VINT>;
 
-struct vector_hash {
-    template <typename T>
-    size_t operator ( )(const vector<T>& v) const {
-        size_t seed = 0;
-        for (const auto& elem : v) {
-            seed ^= hash<T>{}(elem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-        }
-        return seed;
+struct pair_hash {
+    template <class T1, class T2>
+    size_t operator ( )(const pair<T1, T2> &p ) const {
+        auto h1 = hash<T1>{}(p.first);
+        auto h2 = hash<T2>{}(p.second);
+        return h1 ^ h2;
     }
 };
 
@@ -42,6 +41,25 @@ void print_progress_bar(INT current_kmer, INT total_kmers, const string& task) {
     cout.flush();
 }
 
+// get cumulative length up to each head of cycle in rep considering delimiters
+VINT get_chead(const VVINT& arr) {
+    VINT cumls = {0};
+    INT cuml = 0;
+    for (const auto& row : arr) {
+        cuml += row.size() + 1;
+        cumls.push_back(cuml);
+    }
+    return cumls;
+}
+
+// get cumulative length of current sorted arr2
+INT get_phead(INT& idx, VINT& arr1, const VVINT& arr2) {
+    INT cuml;
+    for (auto it = arr1.begin(); *it != idx; ++it) {
+        cuml += arr2[*it].size() + 1;
+    }
+    return cuml;
+}
 
 class DeBruijnGraph{
 public:
@@ -53,11 +71,12 @@ public:
 
     string sq; // stores the concatenated sequence
     Kmers kmers; // pair <kmer string of length k, its unique ID in 0..N-1>, where N = #distinct kmers in sequence
-    VecInt idPos; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
-    VecVecInt adj, inv_adj;
+    VINT idPos; // for each ID a position i such that ID corresponds to kmer sequence.substr(i, K)
+    VVINT adj, inv_adj;
 
+    VVINT cycles, paths;
     string rep; // representation string for a cover
-    VecInt pointers; // pointer from and to a certain pos in rep
+    VINT pointers; // pointer from and to a certain pos in rep
 
     DeBruijnGraph(string _in_filename, INT _K, bool _isNodeCentric): in_filename(_in_filename), K(_K), isNodeCentric(_isNodeCentric)
     {};
@@ -167,7 +186,7 @@ public:
     }
 
     // bfs for an augmenting path
-    bool bfs (const VecVecInt& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT n) {
+    bool bfs (const VVINT& adj, VINT& dist, VINT& match_u, VINT& match_v, INT n) {
         queue<INT> q;
         bool found_augpath = false;
 
@@ -199,7 +218,7 @@ public:
     }
 
     // update M by searching for augpath using DFS
-    bool dfs (const VecVecInt& adj, VecInt& dist, VecInt& match_u, VecInt& match_v, INT u) {
+    bool dfs (const VVINT& adj, VINT& dist, VINT& match_u, VINT& match_v, INT u) {
         for (auto v : adj[u]) {
             if (match_v[v] == -1 || (dist[match_v[v]] == dist[u] + 1 && dfs(adj, dist, match_u, match_v, match_v[v]))) {
                 // update matching
@@ -215,33 +234,28 @@ public:
     // solve maximum bipartite matching
     INT hopcroft_karp() {
         INT n = kmers.size();
-        VecInt match_u(n, -1); // matching of U
-        VecInt match_v(n, -1); // matching of V
-        VecInt dist(n); // distance of bfs being executed
-        
-        INT matching_size = 0;
+        VINT match_u(n, -1); // matching of U
+        VINT match_v(n, -1); // matching of V
+        VINT dist(n); // distance of bfs being executed
 
         // update M as long as augpath exists
-        INT total_itetations = 0;
+        INT matching_size = 0;
+        INT itr = 0;
         while (bfs(adj, dist, match_u, match_v, n)) {
             for (INT u = 0; u < n; ++u) {
                 if (match_u[u] == -1 && dfs(adj, dist, match_u, match_v, u)) {
                     matching_size++; // update M when found an augpath
                 }
             }
-            if (n <= 100 || ++total_itetations % (n / 100) == 0)
-                print_progress_bar(total_itetations, n, "Finding maximum matching");
+            if (n < 1000 || itr % 1000 == 0)
+                print_progress_bar(++itr, static_cast<INT>(sqrt(n)), "Finding maximum matching");
         }
-        cout << endl;
-
-        // store cycles and paths
-        VecVecInt cycles;
-        VecVecInt paths;
-        VecInt current_segment;
-        vector<bool> visited(n, false);
+        cout << "\rFound maximum matching of size " << matching_size << endl;
 
         // decompose the matching into cycles and paths
-        total_itetations = 0;
+        VINT current_segment;
+        vector<bool> visited(n, false);
+        itr = 0;
         for (INT u = 0; u < n; u++) {
             if (visited[u]) continue;
             auto utmp = u; //sada
@@ -259,107 +273,157 @@ public:
             }
             current_segment.clear();
 
-            if (n <= 100 || ++total_itetations % (n / 100) == 0)
+            if (n <= 100 || ++itr % (n / 100) == 0)
                 print_progress_bar(u, n, "Matching -> cycles and paths");
         }
         cout << endl;
 
         // add unmatched nodes to paths
-        total_itetations = 0;
         for (INT u = 0; u < n; u++) {
             if (visited[u]) continue; // skip already matched nodes
             paths.push_back({u});
-
-            if (n <= 100 || ++total_itetations % (n / 100) == 0)
-            print_progress_bar(u, n, "Add unmatched k-mers to paths");
         }
-        cout << endl;
 
-        INT current_startpos = 0;
-        VecVecInt sorted_paths;
-        // then, for each cycle, check if it has pointers from paths
-        INT idx = 1;
-        for (const auto& cycle: cycles) {
-            std::unordered_set<VecInt, vector_hash> paths_set(paths.begin(), paths.end());
-            for (INT i = 0; i < cycle.size(); ++i) {
-                std::unordered_set<INT> adjs_set(adj[cycle[i]].begin(), adj[cycle[i]].end());
-                for (auto it = paths_set.begin(); it != paths_set.end(); ) {
-                    auto head = (*it)[0];
-                    if (adjs_set.count(head)) {
-                        sorted_paths.push_back(*it);
-                        pointers.push_back(current_startpos + i);
-                        it = paths_set.erase(it);
-                    } else {
-                        ++it;
-                    }
-                }
+        // debug
+        for (auto it = cycles.begin(); it != cycles.end(); ++it) {
+            cout << "cycle" << distance(cycles.begin(), it) << ": ";
+            for (const auto& node : *it) {
+                cout << sq[idPos[node] + K - 1];
+            } cout << endl;
+        } cout << endl;
+        for (auto it = paths.begin(); it != paths.end(); ++it) {
+            cout << "path" << distance(paths.begin(), it) << ": ";
+            for (const auto& node : *it) {
+                cout << sq[idPos[node] + K - 1];
+            } cout << endl;
+        } cout << endl;
+
+        // point from paths to paths and cycles
+        vector<tuple<INT, INT, INT>> pc;
+        unordered_map<pair<INT, INT>, INT, pair_hash> pp;
+        for (INT i = 0; i < paths.size(); i++) {
+            auto head = paths[i][0];
+            if (head == 0 && match_v[head] == -1 && inv_adj[head].empty()) {
+                pp[make_pair(i, 0)] = i;
+                goto label;
             }
-            print_progress_bar(idx, cycles.size(), "Processing cycles and adding pointers");
-            current_startpos += cycle.size() + 1;
-            ++idx;
-        }
-        cout << endl;
-
-        // for each path, check if it has pointers from paths
-        std::unordered_map<VecInt, bool, vector_hash> paths_map;
-        for (const auto& path : paths) {
-            paths_map[path] = true;
-        }
-
-        // Iterate over sorted_paths
-        idx = 0;
-        while (idx < sorted_paths.size()) {
-            auto& sorted_path = sorted_paths[idx];
-            for (INT i = 0; i < sorted_path.size(); i++) {
-                const auto& adjs = adj[sorted_path[i]];
-                std::unordered_set<INT> adjs_set(adjs.begin(), adjs.end());
-
-                // Use paths_map to find matching paths
-                for (auto& [path, exists] : paths_map) {
-                    if (!exists) continue;
-                    auto head = path[0];
-                    if (adjs_set.count(head)) {
-                        sorted_paths.push_back(path);
-                        pointers.push_back(current_startpos + i);
-                        paths_map[path] = false;  // Mark as used
-                    }
-                }
-            }
-            current_startpos += sorted_path.size() + 1;
-            idx++;
-            print_progress_bar(idx, cycles.size() + paths.size(), "Sorting segments in pointerwise ASC order");
-        }
-        cout << endl;
-
-
-        // if the very first k-mer doesn't repeat, add the path to the end of sorted_paths
-        bool is_selfpointer = false;
-        if (!paths.empty() && paths[0][0] == 0 && match_v[paths[0][0]] == -1) {
-            sorted_paths.push_back(paths[0]);
-            pointers.push_back(current_startpos + 1);
-            is_selfpointer = true;
-        }
-
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle) {
-                rep += sq[idPos[node] + K - 1];
-            }
-            rep += "$";
-        }
-
-        for (auto it = sorted_paths.begin(); it != sorted_paths.end(); ++it) {
-            const auto& sorted_path = *it;
-            if (is_selfpointer && it == prev(sorted_paths.end()))
-                rep += "$";
-            for (const auto& node : sorted_path) {
-                rep += sq[idPos[node] + K - 1];
-            }
-            rep += "$";
+            for (INT j = 0; j < cycles.size(); j++) {
+                for (INT k = 0; k < cycles[j].size(); k++) {
+                    for (const auto& inneigh : inv_adj[head]) {
+                        if (cycles[j][k] == inneigh) {
+                            pc.push_back(make_tuple(i, j, k));
+                            goto label;
+                        }
+            }}}
+            for (INT j = 0; j < paths.size(); j++) {
+                for (INT k = 0; k < paths[j].size(); k++) {
+                    for (const auto& inneigh : inv_adj[head]) {
+                        if (paths[j][k] == inneigh) {
+                            pp[make_pair(j, k)] = i;
+                            goto label;
+                        }
+            }}}
+            label:
+            if (paths.size() < 100 || i % (paths.size() / 100) == 0)
+                print_progress_bar(i, paths.size(), "Pointing paths to its preds");
         }
         
-        rep.pop_back();        
+        // sort pc by cycles' index-wise ASC order
+        sort(pc.begin(), pc.end(), [](const tuple<INT, INT, INT>& a, const tuple<INT, INT, INT>& b) {
+            if (get<1>(a) == get<1>(b))
+                return get<2>(a) < get<2>(b);
+            return get<1>(a) < get<1>(b);
+        });
+
+        // sort paths
+        const VINT cumls = get_chead(cycles);  // compute cumulative length up to every cycle in rep
+        VINT sorted_paths;
+        vector<bool> added(paths.size(), false);
+        // step 1: add paths pointing to cycles
+        for (INT i = 0; i < pc.size(); i++) {
+            INT path_id = get<0>(pc[i]);
+            sorted_paths.push_back(path_id);
+            pointers.push_back(cumls[get<1>(pc[i])] + get<2>(pc[i]));
+            added[path_id] = true;
+        }
+        // step 2: process paths pointing to other paths
+        INT offset = cumls.back();
+        for (INT i = 0; i < pc.size(); i++) {
+            INT path_id = get<0>(pc[i]);
+            for (INT j = 0; j < paths[path_id].size(); j++) {
+                auto it = pp.find(make_pair(path_id, j));                
+                if (it != pp.end()) {
+                    sorted_paths.push_back(it->second);
+                    pointers.push_back(offset + get_phead(path_id, sorted_paths, paths) + j);
+                    added[it->second] = true;
+                }
+        }}
+        // step 3: add any unadded paths
+        for (const auto& _pp : pp) {
+            auto path_id = _pp.second;
+            for (INT j = 0; j < paths[path_id].size(); j++) {
+                auto it = pp.find(make_pair(path_id, j));
+                if (it != pp.end() && added[it->second] == false) {
+                    sorted_paths.push_back(it->second);
+                    pointers.push_back(offset + get_phead(path_id, sorted_paths, paths) + j);
+                    added[it->second] = true;
+                }
+        }}
+        INT false_count = count(added.begin(), added.end(), false);
+        if (false_count >= 1) {
+            if (false_count > 1) {
+                cerr << "exist" << false_count << "unadded path" << endl;
+                exit(1);
+            } else {
+                INT idx = distance(added.begin(), find(added.begin(), added.end(), false));
+                sorted_paths.push_back(idx);
+                pointers.push_back(offset + get_phead(idx, sorted_paths, paths));
+            }
+        }
+
+        // debug
+        cout << "Added complete ?" <<endl;
+        for (INT i = 0; i < added.size(); ++i) {
+            cout << "path" << i << ": " << (added[i] ? "added" : "not added") << endl;
+        } cout << endl;
+
+        // debug
+        cout << "sorted_paths = ";
+        for (const auto& sorted_path : sorted_paths) {
+            cout << sorted_path << " ";
+        } cout << endl;
+
+       for (const auto& cycle : cycles) {
+        for (const auto& node : cycle) {
+            rep += sq[idPos[node] + K - 1];
+        } rep += "$";
+       }
+       for (const auto& sorted_path : sorted_paths) {
+        auto it = pp.find(make_pair(sorted_path, 0));
+        if (it != pp.end() && it->second == sorted_path) rep += "$";
+        for (const auto& node : paths[sorted_path]) {
+            rep += sq[idPos[node] + K - 1];
+        } rep += "$";
+       } rep.pop_back();
+
+        // debug
+        // cout << endl;
+        // for (auto it = cycles.begin(); it != cycles.end(); ++it) {
+        //     cout << "cycle" << distance(cycles.begin(), it) << ": ";
+        //     for (const auto& node : *it) {
+        //         cout << sq[idPos[node] + K - 1];
+        //     } cout << endl;
+        // } cout << endl;
+        // for (const auto& sorted_path : sorted_paths) {
+        //     cout << "path" << sorted_path << ": ";
+        //     for (const auto& node : paths[sorted_path]) {
+        //         cout << sq[idPos[node] + K - 1];
+        //     } cout << endl;
+        // } cout << endl;
+
         return matching_size;
     }
+
 };
 
 int main(int argc, char *argv[]) {
@@ -367,7 +431,6 @@ int main(int argc, char *argv[]) {
         cerr << "Usage: " << argv[0] << " [K] [input.fa] [output]" << endl;
         return 1;
     }
-
     INT _K = atoi(argv[1]);
     string _in_filename = argv[2];
     string _out_filename = argv[3];
@@ -376,8 +439,7 @@ int main(int argc, char *argv[]) {
     DeBruijnGraph ncdbg = DeBruijnGraph(_in_filename, _K, true);
     ncdbg.getKmers();
     ncdbg.addEdges();
-    // cout << "Node-centric De Bruijn Graph:" << endl;
-    // ncdbg.printGraph();
+
     auto start_time = chrono::high_resolution_clock::now();
     ncdbg.hopcroft_karp();
     auto end_time = chrono::high_resolution_clock::now();
@@ -385,49 +447,40 @@ int main(int argc, char *argv[]) {
     auto duration = chrono::duration_cast<chrono::seconds>(end_time - start_time);
     cout << "Hopcroft-Karp alg. completed in " << duration.count() << " sec" << endl;
 
+    // write out bin file
     string bin_filename = _out_filename + ".bin";
     ofstream outputFile(bin_filename, ios::binary);
     if (!outputFile) {
         cerr << "Error opening output file: " << bin_filename << endl;
         return 1;
     }
-
-    // write rep with size
     size_t rep_size = ncdbg.rep.size();
     outputFile.write(reinterpret_cast<const char*>(&rep_size), sizeof(rep_size));
     outputFile.write(ncdbg.rep.data(), rep_size);
 
-    // write pointers with size
     size_t pointers_size = ncdbg.pointers.size();
     outputFile.write(reinterpret_cast<const char*>(&pointers_size), sizeof(pointers_size));
     outputFile.write(reinterpret_cast<const char*>(ncdbg.pointers.data()), pointers_size * sizeof(INT));
 
     outputFile.close();
-    cout << "Binary data written to " << bin_filename << endl;
+    cout << "Binary file created: " << bin_filename << endl;
 
-    // <<debug>> confirm params are correctly stored
+    // write out txt file
     string txt_filename = _out_filename + ".txt";
     ofstream txtFile(txt_filename);
     if (!txtFile) {
         cerr << "Error: Could not open file " << txt_filename << " for writing.\n";
         return 1;
     }
-
-    if (ncdbg.rep.empty()) {
-        cerr << "Warning: rep is empty.\n";
-    }
-    if (ncdbg.pointers.empty()) {
-        cerr << "Warning: pointers are empty.\n";
-    }
+    if (ncdbg.rep.empty()) cerr << "Warning: rep is empty.\n";
+    if (ncdbg.pointers.empty()) cerr << "Warning: pointers are empty.\n";
 
     txtFile << ncdbg.rep << "\n";
     for (const auto& pointer : ncdbg.pointers) {
         txtFile << pointer << " ";
     }
     txtFile << "\n";
-
     txtFile.close();
-
     cout << "Text file created: " << txt_filename << endl;
 
     return 0;
