@@ -1,7 +1,9 @@
 #include <iostream>
 #include <fstream>
+#include <cstdint>
 #include <string>
 #include <vector>
+#include <deque>
 #include <tuple> // sada
 #include <array> // sada
 #include <unordered_map>
@@ -17,10 +19,11 @@ using INT = int64_t;
 using Kmers = unordered_map<string,INT>;
 using VINT = vector<INT>;
 using VVINT = vector<VINT>;
+using DINT = deque<INT>;
 
 struct pair_hash {
     template <class T1, class T2>
-    size_t operator ( )(const pair<T1, T2> &p ) const {
+    INT operator ( )(const pair<T1, T2> &p ) const {
         auto h1 = hash<T1>{}(p.first);
         auto h2 = hash<T2>{}(p.second);
         return h1 ^ h2;
@@ -42,21 +45,21 @@ void print_progress_bar(INT current_kmer, INT total_kmers, const string& task) {
 }
 
 // get cumulative length up to each head of cycle in rep considering delimiters
-VINT get_chead(const VVINT& arr) {
+VINT get_chead(const VVINT& cycles) {
     VINT cumls = {0};
     INT cuml = 0;
-    for (const auto& row : arr) {
-        cuml += row.size() + 1;
+    for (const auto& cycle : cycles) {
+        cuml += cycle.size() + 1;
         cumls.push_back(cuml);
     }
     return cumls;
 }
 
 // get cumulative length of current sorted arr2
-INT get_phead(INT& idx, VINT& arr1, const VVINT& arr2) {
-    INT cuml;
-    for (auto it = arr1.begin(); *it != idx; ++it) {
-        cuml += arr2[*it].size() + 1;
+INT get_phead(INT& path_id, VINT& sorted_path, const VVINT& paths) {
+    INT cuml = 0;
+    for (auto it = sorted_path.begin(); *it != path_id; ++it) {
+        cuml += paths[*it].size() + 1;
     }
     return cuml;
 }
@@ -111,7 +114,7 @@ public:
 
         // check every k-mer in sq
         INT total_kmers = sq.length() - K + 1;
-        for (INT i = 0; i <= total_kmers - 1; i++) {
+        for (INT i = 0; i <= total_kmers - 1; ++i) {
             auto kmer = sq.substr(i, K);
             if (kmers.find(kmer) == kmers.end()) { // newly found kmer
                 idPos.push_back(i);
@@ -128,10 +131,10 @@ public:
     }
 
     INT forward(INT id, uint8_t c) {
-        if (id >= idPos.size()) return -1;
+        if (id >= static_cast<INT>(idPos.size())) return -1;
         auto pos = idPos[id];
 
-        if (pos + 1 >= sq.length()) return -1;
+        if (pos + 1 >= static_cast<INT>(sq.length())) return -1;
  
         string suffix = sq.substr(pos + 1, K - 1);
         auto next = suffix + static_cast<char>(c);
@@ -162,27 +165,6 @@ public:
                 print_progress_bar(current_kmer, total_kmers, "Constructing de Bruijn graph");
         }
         cout << endl;
-    }
-
-    void printGraph() {
-        // map current node to next nodes
-        for (auto const &entry : kmers) {
-            auto kmer = entry.first;
-            auto id = entry.second;
-            cout << kmer << " >>> ";
-
-            for (auto const &c : Alphabet) {
-                // rule out edges of k-mers not occuring in sq (ecdBG)
-                if (!isNodeCentric && (sq.find(kmer + static_cast<char>(c)) == string::npos)) continue;
-
-                auto nextid = forward(id, c);
-                if (nextid != -1) {
-                    auto nextpos = idPos[nextid];
-                    cout << sq.substr(nextpos, K) << " ";
-                }
-            }
-            cout << endl;
-        }
     }
 
     // bfs for an augmenting path
@@ -250,28 +232,36 @@ public:
             if (n < 1000 || itr % 1000 == 0)
                 print_progress_bar(++itr, static_cast<INT>(sqrt(n)), "Finding maximum matching");
         }
-        cout << "\rFound maximum matching of size " << matching_size << endl;
+        cout << "\rFound maximum matching of size " << matching_size << endl; itr = 0;
 
         // decompose the matching into cycles and paths
-        VINT current_segment;
-        vector<bool> visited(n, false);
-        itr = 0;
-        for (INT u = 0; u < n; u++) {
-            if (visited[u]) continue;
-            auto utmp = u; //sada
-            while (!visited[utmp] && utmp != -1) {
-                current_segment.push_back(utmp);
-                visited[utmp] = true;
+        DINT active;
+        vector<uint8_t> vis(n, 0);
+        for (INT u = 0; u < n; ++u) {
+            if (vis[u]) continue;
+            active.push_back(u);
+            vis[u] = 1;
+            auto utmp = match_u[u]; //sada, next to u
+            while (utmp != -1 && !vis[utmp]) {
+                active.push_back(utmp);
+                vis[utmp] = 1;
                 utmp = match_u[utmp];
             }
-            if (utmp == -1) {
-                // path ends here (not part of a cycle)
-                paths.push_back(current_segment);
-            } else {
+            if (utmp != -1 && vis[utmp]) {
                 // cycle detected
-                cycles.push_back(current_segment);
+                VINT ctmp(active.begin(), active.end());
+                cycles.push_back(ctmp);
+            } else {
+                utmp = match_v[u];
+                while (utmp != -1 && !vis[utmp]) {
+                    active.push_front(utmp);
+                    vis[utmp] = 1;
+                    utmp = match_v[utmp];
+                }
+                VINT ptmp(active.begin(), active.end());
+                paths.push_back(ptmp);
             }
-            current_segment.clear();
+            active.clear();
 
             if (n <= 100 || ++itr % (n / 100) == 0)
                 print_progress_bar(u, n, "Matching -> cycles and paths");
@@ -279,21 +269,16 @@ public:
         cout << endl;
 
         // add unmatched nodes to paths
-        for (INT u = 0; u < n; u++) {
-            if (visited[u]) continue; // skip already matched nodes
-            paths.push_back({u});
-        }
+        // for (INT u = 0; u < n; u++) {
+        //     if (visited[u]) continue; // skip already matched nodes
+        //     paths.push_back({u});
+        // }
 
         // debug
-        for (auto it = cycles.begin(); it != cycles.end(); ++it) {
-            cout << "cycle" << distance(cycles.begin(), it) << ": ";
-            for (const auto& node : *it) {
-                cout << sq[idPos[node] + K - 1];
-            } cout << endl;
-        } cout << endl;
-        for (auto it = paths.begin(); it != paths.end(); ++it) {
-            cout << "path" << distance(paths.begin(), it) << ": ";
-            for (const auto& node : *it) {
+        INT id = 0;
+        for (const auto& cycle: cycles) {
+            cout << "cycle" << id++ << ": ";
+            for (const auto& node : cycle) {
                 cout << sq[idPos[node] + K - 1];
             } cout << endl;
         } cout << endl;
@@ -301,22 +286,22 @@ public:
         // point from paths to paths and cycles
         vector<tuple<INT, INT, INT>> pc;
         unordered_map<pair<INT, INT>, INT, pair_hash> pp;
-        for (INT i = 0; i < paths.size(); i++) {
+        for (INT i = 0; i < static_cast<INT>(paths.size()); ++i) {
             auto head = paths[i][0];
             if (head == 0 && match_v[head] == -1 && inv_adj[head].empty()) {
                 pp[make_pair(i, 0)] = i;
                 goto label;
             }
-            for (INT j = 0; j < cycles.size(); j++) {
-                for (INT k = 0; k < cycles[j].size(); k++) {
+            for (INT j = 0; j < static_cast<INT>(cycles.size()); ++j) {
+                for (INT k = 0; k < static_cast<INT>(cycles[j].size()); ++k) {
                     for (const auto& inneigh : inv_adj[head]) {
                         if (cycles[j][k] == inneigh) {
                             pc.push_back(make_tuple(i, j, k));
                             goto label;
                         }
             }}}
-            for (INT j = 0; j < paths.size(); j++) {
-                for (INT k = 0; k < paths[j].size(); k++) {
+            for (INT j = 0; j < static_cast<INT>(paths.size()); ++j) {
+                for (INT k = 0; k < static_cast<INT>(paths[j].size()); ++k) {
                     for (const auto& inneigh : inv_adj[head]) {
                         if (paths[j][k] == inneigh) {
                             pp[make_pair(j, k)] = i;
@@ -338,44 +323,43 @@ public:
         // sort paths
         const VINT cumls = get_chead(cycles);  // compute cumulative length up to every cycle in rep
         VINT sorted_paths;
-        vector<bool> added(paths.size(), false);
+        vector<uint8_t> added(paths.size(), 0);
         // step 1: add paths pointing to cycles
-        for (INT i = 0; i < pc.size(); i++) {
+        for (INT i = 0; i < static_cast<INT>(pc.size()); ++i) {
             INT path_id = get<0>(pc[i]);
             sorted_paths.push_back(path_id);
             pointers.push_back(cumls[get<1>(pc[i])] + get<2>(pc[i]));
-            added[path_id] = true;
+            added[path_id] = 1;
         }
         // step 2: process paths pointing to other paths
         INT offset = cumls.back();
-        for (INT i = 0; i < pc.size(); i++) {
+        for (INT i = 0; i < static_cast<INT>(pc.size()); ++i) {
             INT path_id = get<0>(pc[i]);
-            for (INT j = 0; j < paths[path_id].size(); j++) {
+            for (INT j = 0; j < static_cast<INT>(paths[path_id].size()); ++j) {
                 auto it = pp.find(make_pair(path_id, j));                
                 if (it != pp.end()) {
                     sorted_paths.push_back(it->second);
                     pointers.push_back(offset + get_phead(path_id, sorted_paths, paths) + j);
-                    added[it->second] = true;
+                    added[it->second] = 1;
                 }
         }}
         // step 3: add any unadded paths
         for (const auto& _pp : pp) {
             auto path_id = _pp.second;
-            for (INT j = 0; j < paths[path_id].size(); j++) {
+            for (INT j = 0; j < static_cast<INT>(paths[path_id].size()); ++j) {
                 auto it = pp.find(make_pair(path_id, j));
-                if (it != pp.end() && added[it->second] == false) {
+                if (it != pp.end() && added[it->second] == 0) {
                     sorted_paths.push_back(it->second);
                     pointers.push_back(offset + get_phead(path_id, sorted_paths, paths) + j);
-                    added[it->second] = true;
+                    added[it->second] = 1;
                 }
         }}
-        INT false_count = count(added.begin(), added.end(), false);
+        INT false_count = count(added.begin(), added.end(), 0);
         if (false_count >= 1) {
             if (false_count > 1) {
                 cerr << "exist" << false_count << "unadded path" << endl;
-                exit(1);
             } else {
-                INT idx = distance(added.begin(), find(added.begin(), added.end(), false));
+                INT idx = distance(added.begin(), find(added.begin(), added.end(), 0));
                 sorted_paths.push_back(idx);
                 pointers.push_back(offset + get_phead(idx, sorted_paths, paths));
             }
@@ -383,7 +367,7 @@ public:
 
         // debug
         cout << "Added complete ?" <<endl;
-        for (INT i = 0; i < added.size(); ++i) {
+        for (INT i = 0; i < static_cast<INT>(added.size()); ++i) {
             cout << "path" << i << ": " << (added[i] ? "added" : "not added") << endl;
         } cout << endl;
 
@@ -406,21 +390,6 @@ public:
         } rep += "$";
        } rep.pop_back();
 
-        // debug
-        // cout << endl;
-        // for (auto it = cycles.begin(); it != cycles.end(); ++it) {
-        //     cout << "cycle" << distance(cycles.begin(), it) << ": ";
-        //     for (const auto& node : *it) {
-        //         cout << sq[idPos[node] + K - 1];
-        //     } cout << endl;
-        // } cout << endl;
-        // for (const auto& sorted_path : sorted_paths) {
-        //     cout << "path" << sorted_path << ": ";
-        //     for (const auto& node : paths[sorted_path]) {
-        //         cout << sq[idPos[node] + K - 1];
-        //     } cout << endl;
-        // } cout << endl;
-
         return matching_size;
     }
 
@@ -428,7 +397,7 @@ public:
 
 int main(int argc, char *argv[]) {
     if (argc < 4) {
-        cerr << "Usage: " << argv[0] << " [K] [input.fa] [output]" << endl;
+        cerr << "Usage: " << argv[0] << " [K] [input.fa] [output((no extension)]" << endl;
         return 1;
     }
     INT _K = atoi(argv[1]);
@@ -446,24 +415,6 @@ int main(int argc, char *argv[]) {
 
     auto duration = chrono::duration_cast<chrono::seconds>(end_time - start_time);
     cout << "Hopcroft-Karp alg. completed in " << duration.count() << " sec" << endl;
-
-    // write out bin file
-    string bin_filename = _out_filename + ".bin";
-    ofstream outputFile(bin_filename, ios::binary);
-    if (!outputFile) {
-        cerr << "Error opening output file: " << bin_filename << endl;
-        return 1;
-    }
-    size_t rep_size = ncdbg.rep.size();
-    outputFile.write(reinterpret_cast<const char*>(&rep_size), sizeof(rep_size));
-    outputFile.write(ncdbg.rep.data(), rep_size);
-
-    size_t pointers_size = ncdbg.pointers.size();
-    outputFile.write(reinterpret_cast<const char*>(&pointers_size), sizeof(pointers_size));
-    outputFile.write(reinterpret_cast<const char*>(ncdbg.pointers.data()), pointers_size * sizeof(INT));
-
-    outputFile.close();
-    cout << "Binary file created: " << bin_filename << endl;
 
     // write out txt file
     string txt_filename = _out_filename + ".txt";
