@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#include <array> // sada
+#include <tuple> // sada
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -15,10 +17,18 @@ using INT = int64_t;
 using Kmers = unordered_map<string,INT>;
 using VINT = vector<INT>;
 using VVINT = vector<VINT>;
-using DINT = deque<INT>;
 
-void progress(INT crnt, INT total, const string& task) {
-    double progress = static_cast<double>(crnt) / static_cast<double>(total);
+struct pair_hash {
+    template <class T1, class T2>
+    size_t operator ()(const pair<T1, T2>& p) const {
+        auto h1 = hash<T1>{}(p.first);
+        auto h2 = hash<T2>{}(p.second);
+        return h1 ^ h2;
+    }
+};
+
+void progress(INT now, INT total, const string& task) {
+    double progress = static_cast<double>(now) / static_cast<double>(total);
     int width = 30;
     int pos = static_cast<int>(width * progress);
     cout << "\r" << task << " [";
@@ -274,6 +284,145 @@ public:
         };
         return check(cycles) || check(paths);
     }
+
+    VINT get_chead(const VVINT& vv) {
+        VINT cumls = {0};
+        INT cuml = 0;
+        for (const auto& v: vv) {
+            cuml += v.size() + 1;
+            cumls.push_back(cuml);
+        }
+        return cumls;
+    }
+
+    INT get_phead(const INT& idx, const VINT& v, const VVINT& vv) {
+        INT cuml = 0;
+        for (auto it = v.begin(); *it != idx; ++it)
+            cuml += vv[*it].size() + 1;
+        return cuml;
+    }
+
+    void cpsort() {
+        const INT c = static_cast<INT>(cycles.size()),
+                  p = static_cast<INT>(paths.size());
+        const VINT cheads = get_chead(cycles);
+        VINT spaths;
+        // node to segment
+        unordered_map<INT, INT> ntos;
+        INT seg_id = 0;
+        for (INT i = 0; i < c; ++i, ++seg_id) {
+            for (const auto& node: cycles[i]) {
+                ntos[node] = seg_id;
+            }
+        } for (INT i = 0; i < p; ++i, ++seg_id) {
+            for (const auto& node: paths[i]) {
+                ntos[node] = seg_id;
+            }
+        }
+        // point from paths to paths and cycles
+        VVINT ptoc;
+        unordered_map<pair<INT, INT>, INT, pair_hash> ptop;
+        int8_t is_self = 0;
+        for (INT from = 0; from < p; ++from) {
+            if (p < 1000 || from % 1000 == 0)
+                progress(from, p, "Pointing paths to its preds");
+            auto head = paths[from][0];
+            auto preds = inv_adj[head];
+            if (head == 0 && match_v[head] == -1 && preds.empty()) {
+                ptop[make_pair(from, 0)] = from;
+                is_self = 1;
+                continue;
+            }
+            auto pred = preds[0];
+            auto to_seg = ntos[pred];
+            if (to_seg < c) {
+                auto cyc = cycles[to_seg];
+                auto it = find(cyc.begin(), cyc.end(), pred);
+                if (it == cyc.end()) {
+                    cerr << "Invalid pred: " << pred 
+                    << " not found in cycles[" << to_seg << "].\n";
+                    return;
+                }
+                auto at = distance(cyc.begin(), it);
+                ptoc.push_back({to_seg, at, from});
+                continue;
+            } else if (to_seg >= c && to_seg < c + p) {
+                auto pat = paths[to_seg - c];
+                auto it = find(pat.begin(), pat.end(), pred);
+                if (it == pat.end()) {
+                    cerr << "Invalid pred: " << pred
+                    << " not found in paths[" << to_seg - c << "].\n";
+                    return;
+                }
+                auto at = distance(pat.begin(), it);
+                ptop[make_pair(to_seg - c, at)] = from;
+                continue;
+            } else {
+                cerr << "Error: Invalid segment ID.\n";
+                return;
+            }
+        }
+        cout << "\nSorting...";
+        // (1) sort ptoc by cycles' index-wise ASC order
+        sort(ptoc.begin(), ptoc.end(), [&](const VINT& a, const VINT& b) {
+            return a[0] < b[0] || (a[0] == b[0] && a[1] <= b[1]);
+        });
+        // (2) add paths pointing to cycles
+        vector<int8_t> seen(p, 0);
+        auto pc = static_cast<INT>(ptoc.size());
+        for (INT i = 0; i < pc; ++i) {
+            auto from = ptoc[i][2];
+            spaths.push_back(from);
+            pointers.push_back(cheads[ptoc[i][0]] + ptoc[i][1]);
+            seen[from] = 1;
+        }
+        // (3) add any unadded paths
+        INT offset = cheads.back(), sidx = 0;
+        if (spaths.empty() && !paths.empty()) {
+            cerr << "Error: spaths is empty.\n";
+            return;
+        }
+        while (sidx < p) {
+            if (find(seen.begin(), seen.end(), 0) == seen.end()) break;
+            auto now = spaths[sidx];
+            auto cnt = static_cast<INT>(paths[now].size());
+            auto at = 0;
+            while (cnt--) {
+                auto it = ptop.find(make_pair(now, at));
+                if (it == ptop.end()) {
+                    ++at;
+                    continue;
+                } auto from = it->second;
+                spaths.push_back(from);
+                pointers.push_back(offset + get_phead(now, spaths, paths) + at);
+                seen[from] = 1;
+                ++at;
+            } ++sidx;
+        }
+        // (4) add self-pointing path if exists
+        if (is_self) {
+            spaths.push_back(0);
+            pointers.push_back(offset + get_phead(0, spaths, paths));
+        }
+        cout << "\rSorting completed.\n";
+
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } for (const auto& path: spaths) {
+            for (const auto& node: paths[path]) {
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } if(!rep.empty()) rep.pop_back();
+
+        // debug
+        cout << "\n" << rep << "\n";
+        cout << "Pointers:\n";
+        for (const auto& pointer: pointers) {
+            cout << pointer << " ";
+        } cout << "\n";
+    }
 };
 
 int main(int argc, char *argv[]) {
@@ -307,6 +456,8 @@ int main(int argc, char *argv[]) {
         cout << "Duplicates found.\n";
     else
         cout << "No duplicates found.\n";
+
+    ncdbg.cpsort();
 
     // // write out txt file
     // string txt_filename = _out_filename + ".txt";
