@@ -378,11 +378,10 @@ public:
         }
         // (3) add any unadded paths
         INT offset = cheads.back(), sidx = 0;
-        if (spaths.empty() && !paths.empty()) {
+        if (spaths.empty()) {
             cerr << "Error: spaths is empty.\n";
-            return;
         }
-        while (sidx < p) {
+        while (static_cast<INT>(spaths.size()) <= p && sidx < p) {
             if (find(seen.begin(), seen.end(), 0) == seen.end()) break;
             auto now = spaths[sidx];
             auto cnt = static_cast<INT>(paths[now].size());
