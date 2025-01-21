@@ -98,12 +98,6 @@ public:
         n = kmers.size();
         adj.resize(n);
         inv_adj.resize(n);
-
-        // debug
-        cout << "Kmers:\n";
-        for (const auto& entry : kmers) {
-            cout << entry.second << " : " << entry.first << "\n";
-        } cout << "\n";
     }
 
     INT forward(INT id, char c) {
@@ -193,12 +187,6 @@ public:
         }
         cout << "\rFound maximum matching of size " << m << "\n";
 
-        // debug
-        cout << "Matching:\n";
-        for (INT u = 0; u < n; ++u) {
-            cout << u << " -> " << match_u[u] << "\n";
-        } cout << "\n";
-
         return m;
     }
 
@@ -244,36 +232,13 @@ public:
             if (n < 1000 || u % 1000 == 0)
                 progress(u, n, "Decomposing");
         }
-        
-        // debug
-        INT cnt = 0;
-        cout << "\ncycles:\n"; INT i = 0;
-        for (const auto& cycle: cycles) {
-            cout << "cycle " << i++ << ": ";
-            for (const auto& node: cycle) {
-                cout << sq[idPos[node] + K - 1];
-                cnt++;
-            } cout << " (";
-            for (const auto& node: cycle) {
-                cout << node << " ";
-            } cout << "\b)\n";
-        }
-        cout << "paths:\n"; i = 0;
-        for (const auto& path: paths) {
-            cout << "path " << i++ << ": ";
-            for (const auto& node: path) {
-                cout << sq[idPos[node] + K - 1];
-                cnt++;
-            } cout << " (";
-            for (const auto& node: path) {
-                cout << node << " ";
-            } cout << "\b)\n";
-        }
-        cout << "Total nodes covered : " << cnt << "\n";
-        cout << "Total kmers : " << n << "\n";
+        if (has_dup(cycles, paths))
+            cout << "Duplicates found.\n";
+        else
+            cout << "No duplicates found.\n";
     }
 
-    bool has_dup() {
+    bool has_dup(const VVINT& cycles, const VVINT& paths) {
         unordered_set<INT> seen;
         auto check = [&](const VVINT& v) {
             for (const auto& vec: v) {
@@ -285,142 +250,180 @@ public:
         return check(cycles) || check(paths);
     }
 
-    VINT get_chead(const VVINT& vv) {
-        VINT cumls = {0};
-        INT cuml = 0;
-        for (const auto& v: vv) {
-            cuml += v.size() + 1;
-            cumls.push_back(cuml);
-        }
-        return cumls;
-    }
-
-    INT get_phead(const INT& idx, const VINT& v, const VVINT& vv) {
-        INT cuml = 0;
-        for (auto it = v.begin(); *it != idx; ++it)
-            cuml += vv[*it].size() + 1;
-        return cuml;
-    }
-
-    void cpsort() {
-        const INT c = static_cast<INT>(cycles.size()),
-                  p = static_cast<INT>(paths.size());
-        const VINT cheads = get_chead(cycles);
-        VINT spaths;
-        // node to segment
-        unordered_map<INT, INT> ntos;
-        INT seg_id = 0;
-        for (INT i = 0; i < c; ++i, ++seg_id) {
-            for (const auto& node: cycles[i]) {
-                ntos[node] = seg_id;
-            }
-        } for (INT i = 0; i < p; ++i, ++seg_id) {
-            for (const auto& node: paths[i]) {
-                ntos[node] = seg_id;
-            }
-        }
-        // point from paths to paths and cycles
-        VVINT ptoc;
-        unordered_map<pair<INT, INT>, INT, pair_hash> ptop;
-        int8_t is_self = 0;
-        for (INT from = 0; from < p; ++from) {
-            if (p < 1000 || from % 1000 == 0)
-                progress(from, p, "Pointing paths to its preds");
-            auto head = paths[from][0];
-            auto preds = inv_adj[head];
-            if (head == 0 && match_v[head] == -1 && preds.empty()) {
-                ptop[make_pair(from, 0)] = from;
-                is_self = 1;
-                continue;
-            }
-            auto pred = preds[0];
-            auto to_seg = ntos[pred];
-            if (to_seg < c) {
-                auto cyc = cycles[to_seg];
-                auto it = find(cyc.begin(), cyc.end(), pred);
-                if (it == cyc.end()) {
-                    cerr << "Invalid pred: " << pred 
-                    << " not found in cycles[" << to_seg << "].\n";
-                    return;
-                }
-                auto at = distance(cyc.begin(), it);
-                ptoc.push_back({to_seg, at, from});
-                continue;
-            } else if (to_seg >= c && to_seg < c + p) {
-                auto pat = paths[to_seg - c];
-                auto it = find(pat.begin(), pat.end(), pred);
-                if (it == pat.end()) {
-                    cerr << "Invalid pred: " << pred
-                    << " not found in paths[" << to_seg - c << "].\n";
-                    return;
-                }
-                auto at = distance(pat.begin(), it);
-                ptop[make_pair(to_seg - c, at)] = from;
-                continue;
-            } else {
-                cerr << "Error: Invalid segment ID.\n";
-                return;
-            }
-        }
-        cout << "\nSorting...";
-        // (1) sort ptoc by cycles' index-wise ASC order
-        sort(ptoc.begin(), ptoc.end(), [&](const VINT& a, const VINT& b) {
-            return a[0] < b[0] || (a[0] == b[0] && a[1] <= b[1]);
-        });
-        // (2) add paths pointing to cycles
-        vector<int8_t> seen(p, 0);
-        auto pc = static_cast<INT>(ptoc.size());
-        for (INT i = 0; i < pc; ++i) {
-            auto from = ptoc[i][2];
-            spaths.push_back(from);
-            pointers.push_back(cheads[ptoc[i][0]] + ptoc[i][1]);
-            seen[from] = 1;
-        }
-        // (3) add any unadded paths
-        INT offset = cheads.back(), sidx = 0;
-        if (spaths.empty()) {
-            cerr << "Error: spaths is empty.\n";
-        }
-        while (static_cast<INT>(spaths.size()) <= p && sidx < p) {
-            if (find(seen.begin(), seen.end(), 0) == seen.end()) break;
-            auto now = spaths[sidx];
-            auto cnt = static_cast<INT>(paths[now].size());
-            auto at = 0;
-            while (cnt--) {
-                auto it = ptop.find(make_pair(now, at));
-                if (it == ptop.end()) {
-                    ++at;
-                    continue;
-                } auto from = it->second;
-                spaths.push_back(from);
-                pointers.push_back(offset + get_phead(now, spaths, paths) + at);
-                seen[from] = 1;
-                ++at;
-            } ++sidx;
-        }
-        // (4) add self-pointing path if exists
-        if (is_self) {
-            spaths.push_back(0);
-            pointers.push_back(offset + get_phead(0, spaths, paths));
-        }
-        cout << "\rSorting completed.\n";
-
+    void cp_bare() {
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 rep += sq[idPos[node] + K - 1];
             } rep += "$";
-        } for (const auto& path: spaths) {
-            for (const auto& node: paths[path]) {
+        } rep += "$";
+        for (const auto& path: paths) {
+            for (const auto& node: path) {
+                if (node == path.front())
+                    rep += sq.substr(idPos[node], K - 1);
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } if (!rep.empty()) rep.pop_back();
+    }
+
+    void cp_unsorted() {
+        INT p = paths.size(), z = cycles.size() + p + n;
+        pointers.resize(paths.size(), -1);
+        unordered_map<INT, INT> heads;
+        INT offset;
+        // record paths' heads
+        for (INT i = 0; i < static_cast<INT>(paths.size()); ++i)
+            heads[paths[i][0]] = i;
+        // scan nodes in cycles one by one to find paths pointing to them
+        INT pos = 0;
+        bool self = false;
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                for (const auto& c: Alphabet) {
+                    auto next = forward(node, c);
+                    if (next == -1) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    pointers[heads[next]] = pos;
+                    heads.erase(it);
+                    if (heads.empty()) goto end;
+                }
+                pos++;
+                if (z < 1000 || pos % 1000 == 0)
+                    progress(pos, z, "Pointing");
+            }
+            pos++;
+        } offset = pos;
+        for (const auto& path: paths) {
+            for (const auto& node: path) {
+                for (const auto& c: Alphabet) {
+                    auto next = forward(node, c);
+                    if (next == -1) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    pointers[heads[next]] = pos;
+                    heads.erase(it);
+                    if (heads.empty()) goto end;
+                }
+                pos++;
+                if (z < 1000 || pos % 1000 == 0)
+                    progress(pos, z, "Pointing");
+            }
+            pos++;
+        }
+        if (heads.size() > 0) {
+            if (heads.size() > 1) {
+                cerr << "Error: More than one self-pointing path.\n";
+                return;
+            }
+            auto it = heads.begin();
+            if (it->first != 0) {
+                cerr << "Error: Invalid self-pointing path.\n";
+                return;
+            }
+            self = true;
+            pointers[heads[0]] = offset;
+            for (auto& to: pointers) 
+                if (to > offset) to++;
+            heads.erase(it);
+        }
+        end:;
+        if (heads.empty()) 
+            cout << "All paths are pointed.\n";
+        // generate representation
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } for (const auto& path: paths) {
+            for (const auto& node: path) {
+                if (node == 0 && self) rep += "$";
                 rep += sq[idPos[node] + K - 1];
             } rep += "$";
         } if(!rep.empty()) rep.pop_back();
+        // take difference of pointers
+        to_diff(pointers);
+    }
 
-        // debug
-        cout << "\n" << rep << "\n";
-        cout << "Pointers:\n";
-        for (const auto& pointer: pointers) {
-            cout << pointer << " ";
-        } cout << "\n";
+    void cp_sorted() {
+        VINT pord;
+        unordered_map<INT, INT> heads;
+        // record paths' heads
+        for (INT i = 0; i < static_cast<INT>(paths.size()); ++i)
+            heads[paths[i][0]] = i;
+        // scan nodes in cycles one by one to find paths pointing to them
+        INT pos = 0;
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                for (const auto& c: Alphabet) {
+                    auto next = forward(node, c);
+                    if (next == -1) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    pord.push_back(it->second);
+                    pointers.push_back(pos);
+                    heads.erase(it);
+                    if (heads.empty()) goto end;
+                }
+                pos++;
+            }
+            pos++;
+        }
+        // handle a self-pointing path if exists
+        if (pord.size() == 0) pord.push_back(pos);
+        // add remaining paths
+        for (const auto& id: pord) {
+            for(const auto& node: paths[id]) {
+                for (const auto& c: Alphabet) {
+                    auto next = forward(node, c);
+                    if (next == -1) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    pord.push_back(it->second);
+                    pointers.push_back(pos);
+                    heads.erase(it);
+                    if (heads.empty()) goto end;
+                }
+                pos++;
+            }
+            pos++;
+        }
+        // handle a self-pointing path if exists
+        /*パスだけならノード0はパス0に含まれているはず*/
+        if (heads.size() > 0) {
+            if (heads.size() > 1) {
+                cerr << "Error: More than one self-pointing path.\n";
+                return;
+            }
+            auto it = heads.begin();
+            if (it->first != 0) {
+                cerr << "Error: Invalid self-pointing path.\n";
+                return;
+            }
+            pord.push_back(it->second);
+            pointers.push_back(pos);
+        }
+        end:;
+        // generate representation
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } for (const auto& id: pord) {
+            for (const auto& node: paths[id]) {
+                if (node == 0) rep += "$";
+                rep += sq[idPos[node] + K - 1];
+            } rep += "$";
+        } if(!rep.empty()) rep.pop_back();
+    }
+
+    void to_diff(VINT& v) {
+        if (v.size() < 2) return;
+        INT prev = v[0];
+        for (INT i = 1; i < static_cast<INT>(v.size()); ++i) {
+            INT tmp = v[i];
+            v[i] -= prev;
+            prev = tmp;
+        }
     }
 };
 
@@ -435,46 +438,54 @@ int main(int argc, char *argv[]) {
 
     // build node-centric dBG
     DeBruijnGraph ncdbg = DeBruijnGraph(_in_filename, _K, true);
+    auto start0 = chrono::high_resolution_clock::now();
     ncdbg.getKmers();
     ncdbg.addEdges();
 
-    auto start_time = chrono::high_resolution_clock::now();
-    ncdbg.hopcroft_karp();
-    auto end_time = chrono::high_resolution_clock::now();
-    auto duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
-    cout << "Hopcroft-Karp alg. completed in " << duration.count() << " ms" << "\n";
+    auto start1 = chrono::high_resolution_clock::now();
+    INT m = ncdbg.hopcroft_karp();
+    auto end1 = chrono::high_resolution_clock::now();
+    auto duration1 = chrono::duration_cast<chrono::milliseconds>(end1 - start1);
+    cout << "Hopcroft-Karp alg. completed in " << duration1.count() << " ms" << "\n";
 
-    start_time = chrono::high_resolution_clock::now();
+    auto start2 = chrono::high_resolution_clock::now();
     ncdbg.decompose();
-    end_time = chrono::high_resolution_clock::now();
-    duration = chrono::duration_cast<chrono::milliseconds>(end_time - start_time);
-    cout << "Decomposition completed in " << duration.count() << " ms" << "\n";
+    auto end2 = chrono::high_resolution_clock::now();
+    auto duration2 = chrono::duration_cast<chrono::milliseconds>(end2 - start2);
+    cout << "Decomposition completed in " << duration2.count() << " ms" << "\n";
 
-    // debug
-    if (ncdbg.has_dup())
-        cout << "Duplicates found.\n";
-    else
-        cout << "No duplicates found.\n";
+    // ncdbg.cp_bare();
+    ncdbg.cp_unsorted();
+    // ncdbg.cp_sorted();
+    auto end0 = chrono::high_resolution_clock::now();
+    auto duration0 = chrono::duration_cast<chrono::milliseconds>(end0 - start0);
+    cout << "Total time elapsed: " << duration0.count() << " ms" << "\n";
 
-    ncdbg.cpsort();
+    // write out string representation
+    string str_filename = _out_filename + "_str.txt";
+    ofstream strFile(str_filename);
+    if (!strFile) {
+        cerr << "Error: Could not open file " << str_filename << " for writing.\n";
+        return 1;
+    }
+    if (ncdbg.rep.empty()) cerr << "Warning: rep is empty.\n";
+    strFile << ncdbg.rep << "\n";
+    strFile.close();
+    cout << "Text file created: " << str_filename << "\n";
 
-    // // write out txt file
-    // string txt_filename = _out_filename + ".txt";
-    // ofstream txtFile(txt_filename);
-    // if (!txtFile) {
-    //     cerr << "Error: Could not open file " << txt_filename << " for writing.\n";
-    //     return 1;
-    // }
-    // if (ncdbg.rep.empty()) cerr << "Warning: rep is empty.\n";
-    // if (ncdbg.pointers.empty()) cerr << "Warning: pointers are empty.\n";
-
-    // txtFile << ncdbg.rep << "\n";
-    // for (const auto& pointer : ncdbg.pointers) {
-    //     txtFile << pointer << " ";
-    // }
-    // txtFile << "\n";
-    // txtFile.close();
-    // cout << "Text file created: " << txt_filename << "\n";
+    string pnt_filename = _out_filename + "_pnt.txt";
+    ofstream pntFile(pnt_filename);
+    if (!pntFile) {
+        cerr << "Error: Could not open file " << pnt_filename << " for writing.\n";
+        return 1;
+    }
+    if (ncdbg.pointers.empty()) cerr << "Warning: pointers are empty.\n";
+    for (const auto& pointer : ncdbg.pointers) {
+        pntFile << pointer << " ";
+    }
+    pntFile.close();
+    cout << "Text file created: " << pnt_filename << "\n";
+    cout << "(#kmers, #cycles, #paths, #matching) = (" << ncdbg.n << ", " << ncdbg.cycles.size() << ", " << ncdbg.paths.size() << ", " << m << ")\n";
 
     return 0;
 }
