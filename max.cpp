@@ -19,6 +19,7 @@ using Vint = vector<int8_t>;
 using VINT = vector<INT>;
 using PINT = pair<INT, INT>;
 using VPINT = vector<PINT>;
+using VTINT = vector<tuple<INT, INT, INT, INT>>;
 using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
 
@@ -102,7 +103,7 @@ public:
             if (line.empty()) continue;
             if (line[0] == '>') {
                 if (!read.empty()) {
-                    reads.push_back(read);
+                    reads.emplace_back(read);
                     read.clear();
                 }
                 is_new_read = true;
@@ -113,16 +114,16 @@ public:
                 is_new_read = false;
             } else read += line;
         }
-        if (!read.empty()) reads.push_back(read);
+        if (!read.empty()) reads.emplace_back(read);
         inputFile.close();
         delete[] buffer;
         INT tlen = 0;
+        to_uppercase(reads);
         for (string& read: reads) {
             read.erase(remove_if(read.begin(), read.end(), 
                 [this](char x) {return base.find(x) == base.end();}), read.end());
             tlen += read.size();
         }
-        to_uppercase(reads);
         INT id = 0, footing = 0;
         for (auto i = 0; i < static_cast<INT>(reads.size()); ++i) {
             auto read = reads[i];
@@ -131,14 +132,14 @@ public:
             INT t = len - K + 1;
             string crnt = read.substr(0, K);
             if (kmers.find(crnt) == kmers.end()) {
-                idpos.push_back({i, 0});
+                idpos.emplace_back(i, 0);
                 kmers[crnt] = static_cast<INT>(id++);
             }
             for (INT j = 1; j < t; ++j) {
                 crnt.erase(0, 1);
                 crnt.push_back(read[j + K - 1]);
                 if (kmers.find(crnt) == kmers.end()) {
-                    idpos.push_back({i, j});
+                    idpos.emplace_back(i, j);
                     kmers[crnt] = static_cast<INT>(id++);
                 }
                 progress(footing + j, tlen, "Detecting k-mers");
@@ -172,8 +173,8 @@ public:
             for (auto const c : base) {
                 auto next_id = forward(reads, kmers, idpos, id, c);
                 if (next_id != -1 && next_id != id) {
-                    adj[id].push_back(next_id);
-                    inv_adj[next_id].push_back(id);
+                    adj[id].emplace_back(next_id);
+                    inv_adj[next_id].emplace_back(id);
                     ++E;
                 }
             }
@@ -234,7 +235,7 @@ public:
             }
             progress(M, N, "Maximum matching");
         }
-        cout << "\rFound maximum matching of size " << M << "\n";
+        cout << "\nFound maximum matching of size " << M << "\n";
         return M;
     }
 
@@ -244,7 +245,7 @@ public:
         while(1) {
             if (seen[crnt]) break;
             seen[crnt] = 1;
-            trl.push_back(crnt);
+            trl.emplace_back(crnt);
             if (match_u[crnt] == -1) break;
             crnt = match_u[crnt];
         }
@@ -257,7 +258,7 @@ public:
         while(1) {
             if (seen[crnt]) break;
             seen[crnt] = 1;
-            lrt.push_back(crnt);
+            lrt.emplace_back(crnt);
             if (match_v[crnt] == -1) break;
             crnt = match_v[crnt];
         }
@@ -271,7 +272,7 @@ public:
             if (seen[u]) continue;
             VINT trl = dfs_forward(match_u, u, seen);
             if (trl.size() > 1 && match_u[trl.back()] == trl.front())
-                cycles.push_back(trl);
+                cycles.emplace_back(trl);
             else {
                 VINT lrt = dfs_backward(match_v, trl.front(), seen);
                 if (!lrt.empty()) {
@@ -279,7 +280,7 @@ public:
                     lrt.pop_back();
                     trl.insert(trl.begin(), lrt.begin(), lrt.end());
                 }
-                paths.push_back(trl);
+                paths.emplace_back(trl);
             }
             progress(u, N, "Decomposing");
         }
@@ -395,15 +396,18 @@ public:
     }
 
     REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
-                const VVINT& cycles, const VVINT& paths, const PINT& CnP) {
-        INT P = CnP.second;  
-        INT S = CnP.first + P + N;
+                VVINT& cycles, VVINT& paths, const PINT& CnP) {
+        INT P = CnP.second;
+        INT S = CnP.first + P + N, from = 0;
+        bool self = false; // exists pointer from node 0 to node 0 ?
+        unordered_set<INT> pointees;
         unordered_map<INT, INT> heads;
         for (INT i = 0; i < P; ++i)
             heads[paths[i][0]] = i; // record paths' heads
+        VINT pord;
+
+        // check each node in cycles if it can be pointed from paths
         INT pos = 0;
-        bool self = false;
-        VINT pnt(P, -1), pord;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
@@ -411,46 +415,96 @@ public:
                     if (next == -1) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
-                    pord.push_back(it->second);
-                    pnt.push_back(pos);
+                    pord.emplace_back(it->second);
+                    pointees.insert(node);
                     heads.erase(it);
                     if (heads.empty()) goto end;
-                } pos++;
+                } ++pos;
                 progress(pos, S, "Pointing");
-            } pos++;
-        }
-        // handle a self-pointing path if exists
-        if (pord.size() == 0) pord.push_back(pos);
-        // add remaining paths
-        for (const auto& id: pord) {
-            for(const auto& node: paths[id]) {
-                for (const auto& c: base) {
-                    auto next = forward(reads, kmers, idpos, node, c);
-                    if (next == -1) continue;
-                    auto it = heads.find(next);
-                    if (it == heads.end()) continue;
-                    pord.push_back(it->second);
-                    pnt.push_back(pos);
-                    heads.erase(it);
+            } ++pos;
+        } 
+
+        while (from < P && !heads.empty()) {
+            // check each node in paths in "pord" if it can be pointed from other paths
+            auto bound = pord.size();
+            for (auto i = from; i < min(static_cast<INT>(bound), P); ++i) {
+                for (const auto& node: paths[pord[i]]) {
+                    for (const auto& c: base) {
+                        auto next = forward(reads, kmers, idpos, node, c);
+                        if (next == -1) continue;
+                        auto it = heads.find(next);
+                        if (it == heads.end()) continue;
+                        pord.emplace_back(it->second);
+                        ++bound;
+                        pointees.insert(node);
+                        heads.erase(it);
+                        if (heads.empty()) goto end;
+                    } ++pos;
+                    progress(pos, S, "Pointing");
+                } ++pos;
+            } 
+            from = pord.size();
+
+            // resolve unpointed paths
+            for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
+                VINT new_cycle;
+                VTINT cands; // candidates of (pointee, path to modify, pos to delete, head to delete)
+                auto start = it1->second;
+                auto crnt = start;
+                do {
+                    auto& path = paths[crnt];
+                    for (auto i = 0; i < static_cast<INT>(path.size()); ++i) {
+                        auto node = path[i];
+                        new_cycle.emplace_back(node);
+                        for (const auto& c: base) {
+                            auto next = forward(reads, kmers, idpos, node, c);
+                            if (next == -1) continue;
+                            auto it2 = heads.find(next);
+                            if (it2 == heads.end()) continue;
+                            cands.emplace_back(node, crnt, i, path[0]);
+                            crnt = it2->second;
+                            goto next;
+                        }
+                    }
+                    new_cycle.clear();
+                    break;
+                    next:;
+                } while (crnt != start);
+
+                if (new_cycle.empty()) continue;
+                cycles.emplace_back(new_cycle);
+                for (const auto& cand: cands) {
+                    auto pointee = get<0>(cand);
+                    auto path_id = get<1>(cand);
+                    auto path_to_modify = paths[path_id];
+                    auto pos_to_delete = get<2>(cand);
+                    auto head_to_delete = get<3>(cand);
+
+                    pointees.insert(pointee);
+                    pord.emplace_back(path_id);
+                    path_to_modify.erase(path_to_modify.begin(), path_to_modify.begin() + pos_to_delete);
+                    auto it2 = heads.find(head_to_delete);
+                    if (it2 != heads.end()) heads.erase(it2);
                     if (heads.empty()) goto end;
-                } pos++;
-                progress(pos, S, "Pointing");
-            } pos++;
-        }
-        // handle a self-pointing path if exists
-        /*パスだけならノード0はパス0に含まれているはず*/
-        if (heads.size() > 0) {
-            auto it = heads.begin();
-            self = true;
-            pord.push_back(it->second);
-            pnt.push_back(pos);
-            heads.erase(it);
+                }
+            }
+            if (heads.size() == 1 && heads.begin()->first == 0 && heads.begin()->second == 0) {
+                auto it = heads.begin();
+                self = true;
+                pord.emplace_back(it->second);
+                pointees.insert(0);
+                heads.erase(it);
+                goto end;
+            }
         }
         end:
         if (heads.empty()) 
             cout << "All paths are pointed.\n";
+        else cout << heads.size() << " paths are not pointed.\n";
+
         // generate representation
         string txt;
+        VINT pnt;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 auto x = idpos[node];
@@ -462,7 +516,21 @@ public:
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
-        } if(!txt.empty()) txt.pop_back();        
+        } if(!txt.empty()) txt.pop_back();
+        pos = 0;
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                if (pointees.find(node) != pointees.end())
+                    pnt.emplace_back(pos);
+                ++pos;
+            } ++pos;
+        } for (const auto& pid: pord) {
+            for (const auto& node: paths[pid]) {
+                if (pointees.find(node) != pointees.end())
+                    pnt.emplace_back(pos);
+                ++pos;
+            } ++pos;
+        }      
         to_diff(pnt); // take difference of pointers
         return {txt, pnt};
     }
@@ -491,7 +559,7 @@ public:
         }
         txtfile << rep.first;
         txtfile.close();
-        cout << "File created: " << txtfilename << "\n";
+        cout << "\nFile created: " << txtfilename << "\n";
 
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
@@ -506,7 +574,7 @@ public:
         for (const auto& p: rep.second)
             pntfile << p << " ";
         pntfile.close();
-        cout << "File created: " << pntfilename << "\n";
+        cout << "\nFile created: " << pntfilename << "\n";
     }
 };
 
