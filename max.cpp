@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <memory_resource>
 #include <string>
 #include <vector>
 #include <queue>
@@ -12,8 +13,8 @@
 #include <chrono>
 
 using namespace std;
+
 using INT = int64_t;
-using Kmers = unordered_map<string,INT>;
 using VSTR = vector<string>;
 using Vint = vector<int8_t>;
 using VINT = vector<INT>;
@@ -54,12 +55,20 @@ public:
     INT option;
     bool is_node_centric;
 
-    DeBruijnGraph(string _filename, INT _K, INT _option, bool _is_node_centric): filename(_filename), K(_K), option(_option), is_node_centric(_is_node_centric)
+    pmr::monotonic_buffer_resource pool;
+    using Kmers = pmr::unordered_map<string, INT>;
+    using MINT = pmr::unordered_map<INT, INT>;
+    Kmers kmers;
+    MINT heads;
+
+    DeBruijnGraph(string _filename, INT _K, INT _option, bool _is_node_centric)
+        : filename(_filename), K(_K), option(_option), is_node_centric(_is_node_centric),
+        kmers(&pool), heads(&pool)
     {};
 
     REP process() {
         VSTR reads;
-        Kmers kmers;
+
         VPINT idpos;        
         INT N = get_kmers(reads, kmers, idpos);
 
@@ -131,16 +140,18 @@ public:
             if (len < K) continue;
             INT t = len - K + 1;
             string crnt = read.substr(0, K);
-            if (kmers.find(crnt) == kmers.end()) {
+            auto [it, inserted] = kmers.insert({crnt, id});
+            if (inserted) {
                 idpos.emplace_back(i, 0);
-                kmers[crnt] = static_cast<INT>(id++);
+                ++id;
             }
             for (INT j = 1; j < t; ++j) {
                 crnt.erase(0, 1);
                 crnt.push_back(read[j + K - 1]);
-                if (kmers.find(crnt) == kmers.end()) {
+                auto [it, inserted] = kmers.insert({crnt, id});
+                if (inserted) {
                     idpos.emplace_back(i, j);
-                    kmers[crnt] = static_cast<INT>(id++);
+                    ++id;
                 }
                 progress(footing + j, tlen, "Detecting k-mers");
             }
@@ -401,7 +412,6 @@ public:
         INT S = CnP.first + P + N, from = 0;
         bool self = false; // exists pointer from node 0 to node 0 ?
         unordered_set<INT> pointees;
-        unordered_map<INT, INT> heads;
         for (INT i = 0; i < P; ++i)
             heads[paths[i][0]] = i; // record paths' heads
         VINT pord;
