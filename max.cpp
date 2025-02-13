@@ -368,8 +368,7 @@ public:
             if (inv_adj[paths[i][0]].empty())
                 self_paths.insert(i);
             else heads[paths[i][0]] = i; // record paths' heads
-        INT offset = 0, pos = 0;
-        bool self = false;
+        INT pos = 0;
         VINT pnt(P, -1);
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
@@ -384,7 +383,7 @@ public:
                 } pos++;
                 progress(pos, S, "Pointing");
             } pos++;
-        } offset = pos;
+        }
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 for (const auto& c: base) {
@@ -399,17 +398,14 @@ public:
                 progress(pos, S, "Pointing");
             } pos++;
         }
-        if (heads.size() > 0) {
-            auto it = heads.begin();
-            self = true;
-            pnt[heads[0]] = offset;
-            for (auto& to: pnt) 
-                if (to > offset) to++;
-            heads.erase(it);
+        for (const auto& pid: self_paths) {
+            pnt[pid] = pos;
+            pos++;
         }
         end:
         if (heads.empty()) 
             cout << "All paths are pointed.\n";
+        else cout << heads.size() << " paths are not pointed.\n";
         // generate representation
         string txt;
         for (const auto& cycle: cycles) {
@@ -417,15 +413,16 @@ public:
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
-        } for (const auto& path: paths) {
+        } for (INT i = 0; i < P; ++i) {
+            auto path = paths[i];
+            if (self_paths.find(i) != self_paths.end())
+                txt += "$" + reads[idpos[path[0]].first].substr(idpos[path[0]].second, K - 1);
             for (const auto& node: path) {
-                if (node == 0 && self)
-                    txt += "$";
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
         } if(!txt.empty()) txt.pop_back();        
-        to_diff(pnt); // take difference of pointers
+        // to_diff(pnt); // take difference of pointers
         return {txt, pnt};
     }
 
@@ -635,7 +632,7 @@ public:
             return;
         }
         remove_suffix(filename, ".fa");
-        string txtfilename = filename + ".ours.k" + to_string(K) + ".txt";
+        string txtfilename = filename + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -649,7 +646,7 @@ public:
             cerr << "Note: pnt is empty.\n";
             return;
         }
-        string pntfilename = filename + ".ours.k" + to_string(K) + ".pnt.txt";
+        string pntfilename = filename + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
         ofstream pntfile(pntfilename);
         if (!pntfile) {
             cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
