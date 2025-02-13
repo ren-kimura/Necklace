@@ -129,31 +129,31 @@ public:
         INT tlen = 0;
         to_uppercase(reads);
         for (string& read: reads) {
-            read.erase(remove_if(read.begin(), read.end(), 
-                [this](char x) {return base.find(x) == base.end();}), read.end());
+            cout << read << "\n"; // debug
             tlen += read.size();
         }
         INT id = 0, footing = 0;
         for (auto i = 0; i < static_cast<INT>(reads.size()); ++i) {
-            auto read = reads[i];
+            const string& read = reads[i];
             INT len = read.size();
             if (len < K) continue;
-            INT t = len - K + 1;
-            string crnt = read.substr(0, K);
-            auto [it, inserted] = kmers.insert({crnt, id});
-            if (inserted) {
-                idpos.emplace_back(i, 0);
-                ++id;
-            }
-            for (INT j = 1; j < t; ++j) {
-                crnt.erase(0, 1);
-                crnt.push_back(read[j + K - 1]);
-                auto [it, inserted] = kmers.insert({crnt, id});
-                if (inserted) {
-                    idpos.emplace_back(i, j);
-                    ++id;
+            for (INT j = 0; j <= len - K; ++j) {
+                bool valid = true;
+                for (INT k = 0; k < K; ++k) {
+                    if (base.find(read[j + k]) == base.end()) {
+                        valid = false;
+                        break;
+                    }
                 }
-                progress(footing + j, tlen, "Detecting k-mers");
+                if (valid) {
+                    string kmer = read.substr(j, K);
+                    auto [it, inserted] = kmers.insert({kmer, id});
+                    if (inserted) {
+                        idpos.emplace_back(i, j);
+                        ++id;
+                    }
+                    progress(footing + j, tlen, "Detecting k-mers");
+                }
             }
             footing += len;
         }
@@ -162,7 +162,8 @@ public:
         // debug
         cout << "Kmers:\n";
         for (const auto& [kmer, id]: kmers)
-            cout << kmer << " -> " << id << "\n";
+            cout << kmer << " -> " << id << ", (" 
+                 << idpos[id].first << ", " << idpos[id].second << ")\n";
         INT N = kmers.size();
         cout << "Total number of k-mers: " << N << "\n";
         return N;
@@ -574,7 +575,7 @@ public:
             } txt += "$";
         } for (const auto& pid: pord) {
             if (self_paths.find(pid) != self_paths.end())
-                txt += "$" + reads[idpos[paths[pid][0]].first].substr(0, K - 1);
+                txt += "$" + reads[idpos[paths[pid][0]].first].substr(idpos[paths[pid][0]].second, K - 1);
             for (const auto& node: paths[pid]) {
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
