@@ -129,7 +129,6 @@ public:
         INT tlen = 0;
         to_uppercase(reads);
         for (string& read: reads) {
-            cout << read << "\n"; // debug
             tlen += read.size();
         }
         INT id = 0, footing = 0;
@@ -157,15 +156,9 @@ public:
             }
             footing += len;
         }
-        cout << "\n";
 
-        // debug
-        cout << "Kmers:\n";
-        for (const auto& [kmer, id]: kmers)
-            cout << kmer << " -> " << id << ", (" 
-                 << idpos[id].first << ", " << idpos[id].second << ")\n";
         INT N = kmers.size();
-        cout << "Total number of k-mers: " << N << "\n";
+        cout << "\nTotal number of k-mers: " << N << "\n";
         return N;
     }
 
@@ -307,20 +300,7 @@ public:
             cout << "\nNo duplicates found.\n";
         INT C = cycles.size(), P = paths.size();
         cout << "Found " << C << " cycles and " << P << " paths.\n";
-        // debug
-        cout << "Cycles:\n";
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle)
-                cout << node << " ";
-            cout << "\n";
-        }
-        cout << "Paths:\n";
-        for (int i = 0; i < P; ++i) {
-            cout << i << ": ";
-            for (const auto& node: paths[i])
-                cout << node << " ";
-            cout << "\n";
-        }
+
         return {C, P};
     }
 
@@ -436,24 +416,7 @@ public:
             if (inv_adj[paths[i][0]].empty())
                 self_paths.insert(i);
             else heads[paths[i][0]] = i; // record paths' heads
-        // debug
-        cout << "\nCycles:\n";
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle)
-                cout << node << " ";
-            cout << "\n";
-        }
-        cout << "Paths:\n";
-        for (int i = 0; i < P; ++i) {
-            cout << i << ": ";
-            for (const auto& node: paths[i])
-                cout << node << " ";
-            cout << "\n";
-        }
-        // debug
-        cout << "Heads:\n";
-        for (const auto& [k, v]: heads)
-            cout << k << " -> " << v << "\n";
+
         VINT pord;
 
         // check each node in cycles if it can be pointed from paths
@@ -473,15 +436,6 @@ public:
                 progress(pos, S, "Pointing");
             } ++pos;
         } 
-
-        // debug
-        cout << "Heads(After processing cycles):\n";
-        for (const auto& [k, v]: heads)
-            cout << k << " -> " << v << "\n";
-        cout << "Pointees:\n";
-        for (const auto& p: pointees)
-            cout << p << " ";
-        cout << "\n";
 
         // add self-pointing paths to pord
         pord.insert(pord.end(), self_paths.begin(), self_paths.end());
@@ -554,13 +508,6 @@ public:
             cout << "All paths are pointed.\n";
         else cout << heads.size() << " paths are not pointed.\n";
         cout << "Exit code: " << exit_code << "\n";
-        cout << "Pord:\n";
-        for (const auto& p: pord)
-            cout << p << " ";
-        cout << "\nPointees:\n";
-        for (const auto& p: pointees)
-            cout << p << " ";
-        cout << "\n";
 
         // generate representation
         string txt;
@@ -596,22 +543,6 @@ public:
                 ++pos;
             } ++pos;
         }
-        // debug
-        cout << "\nCycles:\n";
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle)
-                cout << node << " ";
-            cout << "\n";
-        }
-        cout << "Paths:\n";
-        for (int i = 0; i < P; ++i) {
-            cout << pord[i] << ": ";
-            for (const auto& node: paths[pord[i]])
-                cout << node << " ";
-            cout << "\n";
-        }
-        cout << "\nPointers:\n"; for (const auto& p: pnt)
-            cout << p << " ";
         to_diff(pnt); // take difference of pointers
         return {txt, pnt};
     }
