@@ -28,7 +28,8 @@ unordered_set<char> base = {'A', 'C', 'G', 'T'};
 const INT INF = INT64_MAX;
 
 void progress(INT now, INT total, const string& task) {
-    if (total >= 100 && now % (total / 100) != 0) return;
+    const int disp_interval = total / 100;
+    if (total >= 100 && now % disp_interval != 0) return;
     double progress = static_cast<double>(now) / static_cast<double>(total);
     int width = 30;
     int pos = static_cast<int>(width * progress);
@@ -40,6 +41,14 @@ void progress(INT now, INT total, const string& task) {
     }
     cout << "] " << static_cast<int>(progress * 100.0) << "%";
     cout.flush();
+}
+
+void finished(const string& task) {
+    const int width = 30;
+    cout << "\r" << task << " [";
+    for (int i = 0; i < width - 1; ++i)
+        cout << "=";
+    cout << ">] 100%";
 }
 
 void remove_suffix(string& str, const string& suffix) {
@@ -55,8 +64,8 @@ public:
     INT option;
     bool is_node_centric;
 
-    pmr::monotonic_buffer_resource pool;
-    using Kmers = pmr::unordered_map<string, INT>;
+    pmr::monotonic_buffer_resource pool{512 * 1024 * 1024}; // 512MB
+    using Kmers = pmr::unordered_map<uint64_t, INT>;
     using MINT = pmr::unordered_map<INT, INT>;
     Kmers kmers;
     MINT heads;
@@ -80,7 +89,7 @@ public:
 
         VVINT cycles, paths;
         PINT CnP = decompose(N, match_u, match_v, cycles, paths);
-        // debug
+
         cout << "(#k-mers, #edges, #matching, #cycles, #paths) = (" 
             << N << ", " << E << ", " << M << ", "
             << CnP.first << ", " << CnP.second << ")\n";
@@ -97,15 +106,43 @@ public:
                     [](unsigned char c) {return toupper(c);});
     }
 
+    uint64_t encode_kmer(const string& kmer) {
+        uint64_t val = 0;
+        for (char c : kmer) {
+            if (c == 'A')      val = (val << 2) | 0;
+            else if (c == 'C') val = (val << 2) | 1;
+            else if (c == 'G') val = (val << 2) | 2;
+            else if (c == 'T') val = (val << 2) | 3;
+            else return UINT64_MAX;
+        }
+        return val;
+    }
+
+    string decode_kmer(uint64_t hash) {
+        string kmer;
+        for (int i = 0; i < K; ++i) {
+            int base = hash & 3;  // take rightmost 2 bits
+            if (base == 0)        kmer = 'A' + kmer;  // 00 -> A
+            else if (base == 1)   kmer = 'C' + kmer;  // 01 -> C
+            else if (base == 2)   kmer = 'G' + kmer;  // 10 -> G
+            else if (base == 3)   kmer = 'T' + kmer;  // 11 -> T
+            hash >>= 2;
+        }
+        return kmer;
+    }
+    
+
     INT get_kmers(VSTR& reads, Kmers& kmers, VPINT& idpos) {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
             exit(1);
         }
+
         const size_t BUF_SIZE = 64 * 1024 * 1024; // 64MB
         char *buffer = new char[BUF_SIZE];
         inputFile.rdbuf()->pubsetbuf(buffer, BUF_SIZE);
+
         string line, read;
         bool is_new_read = true;
         while (getline(inputFile, line)) {
@@ -126,49 +163,85 @@ public:
         if (!read.empty()) reads.emplace_back(read);
         inputFile.close();
         delete[] buffer;
+
         INT tlen = 0;
         to_uppercase(reads);
-        for (string& read: reads) {
+        for (string& read: reads)
             tlen += read.size();
-        }
+        
         INT id = 0, footing = 0;
+        uint64_t mask = (1ULL << (2 * (K - 1))) - 1; // 2K-bits mask
+
         for (auto i = 0; i < static_cast<INT>(reads.size()); ++i) {
             const string& read = reads[i];
             INT len = read.size();
             if (len < K) continue;
+            uint64_t hash;
+
+            // update kmer by rolling hash
             for (INT j = 0; j <= len - K; ++j) {
-                bool valid = true;
-                for (INT k = 0; k < K; ++k) {
-                    if (base.find(read[j + k]) == base.end()) {
-                        valid = false;
-                        break;
-                    }
+                if (j == 0) {
+                    hash = encode_kmer(read.substr(j, K));
+                } else {
+                    char c_in = read[j + K - 1];
+                    hash = (hash & mask) << 2;
+                    if (c_in == 'A')        hash |= 0;
+                    else if (c_in == 'C')   hash |= 1;
+                    else if (c_in == 'G')   hash |= 2;
+                    else if (c_in == 'T')   hash |= 3;
+                    else                    hash = UINT64_MAX;
                 }
-                if (valid) {
-                    string kmer = read.substr(j, K);
-                    auto [it, inserted] = kmers.insert({kmer, id});
-                    if (inserted) {
-                        idpos.emplace_back(i, j);
-                        ++id;
+                // skip invalid k-mer
+                if (hash == UINT64_MAX) {
+                    while (j < len - K) {
+                        ++j;
+                        hash = encode_kmer(read.substr(j, K));
+                        if (hash != UINT64_MAX) break;
                     }
-                    progress(footing + j, tlen, "Detecting k-mers");
+                    if (hash == UINT64_MAX) break;
                 }
+                // register k-mer to kmers
+                auto it = kmers.find(hash);
+                if (it == kmers.end()) {
+                    kmers[hash] = id;
+                    idpos.emplace_back(i, j);
+                    ++id;
+                }
+
+                progress(footing + j, tlen, "Detecting k-mers");
             }
             footing += len;
         }
+        finished("Detecting k-mers");
+
+        // debug
+        for (const auto& [hash, id]: kmers)
+            cout << "\nk-mer ID: " << id << " with hash " << hash
+                 << " : original text = " << decode_kmer(hash);
 
         INT N = kmers.size();
-        cout << "\nTotal number of k-mers: " << N << "\n";
+        cout << "\nTotal number of k-mers: " << N << "\n\n";
         return N;
     }
 
     INT forward(const VSTR& reads, Kmers& kmers, 
                 const VPINT& idpos, INT id, char c) {
         auto pos = idpos[id]; 
-        string suffix = reads[pos.first].substr(pos.second + 1, K - 1);
-        auto next = suffix + c;
-        if (kmers.find(next) != kmers.end() && kmers[next] != id)
-            return kmers[next];
+        uint64_t hash = encode_kmer(reads[pos.first].substr(pos.second, K));
+        if (hash == UINT64_MAX) return -1;
+
+        uint64_t mask = (1ULL << (2 * (K - 1))) - 1;
+        hash = (hash & mask) << 2;
+
+        if (c == 'A')       hash |= 0;
+        else if (c == 'C')  hash |= 1;
+        else if (c == 'G')  hash |= 2;
+        else if (c == 'T')  hash |= 3;
+        else return -1; // invalid for non-ACGT c
+
+        if (kmers.find(hash) != kmers.end() && kmers[hash] != id)
+            return kmers[hash];
+        
         return -1; // no branch to c
     }
 
@@ -178,7 +251,6 @@ public:
         adj.resize(N);
         inv_adj.resize(N);
         for (const auto& entry : kmers) {
-            string kmer = entry.first;
             auto id = entry.second;
             for (auto const c : base) {
                 auto next_id = forward(reads, kmers, idpos, id, c);
@@ -190,7 +262,8 @@ public:
             }
             progress(++cnt, N, "Constructing de Bruijn graph");
         }
-        cout << "\nTotal number of edges: " << E << "\n";
+        finished("Constructing de Bruijn graph");
+        cout << "\nTotal number of edges: " << E << "\n\n";
         return E;
     }
 
@@ -245,7 +318,8 @@ public:
             }
             progress(M, N, "Maximum matching");
         }
-        cout << "\nFound maximum matching of size " << M << "\n";
+        finished("Maximum matching");
+        cout << "\nFound maximum matching of size " << M << "\n\n";
         return M;
     }
 
@@ -294,12 +368,13 @@ public:
             }
             progress(u, N, "Decomposing");
         }
+        finished("Decomposing");
         if (has_dup(cycles, paths))
             cout << "\nDuplicates found.\n";
         else
             cout << "\nNo duplicates found.\n";
         INT C = cycles.size(), P = paths.size();
-        cout << "Found " << C << " cycles and " << P << " paths.\n";
+        cout << "Found " << C << " cycles and " << P << " paths.\n\n";
 
         return {C, P};
     }
@@ -380,12 +455,13 @@ public:
         }
         for (const auto& pid: self_paths) {
             pnt[pid] = pos;
-            pos++;
+            pos += paths[pid].size() + 1;
         }
+        finished("Pointing");
         end:
         if (heads.empty()) 
-            cout << "All paths are pointed.\n";
-        else cout << heads.size() << " paths are not pointed.\n";
+            cout << "\nAll paths are pointed.\n";
+        else cout << "\n" << heads.size() << " paths are not pointed.\n";
         // generate representation
         string txt;
         for (const auto& cycle: cycles) {
@@ -504,9 +580,10 @@ public:
             }
         }
         end:
+        finished("Pointing");
         if (heads.empty()) 
-            cout << "All paths are pointed.\n";
-        else cout << heads.size() << " paths are not pointed.\n";
+            cout << "\nAll paths are pointed.\n";
+        else cout << "\n" << heads.size() << " paths are not pointed.\n";
         cout << "Exit code: " << exit_code << "\n";
 
         // generate representation
