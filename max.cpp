@@ -1,5 +1,9 @@
 #include <iostream>
 #include <fstream>
+#include <chrono>
+#include <iomanip>
+#include <sstream>
+#include <filesystem>
 #include <cstdint>
 #include <unistd.h>
 #include <memory_resource>
@@ -11,9 +15,11 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
-#include <chrono>
+
 
 using namespace std;
+namespace fs = std::filesystem;
+namespace chrono = std::chrono;
 
 using INT = int64_t;
 using VSTR = vector<string>;
@@ -56,15 +62,22 @@ void finished(const string& task) {
     cout << ">] 100%";
 }
 
-void remove_suffix(string& str, const string& suffix) {
-    if (str.size() >= suffix.size() && str.rfind(suffix) == str.size() - suffix.size()) {
-        str.erase(str.size() - suffix.size());
+string remove_extension(string str, const string& ex) {
+    if (str.size() >= ex.size() && str.rfind(ex) == str.size() - ex.size()) {
+        str.erase(str.size() - ex.size());
     }
+    return str;
+}
+
+string path_to_filename(string path, const char& dlm) {
+    size_t pos = path.find_last_of(dlm);
+    if (pos != string::npos)  path = path.substr(pos + 1);
+    return path;
 }
 
 class DeBruijnGraph{
 public:
-    string filename;
+    string filename, logfilename;
     INT K;
     INT option;
     bool is_node_centric;
@@ -87,34 +100,157 @@ public:
         : filename(_filename), K(_K), option(_option), is_node_centric(_is_node_centric),
         kmers(&pool), heads(&pool)
     {
+        if (option != 0 && option != 1 && option != 2) {
+            cerr << "Invalid option value\n";
+            exit(1);
+        }
+        logfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".log.txt";
         kmers.reserve(reserve_size);
         cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
-    REP process() {
-        VSTR reads;
+    string get_current_timestamp() {
+        auto now = chrono::system_clock::now();
+        auto in_time_t = chrono::system_clock::to_time_t(now);
+        stringstream ss;
+        ss << put_time(localtime(&in_time_t), "%Y-%m-%d %X");
+        return ss.str();
+    }
 
-        VPINT idpos;        
+    size_t get_memory_usage() {
+        size_t memory_used = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
+        return memory_used / (1024 * 1024);
+    }
+
+    void log_time_and_memory(const string& task_name, const chrono::duration<double>& elapsed_time, size_t memory_usage, ofstream& logfile) {
+        string task_name_trimmed = task_name.substr(0, 20);
+    
+        logfile << left << setw(20) << task_name_trimmed
+                << setw(20) << fixed << setprecision(4) << elapsed_time.count()
+                << setw(20) << memory_usage << "\n";
+    
+        cout << left << setw(20) << task_name_trimmed
+             << setw(20) << fixed << setprecision(4) << elapsed_time.count()
+             << setw(20) << memory_usage << "\n";
+    }
+    
+    void print_table_header(ofstream& logfile) {
+        const int col_width = 20;
+    
+        logfile << string(col_width * 3, '-') << "\n";
+        logfile << left << setw(col_width) << "Task name"
+                << setw(col_width) << "Time (s)"
+                << setw(col_width) << "Memory (MB)" << endl;
+        logfile << string(col_width * 3, '-') << "\n"; 
+    
+        cout << string(col_width * 3, '-') << "\n";
+        cout << left << setw(col_width) << "Task name"
+             << setw(col_width) << "Time (s)"
+             << setw(col_width) << "Memory (MB)" << endl;
+        cout << string(col_width * 3, '-') << "\n"; 
+    }
+
+    REP process() {
+        ofstream logfile(logfilename, ios::trunc);
+        if (!logfile) {
+            cerr << "Error: Could not open " << logfilename << " for writing.\n";
+            exit(1);
+        }
+        string timestamp = get_current_timestamp();
+        logfile << "Timestamp: " << timestamp << "\n";
+        cout << "Timestamp: " << timestamp << "\n";
+
+        size_t initial_memory = get_memory_usage();
+        logfile << "Initial Memory: " << initial_memory << " MB\n\n";
+        cout << "Initial Memory: " << initial_memory << " MB\n\n";
+
+        VSTR reads;
+        VPINT idpos; 
+        
+        auto start_time = chrono::high_resolution_clock::now();
         INT N = get_kmers(reads, kmers, idpos);
+        auto end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> get_kmers_time = end_time - start_time;
+        size_t get_kmers_memory = get_memory_usage();
 
         VVINT adj(N), inv_adj(N);
+
+        start_time = chrono::high_resolution_clock::now();
         INT E = add_edges(reads, kmers, idpos, N, adj, inv_adj);
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> add_edges_time = end_time - start_time;
+        size_t add_edges_memory = get_memory_usage();
 
         VINT match_u, match_v;
+
+        start_time = chrono::high_resolution_clock::now();
         INT M = hopcroft_karp(N, adj, match_u, match_v);
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> hopcroft_karp_time = end_time - start_time;
+        size_t hopcroft_karp_memory = get_memory_usage();
 
         VVINT cycles, paths;
+
+        start_time = chrono::high_resolution_clock::now();
         PINT CnP = decompose(N, match_u, match_v, cycles, paths);
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> decompose_time = end_time - start_time;
+        size_t decompose_memory = get_memory_usage();
 
         cout << "(#k-mers, #edges, #matching, #cycles, #paths) = (" 
             << N << ", " << E << ", " << M << ", "
             << CnP.first << ", " << CnP.second << ")\n";
-        if (option == 0) return plain(reads, idpos, cycles, paths);
-        else if (option == 1) return unsorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
-        else if (option == 2) return sorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
-        else cerr << "Error: Invalid option value.\n";
-        return {"",{}};
+
+        REP rep;
+        chrono::duration<double> align_time;
+        size_t align_memory = 0;
+        if (option == 0) {
+            // plain
+            start_time = chrono::high_resolution_clock::now();
+            rep = plain(reads, idpos, cycles, paths);
+            end_time = chrono::high_resolution_clock::now();
+            align_time = end_time - start_time;
+            align_memory = get_memory_usage();
+        } else if (option == 1) {
+            // unsorted
+            start_time = chrono::high_resolution_clock::now();
+            rep = unsorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
+            end_time = chrono::high_resolution_clock::now();
+            align_time = end_time - start_time;
+            align_memory = get_memory_usage();
+        } else {
+            // sorted
+            start_time = chrono::high_resolution_clock::now();
+            rep = sorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
+            end_time = chrono::high_resolution_clock::now();
+            align_time = end_time - start_time;
+            align_memory = get_memory_usage();
+        }
+
+        // display benchmarks
+        print_table_header(logfile);
+        log_time_and_memory("get_kmers", get_kmers_time, get_kmers_memory, logfile);
+        log_time_and_memory("add_edges", add_edges_time, add_edges_memory, logfile);
+        log_time_and_memory("hopcroft_karp", hopcroft_karp_time, hopcroft_karp_memory, logfile);
+        log_time_and_memory("decompose", decompose_time, decompose_memory, logfile);
+        log_time_and_memory((option == 0 ? "plain" : option == 1 ? "unsorted" : "sorted"),
+                            align_time, align_memory, logfile);
+        logfile << string(60, '-');
+        cout << string(60, '-');
+
+        size_t final_memory = get_memory_usage();
+        logfile << "\nFinal Memory: " << final_memory << " MB\n";
+        cout << "\nFinal Memory: " << final_memory << " MB\n";
+
+        auto total_time = get_kmers_time.count() + add_edges_time.count()
+                          + hopcroft_karp_time.count() + decompose_time.count()
+                          + align_time.count();
+        logfile << "Total time: " << total_time << " s\n";
+        cout << "Total time: " << total_time << " s\n";
+        logfile.close();
+
+        return rep;
     }
 
     void to_uppercase(VSTR& strs) {
@@ -584,8 +720,8 @@ public:
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
-        } if(!txt.empty()) txt.pop_back();        
-        // to_diff(pnt); // take difference of pointers
+        } if(!txt.empty()) txt.pop_back();
+
         return {txt, pnt};
     }
 
@@ -771,8 +907,7 @@ public:
             cerr << "Error: txt is empty.\n";
             return;
         }
-        remove_suffix(filename, ".fa");
-        string txtfilename = filename + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -780,13 +915,16 @@ public:
         }
         txtfile << rep.first;
         txtfile.close();
-        cout << "\nFile created: " << txtfilename << "\n";
+        cout << "\nFile created: " << path_to_filename(txtfilename, '/');
+        fs::path txtfilepath = txtfilename;
+        auto txtfilesize = fs::file_size(txtfilepath);
+        cout << " (File Size: " << txtfilesize << " B)\n";
 
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
             return;
         }
-        string pntfilename = filename + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
+        string pntfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
         ofstream pntfile(pntfilename);
         if (!pntfile) {
             cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
@@ -795,7 +933,22 @@ public:
         for (const auto& p: rep.second)
             pntfile << p << " ";
         pntfile.close();
-        cout << "File created: " << pntfilename << "\n";
+        cout << "File created: " << path_to_filename(pntfilename, '/');
+        fs::path pntfilepath = pntfilename;
+        auto pntfilesize = fs::file_size(pntfilepath);
+        cout << " (File Size: " << pntfilesize << " B)\n";
+
+        // record output size on logfile
+        ofstream logfile(logfilename, ios::app);
+        if (!logfile) {
+            cerr << "Error: Could not open file " << logfilename << " for writing.\n";
+            return;
+        }
+        logfile << "\nFile created: " << path_to_filename(txtfilename, '/')
+                << " (File Size: " << txtfilesize << " B)\n"
+                << "File created: " << path_to_filename(pntfilename, '/')
+                << " (File Size: " << pntfilesize << " B)\n";
+        logfile.close();
     }
 };
 
