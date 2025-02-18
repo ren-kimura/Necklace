@@ -1,6 +1,7 @@
 #include <iostream>
 #include <fstream>
 #include <cstdint>
+#include <unistd.h>
 #include <memory_resource>
 #include <string>
 #include <vector>
@@ -26,6 +27,10 @@ using REP = pair<string, VINT>;
 
 unordered_set<char> base = {'A', 'C', 'G', 'T'};
 const INT INF = INT64_MAX;
+
+size_t get_available_memory() {
+    return sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
+}
 
 void progress(INT now, INT total, const string& task) {
     const int disp_interval = total / 100;
@@ -64,7 +69,15 @@ public:
     INT option;
     bool is_node_centric;
 
-    pmr::monotonic_buffer_resource pool{512 * 1024 * 1024}; // 512MB
+    size_t total_memory = get_available_memory();
+    size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
+                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
+                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
+    size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
+                          (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
+                                                                         10'000'000;
+    
+    pmr::monotonic_buffer_resource pool{pool_size};
     using Kmers = pmr::unordered_map<uint64_t, INT>;
     using MINT = pmr::unordered_map<INT, INT>;
     Kmers kmers;
@@ -73,7 +86,11 @@ public:
     DeBruijnGraph(string _filename, INT _K, INT _option, bool _is_node_centric)
         : filename(_filename), K(_K), option(_option), is_node_centric(_is_node_centric),
         kmers(&pool), heads(&pool)
-    {};
+    {
+        kmers.reserve(reserve_size);
+        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "K-mers reserve size: " << reserve_size << "\n";
+    };
 
     REP process() {
         VSTR reads;
@@ -131,6 +148,20 @@ public:
         return kmer;
     }
     
+    INT rolling_valid_kmer_start(const string& read, INT start) {
+        INT len = read.size();
+        INT count = 0;
+        for (INT j = start; j < len; ++j) {
+            if (read[j] == 'A' || read[j] == 'C' ||
+                read[j] == 'G' || read[j] == 'T') {
+                ++count;
+                if (count == K) return j - K + 1;
+            } else {
+                count = 0; // reset if read[j] is non-ACGT
+            }
+        }
+        return -1;
+    }
 
     INT get_kmers(VSTR& reads, Kmers& kmers, VPINT& idpos) {
         ifstream inputFile(filename, ios::in | ios::binary);
@@ -178,28 +209,30 @@ public:
             if (len < K) continue;
             uint64_t hash;
 
+            INT j = rolling_valid_kmer_start(read, 0);
+            if (j == -1) continue; // if not any valid k-mer, go to next read
+            hash = encode_kmer(read.substr(j, K));
+            auto it = kmers.find(hash);
+            if (it == kmers.end()) {
+                kmers[hash] = id;
+                idpos.emplace_back(i, j);
+                ++id;
+            }
+
             // update kmer by rolling hash
-            for (INT j = 0; j <= len - K; ++j) {
-                if (j == 0) {
+            for (++j; j <= len - K; ++j) {
+                char c_in = read[j + K - 1];
+
+                if (c_in == 'A')        hash = ((hash & mask) << 2) | 0;
+                else if (c_in == 'C')   hash = ((hash & mask) << 2) | 1;
+                else if (c_in == 'G')   hash = ((hash & mask) << 2) | 2;
+                else if (c_in == 'T')   hash = ((hash & mask) << 2) | 3;
+                else {
+                    j = rolling_valid_kmer_start(read, j + 1);
+                    if (j == -1) break;
                     hash = encode_kmer(read.substr(j, K));
-                } else {
-                    char c_in = read[j + K - 1];
-                    hash = (hash & mask) << 2;
-                    if (c_in == 'A')        hash |= 0;
-                    else if (c_in == 'C')   hash |= 1;
-                    else if (c_in == 'G')   hash |= 2;
-                    else if (c_in == 'T')   hash |= 3;
-                    else                    hash = UINT64_MAX;
                 }
-                // skip invalid k-mer
-                if (hash == UINT64_MAX) {
-                    while (j < len - K) {
-                        ++j;
-                        hash = encode_kmer(read.substr(j, K));
-                        if (hash != UINT64_MAX) break;
-                    }
-                    if (hash == UINT64_MAX) break;
-                }
+
                 // register k-mer to kmers
                 auto it = kmers.find(hash);
                 if (it == kmers.end()) {
@@ -263,6 +296,24 @@ public:
             progress(++cnt, N, "Constructing de Bruijn graph");
         }
         finished("Constructing de Bruijn graph");
+
+        // debug
+        cout << "\nGraph:\n";
+        for (INT i = 0; i < N; ++i) {
+            auto U = adj[i];
+            auto V = inv_adj[i];
+            cout << "ID " << i << ": " << reads[idpos[i].first].substr(idpos[i].second, K)
+                 << " to: ";
+            for (auto u: U) {
+                cout << reads[idpos[u].first].substr(idpos[u].second, K) << " ";
+            }
+            cout << ", from: ";
+            for (auto v: V) {
+                cout << reads[idpos[v].first].substr(idpos[v].second, K) << " ";
+            }
+            cout << "\n";
+        }
+
         cout << "\nTotal number of edges: " << E << "\n\n";
         return E;
     }
@@ -320,45 +371,81 @@ public:
         }
         finished("Maximum matching");
         cout << "\nFound maximum matching of size " << M << "\n\n";
+
+        // debug
+        cout << "\nMaximum matching:\n";
+        cout << "U --- V\n";
+        for (INT husband = 0; husband < N; ++husband) {
+            auto wife = match_u[husband];
+            if (wife == -1) continue;
+            cout << husband << " >>> " << wife << "\n";
+        }
+        cout << "\n";
+        for (INT wife = 0; wife < N; ++wife) {
+            auto husband = match_v[wife];
+            if (husband == -1) continue;
+            cout << husband << " <<< " << wife << "\n";
+        }
+        
         return M;
     }
 
-    VINT dfs_forward(const VINT& match_u, const INT& start, Vint& seen) {
+    VINT dfs_forward(const VINT& match_u, const INT& start, Vint& seen_u, Vint& seen_v) {
         VINT trl;
         INT crnt = start;
+
         while(1) {
-            if (seen[crnt]) break;
-            seen[crnt] = 1;
+            if (seen_u[crnt]) break;
+            seen_u[crnt] = 1;
             trl.emplace_back(crnt);
-            if (match_u[crnt] == -1) break;
-            crnt = match_u[crnt];
+
+            auto next = match_u[crnt];
+            if (next == -1) break;
+            seen_v[next] = 1;
+            crnt = next;
         }
         return trl;
     }
 
-    VINT dfs_backward(const VINT& match_v, const INT& start, Vint& seen) {
+    VINT dfs_backward(const VINT& match_v, const INT& start, Vint& seen_u, Vint& seen_v) {
         VINT lrt;
         INT crnt = start;
+        
+        // debug
+        cout << "\ndfs_backward start from: " << start << " (match_v["
+             << start << "] = " << match_v[start] << ")\n";
+
         while(1) {
-            if (seen[crnt]) break;
-            seen[crnt] = 1;
+            if (seen_v[crnt]) break;
+            seen_v[crnt] = 1;
             lrt.emplace_back(crnt);
-            if (match_v[crnt] == -1) break;
-            crnt = match_v[crnt];
+
+            auto prev = match_v[crnt];
+            if (prev == -1) break;
+            seen_u[prev] = 1;
+            crnt = prev;
         }
+
+        // debug
+        cout << "\ndfs_backward result: ";
+        for (INT x: lrt) cout << x << " ";
+        cout << "\n";
+
         return lrt;
     }
 
     PINT decompose(const INT& N, const VINT& match_u, const VINT& match_v,
                 VVINT& cycles, VVINT& paths) {
-        Vint seen(N, 0);
+        Vint seen_u(N, 0);
+        Vint seen_v(N, 0);
+
         for (INT u = 0; u < N; ++u) {
-            if (seen[u]) continue;
-            VINT trl = dfs_forward(match_u, u, seen);
+            if (seen_u[u]) continue;
+            VINT trl = dfs_forward(match_u, u, seen_u, seen_v);
             if (trl.size() > 1 && match_u[trl.back()] == trl.front())
                 cycles.emplace_back(trl);
             else {
-                VINT lrt = dfs_backward(match_v, trl.front(), seen);
+                VINT lrt = dfs_backward(match_v, trl.front(), seen_u, seen_v);
                 if (!lrt.empty()) {
                     reverse(lrt.begin(), lrt.end());
                     lrt.pop_back();
@@ -375,6 +462,26 @@ public:
             cout << "\nNo duplicates found.\n";
         INT C = cycles.size(), P = paths.size();
         cout << "Found " << C << " cycles and " << P << " paths.\n\n";
+
+        // debug
+        cout << "___ Decomposition ___\nCycles:\n";
+        for (INT i = 0; i < (INT)cycles.size(); ++i) {
+            auto cycle = cycles[i];
+            for (INT j = 0; j < (INT)cycle.size(); ++j) {
+                cout << cycle[j] << " ";
+            }
+            cout << "\n";
+        }
+        cout << "Paths:\n";
+        for (INT i = 0; i < (INT)paths.size(); ++i) {
+            auto path = paths[i];
+            string walk;
+            for (INT j = 0; j < (INT)path.size(); ++j) {
+                cout << path[j] << " ";
+            }
+            cout << "\n";
+        }
+        cout << "\n";
 
         return {C, P};
     }
@@ -585,6 +692,10 @@ public:
             cout << "\nAll paths are pointed.\n";
         else cout << "\n" << heads.size() << " paths are not pointed.\n";
         cout << "Exit code: " << exit_code << "\n";
+        cout << "0: All pointers to cycles\n"
+             << "1: At least one pointer to a path. (No pointer cycle)\n"
+             << "2: At least one pointer cycle in the initial decomposition.\n"
+             << "-1: Self-pointing paths only || Unexpected behavior (Exception)\n";
 
         // generate representation
         string txt;
@@ -621,6 +732,27 @@ public:
             } ++pos;
         }
         to_diff(pnt); // take difference of pointers
+
+        // debug
+        cout << "\n___ Decomposition (rev) ___\nCycles:\n";
+        for (INT i = 0; i < (INT)cycles.size(); ++i) {
+            auto cycle = cycles[i];
+            for (INT j = 0; j < (INT)cycle.size(); ++j) {
+                cout << cycle[j] << " ";
+            }
+            cout << "\n";
+        }
+        cout << "Paths:\n";
+        for (INT i = 0; i < (INT)paths.size(); ++i) {
+            auto path = paths[pord[i]];
+            string walk;
+            for (INT j = 0; j < (INT)path.size(); ++j) {
+                cout << path[j] << " ";
+            }
+            cout << "\n";
+        }
+        cout << "\n";
+
         return {txt, pnt};
     }
 
@@ -663,7 +795,7 @@ public:
         for (const auto& p: rep.second)
             pntfile << p << " ";
         pntfile.close();
-        cout << "\nFile created: " << pntfilename << "\n";
+        cout << "File created: " << pntfilename << "\n";
     }
 };
 
