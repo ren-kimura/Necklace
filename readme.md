@@ -4,7 +4,7 @@ File <max.cpp> exports edge-cetric/node-centric De Bruijn Graphs and one necklac
 # Preliminary Setup
 Run the following command in the same directory as <max.cpp>.
 
-```make max.out```
+```make```
 
 # Usage
 ```./max.out [path to <input.fa>] [k] [option]```
