@@ -1,1 +1,0 @@
-File <max.cpp> exports edge-cetric/node-centric De Bruijn Graphs and one necklace cover with respect to FASTA-format input.
