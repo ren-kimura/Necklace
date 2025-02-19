@@ -101,12 +101,12 @@ public:
         kmers(&pool), heads(&pool)
     {
         if (option != 0 && option != 1 && option != 2) {
-            cerr << "Invalid option value\n";
+            cerr << "\nInvalid option value\n";
             exit(1);
         }
         logfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".log.txt";
         kmers.reserve(reserve_size);
-        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
@@ -240,7 +240,7 @@ public:
         cout << string(60, '-');
 
         size_t final_memory = get_memory_usage();
-        logfile << "\nFinal Memory: " << final_memory << " MB\n";
+        logfile << "\n\nFinal Memory: " << final_memory << " MB\n";
         cout << "\nFinal Memory: " << final_memory << " MB\n";
 
         auto total_time = get_kmers_time.count() + add_edges_time.count()
@@ -262,10 +262,10 @@ public:
     uint64_t encode_kmer(const string& kmer) {
         uint64_t val = 0;
         for (char c : kmer) {
-            if (c == 'A')      val = (val << 2) | 0;
-            else if (c == 'C') val = (val << 2) | 1;
-            else if (c == 'G') val = (val << 2) | 2;
-            else if (c == 'T') val = (val << 2) | 3;
+            if (c == 'A')      val = (val << 2) | 0; // A -> 00
+            else if (c == 'C') val = (val << 2) | 1; // C -> 01
+            else if (c == 'G') val = (val << 2) | 2; // G -> 10
+            else if (c == 'T') val = (val << 2) | 3; // T -> 11
             else return UINT64_MAX;
         }
         return val;
@@ -383,11 +383,6 @@ public:
         }
         finished("Detecting k-mers");
 
-        // debug
-        for (const auto& [hash, id]: kmers)
-            cout << "\nk-mer ID: " << id << " with hash " << hash
-                 << " : original text = " << decode_kmer(hash);
-
         INT N = kmers.size();
         cout << "\nTotal number of k-mers: " << N << "\n\n";
         return N;
@@ -432,23 +427,6 @@ public:
             progress(++cnt, N, "Constructing de Bruijn graph");
         }
         finished("Constructing de Bruijn graph");
-
-        // debug
-        cout << "\nGraph:\n";
-        for (INT i = 0; i < N; ++i) {
-            auto U = adj[i];
-            auto V = inv_adj[i];
-            cout << "ID " << i << ": " << reads[idpos[i].first].substr(idpos[i].second, K)
-                 << " to: ";
-            for (auto u: U) {
-                cout << reads[idpos[u].first].substr(idpos[u].second, K) << " ";
-            }
-            cout << ", from: ";
-            for (auto v: V) {
-                cout << reads[idpos[v].first].substr(idpos[v].second, K) << " ";
-            }
-            cout << "\n";
-        }
 
         cout << "\nTotal number of edges: " << E << "\n\n";
         return E;
@@ -501,28 +479,13 @@ public:
         while (bfs(N, adj, match_u, match_v, dist)) {
             for (INT u = 0; u < N; ++u) {
                 if (match_u[u] == -1 && dfs(adj, match_u, match_v, dist, u))
-                    M++; // update M when found an augpath
+                    M++; // found an augpath
             }
             progress(M, N, "Maximum matching");
         }
         finished("Maximum matching");
         cout << "\nFound maximum matching of size " << M << "\n\n";
 
-        // debug
-        cout << "\nMaximum matching:\n";
-        cout << "U --- V\n";
-        for (INT husband = 0; husband < N; ++husband) {
-            auto wife = match_u[husband];
-            if (wife == -1) continue;
-            cout << husband << " >>> " << wife << "\n";
-        }
-        cout << "\n";
-        for (INT wife = 0; wife < N; ++wife) {
-            auto husband = match_v[wife];
-            if (husband == -1) continue;
-            cout << husband << " <<< " << wife << "\n";
-        }
-        
         return M;
     }
 
@@ -546,10 +509,6 @@ public:
     VINT dfs_backward(const VINT& match_v, const INT& start, Vint& seen_u, Vint& seen_v) {
         VINT lrt;
         INT crnt = start;
-        
-        // debug
-        cout << "\ndfs_backward start from: " << start << " (match_v["
-             << start << "] = " << match_v[start] << ")\n";
 
         while(1) {
             if (seen_v[crnt]) break;
@@ -561,11 +520,6 @@ public:
             seen_u[prev] = 1;
             crnt = prev;
         }
-
-        // debug
-        cout << "\ndfs_backward result: ";
-        for (INT x: lrt) cout << x << " ";
-        cout << "\n";
 
         return lrt;
     }
@@ -598,26 +552,6 @@ public:
             cout << "\nNo duplicates found.\n";
         INT C = cycles.size(), P = paths.size();
         cout << "Found " << C << " cycles and " << P << " paths.\n\n";
-
-        // debug
-        cout << "___ Decomposition ___\nCycles:\n";
-        for (INT i = 0; i < (INT)cycles.size(); ++i) {
-            auto cycle = cycles[i];
-            for (INT j = 0; j < (INT)cycle.size(); ++j) {
-                cout << cycle[j] << " ";
-            }
-            cout << "\n";
-        }
-        cout << "Paths:\n";
-        for (INT i = 0; i < (INT)paths.size(); ++i) {
-            auto path = paths[i];
-            string walk;
-            for (INT j = 0; j < (INT)path.size(); ++j) {
-                cout << path[j] << " ";
-            }
-            cout << "\n";
-        }
-        cout << "\n";
 
         return {C, P};
     }
@@ -736,9 +670,9 @@ public:
                 self_paths.insert(i);
             else heads[paths[i][0]] = i; // record paths' heads
 
-        VINT pord;
+        VINT pord; // sorted path ID order
 
-        // check each node in cycles if it can be pointed from paths
+        // add pointers from paths to cycles
         INT pos = 0, exit_code = -1;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
@@ -762,7 +696,7 @@ public:
             pointees.insert(paths[pid][0]);
         
         while (static_cast<INT>(pointees.size()) != P) {
-            // check each node in paths in "pord" if it can be pointed from other paths
+            // add pointers from paths to paths in pord
             auto bound = pord.size();
             for (auto i = from; i < min(static_cast<INT>(bound), P); ++i) {
                 for (const auto& node: paths[pord[i]]) {
@@ -783,7 +717,7 @@ public:
             } 
             from = pord.size();
 
-            // resolve unpointed paths
+            // resolve pointing cycle
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 VTINT cands; // candidates of (pointee, path to modify, pos to delete, head to delete)
@@ -823,17 +757,17 @@ public:
             }
         }
         end:
-        finished("Pointing");
+        finished("\nPointing");
         if (heads.empty()) 
             cout << "\nAll paths are pointed.\n";
         else cout << "\n" << heads.size() << " paths are not pointed.\n";
-        cout << "Exit code: " << exit_code << "\n";
+        cout << "\nExit code: " << exit_code << "\n";
         cout << "0: All pointers to cycles\n"
              << "1: At least one pointer to a path. (No pointer cycle)\n"
              << "2: At least one pointer cycle in the initial decomposition.\n"
-             << "-1: Self-pointing paths only || Unexpected behavior (Exception)\n";
+             << "-1: Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
-        // generate representation
+        // representation
         string txt;
         VINT pnt;
         for (const auto& cycle: cycles) {
@@ -867,28 +801,7 @@ public:
                 ++pos;
             } ++pos;
         }
-        to_diff(pnt); // take difference of pointers
-
-        // debug
-        cout << "\n___ Decomposition (rev) ___\nCycles:\n";
-        for (INT i = 0; i < (INT)cycles.size(); ++i) {
-            auto cycle = cycles[i];
-            for (INT j = 0; j < (INT)cycle.size(); ++j) {
-                cout << cycle[j] << " ";
-            }
-            cout << "\n";
-        }
-        cout << "Paths:\n";
-        for (INT i = 0; i < (INT)paths.size(); ++i) {
-            auto path = paths[pord[i]];
-            string walk;
-            for (INT j = 0; j < (INT)path.size(); ++j) {
-                cout << path[j] << " ";
-            }
-            cout << "\n";
-        }
-        cout << "\n";
-
+        to_diff(pnt); // take difference of pointers, since they are sorted in ASC
         return {txt, pnt};
     }
 
@@ -968,5 +881,6 @@ int main(int argc, char *argv[]) {
     DeBruijnGraph ncdbg = DeBruijnGraph(_filename, _K, _option, true);
     REP rep = ncdbg.process();
     ncdbg.write(rep);
+
     return 0;
 }
