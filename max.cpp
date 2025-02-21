@@ -104,7 +104,7 @@ public:
             cerr << "\nInvalid option value\n";
             exit(1);
         }
-        logfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".log.txt";
+        logfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".log";
         kmers.reserve(reserve_size);
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
@@ -663,12 +663,18 @@ public:
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, from = 0;
-        unordered_set<INT> self_paths;
+        unordered_set<INT> self_paths, self_paths_tmp;
         unordered_set<INT> pointees;
-        for (INT i = 0; i < P; ++i)
-            if (inv_adj[paths[i][0]].empty())
+        for (INT i = 0; i < P; ++i) {
+            if (inv_adj[paths[i][0]].empty()){
                 self_paths.insert(i);
+                self_paths_tmp.insert(i);
+            }
             else heads[paths[i][0]] = i; // record paths' heads
+        }
+
+        cout << "\n# non-self paths: " << heads.size()
+             << "\n# self paths: " << self_paths.size() << "\n\n";
 
         VINT pord; // sorted path ID order
 
@@ -684,19 +690,15 @@ public:
                     pord.emplace_back(it->second);
                     pointees.insert(node);
                     heads.erase(it);
-                    if (heads.empty() && self_paths.empty()) {exit_code = 0; goto end;}
+                    if (heads.empty() && self_paths_tmp.empty())
+                        {exit_code = 0; goto end;}
                 } ++pos;
                 progress(pos, S, "Pointing");
             } ++pos;
-        } 
-
-        // add self-pointing paths to pord
-        pord.insert(pord.end(), self_paths.begin(), self_paths.end());
-        for (const auto& pid: self_paths)
-            pointees.insert(paths[pid][0]);
+        }
         
-        while (static_cast<INT>(pointees.size()) != P) {
-            // add pointers from paths to paths in pord
+        while (static_cast<INT>(pointees.size()) != P) {            
+            // add pointers from paths to other paths in pord
             auto bound = pord.size();
             for (auto i = from; i < min(static_cast<INT>(bound), P); ++i) {
                 for (const auto& node: paths[pord[i]]) {
@@ -709,7 +711,7 @@ public:
                         ++bound;
                         pointees.insert(node);
                         heads.erase(it);
-                        if (heads.empty()) 
+                        if (heads.empty() && self_paths_tmp.empty()) 
                             {exit_code = 1; goto end;}
                     } ++pos;
                     progress(pos, S, "Pointing");
@@ -733,6 +735,14 @@ public:
                             if (next == -1) continue;
                             auto it2 = heads.find(next);
                             if (it2 == heads.end()) continue;
+                            if (it2->second == crnt) { 
+                                // node is an inneighbor of its path's head (path = cycle' + path')
+                                new_cycle.resize(i + 1);
+                                copy(path.begin(), path.begin() + i + 1, new_cycle.begin());
+                                cands = {{node, crnt, i, path[0]}};
+                                start = crnt; // terminates while loop
+                                goto next;
+                            }
                             cands.emplace_back(node, crnt, i, path[0]);
                             crnt = it2->second;
                             goto next;
@@ -740,7 +750,7 @@ public:
                     }
                     new_cycle.clear();
                     break;
-                    next:;
+                    next: ;
                 } while (crnt != start);
 
                 if (new_cycle.empty()) continue;
@@ -752,8 +762,24 @@ public:
                     pmod.erase(pmod.begin(), pmod.begin() + pos + 1);
                     auto it2 = heads.find(head);
                     if (it2 != heads.end()) heads.erase(it2);
-                    if (heads.empty()) {exit_code = 2; goto end;}
+                    if (heads.empty() && self_paths_tmp.empty())
+                        {exit_code = 2; goto end;}
                 }
+            }
+
+            // If no pointing cycle, append one of self paths to pord
+            if (static_cast<INT>(pord.size()) == from && !self_paths_tmp.empty()) {
+                auto it = self_paths_tmp.begin();
+                auto pid = *it;
+                pord.emplace_back(pid);
+                pointees.insert(paths[pid][0]);
+                self_paths_tmp.erase(it);
+                if (heads.empty() && self_paths_tmp.empty()) 
+                    {exit_code = 3; goto end;}
+            }
+            if (static_cast<INT>(pord.size()) == from) {
+                cerr << "\nError: Failed in finding existing new_cycle.\n";
+                exit(1);
             }
         }
         end:
@@ -765,7 +791,8 @@ public:
         cout << "0: All pointers to cycles\n"
              << "1: At least one pointer to a path. (No pointer cycle)\n"
              << "2: At least one pointer cycle in the initial decomposition.\n"
-             << "-1: Self-pointing paths only || Unexpected behavior (Exception)\n\n";
+             << "3: At least one self-path which has no pointer to it.\n"
+             << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
         // representation
         string txt;
