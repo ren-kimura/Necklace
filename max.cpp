@@ -666,15 +666,15 @@ public:
         Kmers& kmers,
         const VPINT& idpos,
         VINT& new_cycle,
-        unordered_set<INT>& memo,
-        unordered_set<INT>& visited
+        VINT& memo,
+        VINT& visited
     ) {
-        if (memo.count(current)) return false;
-        if (visited.count(current)) {
-            memo.insert(current);
+        if (memo[current]) return false;
+        if (visited[current]) {
+            memo[current] = 1;
             return true;
         }        
-        visited.insert(current);
+        visited[current] = 1;
 
         auto& path = paths[current];
         bool dead_end = true; // all nexts not in heads ??
@@ -695,9 +695,9 @@ public:
                 }
             }
         }
-        visited.erase(current);
+        visited[current] = 0;
         // record if all nexts not in heads
-        if (dead_end) memo.insert(current);
+        if (dead_end) memo[current] = 1;
 
         return false; // no pointer cycle found
     }
@@ -720,6 +720,7 @@ public:
              << "\n# self paths: " << self_paths.size() << "\n\n";
 
         VINT pord; // sorted path ID order
+        VINT visited(P, 0), memo(P, 0); // for pointer cycle detection
 
         // add pointers from paths to cycles
         INT pos = 0, exit_code = -1;
@@ -765,7 +766,6 @@ public:
 
             cout << "\nheads.size: " << heads.size() << "\n"; // debug
 
-            unordered_set<INT> visited, memo;
             cout << "Resolving pointer cycles...\n";
             for (auto it1 = heads.begin(); it1 != heads.end();) {
                 VINT new_cycle;
