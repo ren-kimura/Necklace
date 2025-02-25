@@ -659,6 +659,46 @@ public:
         return {txt, pnt};
     }
 
+    bool has_pointer_cycle(
+        INT current,
+        VVINT& paths,
+        const VSTR& reads,
+        Kmers& kmers,
+        const VPINT& idpos,
+        VINT& new_cycle,
+        unordered_set<INT>& memo,
+        unordered_set<INT>& visited
+    ) {
+        if (memo.count(current)) return false;
+        if (visited.count(current)) return true;
+        
+        visited.insert(current);
+        auto& path = paths[current];
+        bool dead_end = true; // all nexts not in heads ??
+
+        for (const auto& node: path) {
+            for (const auto& c: base) {
+                auto next = forward(reads, kmers, idpos, node, c);
+                if (next == -1) continue;
+
+                auto it = heads.find(next);
+                if (it != heads.end()) {
+                    INT next_path = it->second;
+                    new_cycle.emplace_back(node);
+                    if (has_pointer_cycle(next_path, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
+                        return true;
+                    }
+                    dead_end = false; // "next" found in heads
+                }
+            }
+        }
+        visited.erase(current);
+        // record if all nexts not in heads
+        if (dead_end) memo.insert(current);
+
+        return false; // no pointer cycle found
+    }
+
     REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
@@ -719,51 +759,61 @@ public:
             } 
             from = pord.size();
 
-            // resolve pointing cycle
-            for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
+            unordered_set<INT> visited, memo;
+            for (auto it1 = heads.begin(); it1 != heads.end();) {
                 VINT new_cycle;
-                VTINT cands; // candidates of (pointee, path to modify, pos to delete, head to delete)
                 auto start = it1->second;
-                auto crnt = start;
-                do {
-                    auto& path = paths[crnt];
-                    for (auto i = 0; i < static_cast<INT>(path.size()); ++i) {
-                        auto node = path[i];
-                        new_cycle.emplace_back(node);
-                        for (const auto& c: base) {
-                            auto next = forward(reads, kmers, idpos, node, c);
-                            if (next == -1) continue;
-                            auto it2 = heads.find(next);
-                            if (it2 == heads.end()) continue;
-                            if (it2->second == crnt) { 
-                                // node is an inneighbor of its path's head (path = cycle' + path')
-                                new_cycle.resize(i + 1);
-                                copy(path.begin(), path.begin() + i + 1, new_cycle.begin());
-                                cands = {{node, crnt, i, path[0]}};
-                                start = crnt; // terminates while loop
-                                goto next;
-                            }
-                            cands.emplace_back(node, crnt, i, path[0]);
-                            crnt = it2->second;
-                            goto next;
-                        }
-                    }
-                    new_cycle.clear();
-                    break;
-                    next: ;
-                } while (crnt != start);
-
-                if (new_cycle.empty()) continue;
+                // find pointer cycle
+                if (!has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
+                    ++it1; continue;
+                }
+                // append new_cycle to cycles if found
                 cycles.emplace_back(new_cycle);
-                for (auto& [pointee, pid, pos, head]: cands) {
-                    auto& pmod = paths[pid];
-                    pointees.insert(pointee);
+
+                // process all paths involved in new_cycle
+                unordered_set<INT> involved;
+                // 1. record involved paths
+                for (auto node: new_cycle) {
+                    auto it = heads.find(node);
+                    if (it != heads.end()) {
+                        involved.insert(it->second);
+                    }
+                }
+                // 2. process each involved paths
+                for (auto pid: involved) {
                     pord.emplace_back(pid);
-                    pmod.erase(pmod.begin(), pmod.begin() + pos + 1);
-                    auto it2 = heads.find(head);
-                    if (it2 != heads.end()) heads.erase(it2);
-                    if (heads.empty() && self_paths_tmp.empty())
-                        {exit_code = 2; goto end;}
+                    auto& path = paths[pid];
+                    auto old_head = path[0]; // record current head
+                    auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
+                    if (it == new_cycle.end()) {
+                        cerr << "Error: No matching node found in new_cycle.\n";
+                        continue;
+                    }
+                    // calc common length of new_cycle and path
+                    INT match_len = 0;
+                    INT cycle_start = distance(new_cycle.begin(), it);
+                    while (match_len < static_cast<INT>(path.size()) &&
+                            new_cycle[(cycle_start + match_len) % new_cycle.size()] == path[match_len]) {
+                        ++match_len;
+                    }
+                    // delete the common part && new head >> pointees
+                    if (match_len > 0) {
+                        if (match_len < static_cast<INT>(path.size())) {
+                            pointees.insert(path[match_len]);
+                        }
+                        path.erase(path.begin(), path.begin() + match_len);
+                    }
+                    auto it_head = heads.find(old_head);
+                    if (it_head != heads.end()) {
+                        heads.erase(it_head);
+                    }
+                }
+                // since renewed heads, start from begin again
+                it1 = heads.begin();
+                // end if both heads and self_paths_tmp are empty
+                if (heads.empty() && self_paths_tmp.empty()) {
+                    exit_code = 2;
+                    goto end;
                 }
             }
 
