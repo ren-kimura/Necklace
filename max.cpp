@@ -670,13 +670,17 @@ public:
         unordered_set<INT>& visited
     ) {
         if (memo.count(current)) return false;
-        if (visited.count(current)) return true;
-        
+        if (visited.count(current)) {
+            memo.insert(current);
+            return true;
+        }        
         visited.insert(current);
+
         auto& path = paths[current];
         bool dead_end = true; // all nexts not in heads ??
 
         for (const auto& node: path) {
+            new_cycle.emplace_back(node);
             for (const auto& c: base) {
                 auto next = forward(reads, kmers, idpos, node, c);
                 if (next == -1) continue;
@@ -684,7 +688,6 @@ public:
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
-                    new_cycle.emplace_back(node);
                     if (has_pointer_cycle(next_path, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
                         return true;
                     }
@@ -740,6 +743,7 @@ public:
         while (static_cast<INT>(pointees.size()) != P) {            
             // add pointers from paths to other paths in pord
             auto bound = pord.size();
+
             for (auto i = from; i < min(static_cast<INT>(bound), P); ++i) {
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
@@ -777,13 +781,13 @@ public:
                     auto it = heads.find(node);
                     if (it != heads.end()) {
                         involved.insert(it->second);
+                        heads.erase(it);
                     }
                 }
                 // 2. process each involved paths
                 for (auto pid: involved) {
                     pord.emplace_back(pid);
                     auto& path = paths[pid];
-                    auto old_head = path[0]; // record current head
                     auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
                     if (it == new_cycle.end()) {
                         cerr << "Error: No matching node found in new_cycle.\n";
@@ -803,13 +807,9 @@ public:
                         }
                         path.erase(path.begin(), path.begin() + match_len);
                     }
-                    auto it_head = heads.find(old_head);
-                    if (it_head != heads.end()) {
-                        heads.erase(it_head);
-                    }
                 }
-                // since renewed heads, start from begin again
-                it1 = heads.begin();
+                // // since renewed heads, start from begin again
+                // it1 = heads.begin();
                 // end if both heads and self_paths_tmp are empty
                 if (heads.empty() && self_paths_tmp.empty()) {
                     exit_code = 2;
