@@ -677,7 +677,7 @@ public:
         visited[current] = 1;
 
         auto& path = paths[current];
-        bool dead_end = true; // all nexts not in heads ??
+        bool dead_end = false; // all nexts not in heads ??
 
         for (const auto& node: path) {
             new_cycle.emplace_back(node);
@@ -691,7 +691,7 @@ public:
                     if (has_pointer_cycle(next_path, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
                         return true;
                     }
-                    dead_end = false; // "next" found in heads
+                    dead_end = true; // "next" found in heads
                 }
             }
         }
@@ -717,7 +717,7 @@ public:
         }
 
         cout << "\n# non-self paths: " << heads.size()
-             << "\n# self paths: " << self_paths.size() << "\n\n";
+             << "\n# self paths: " << self_paths.size() << "\n";
 
         VINT pord; // sorted path ID order
         VINT visited(P, 0), memo(P, 0); // for pointer cycle detection
@@ -741,7 +741,7 @@ public:
             } ++pos;
         }
         
-        while (static_cast<INT>(pointees.size()) != P) {            
+        while (static_cast<INT>(pointees.size()) != P) {         
             // add pointers from paths to other paths in pord
             auto bound = pord.size();
 
@@ -764,63 +764,65 @@ public:
             } 
             from = pord.size();
 
-            cout << "\nheads.size: " << heads.size() << "\n"; // debug
+            cout << "\nheads.size: " << heads.size() << " "; // debug
+            cout << ((P == (INT)(pord.size() + heads.size() + self_paths_tmp.size())) ? "(OK)" : "(Anomaly)") << "\n"; // debug
 
             cout << "Resolving pointer cycles...\n";
-            for (auto it1 = heads.begin(); it1 != heads.end();) {
+            for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 auto start = it1->second;
                 // find pointer cycle
-                if (!has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)
-                    || new_cycle.empty()) {
-                    ++it1; continue;
-                }
-                // append new_cycle to cycles if found
-                cycles.emplace_back(new_cycle);
+                if (has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)
+                    && !new_cycle.empty()) {
+                    // append new_cycle to cycles if found
+                    cycles.emplace_back(new_cycle);
 
-                // process all paths involved in new_cycle
-                VINT involved;
-                // 1. record involved paths
-                for (auto node: new_cycle) {
-                    auto it = heads.find(node);
-                    if (it != heads.end()) {
-                        involved.emplace_back(it->second);
-                        heads.erase(it);
-                    }
-                }
-                // 2. process each involved paths
-                for (auto pid: involved) {
-                    pord.emplace_back(pid);
-                    auto& path = paths[pid];
-                    auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
-                    if (it == new_cycle.end()) {
-                        cerr << "Error: No matching node found in new_cycle.\n";
-                        continue;
-                    }
-                    // calc common length of new_cycle and path
-                    INT match_len = 0;
-                    INT cycle_start = distance(new_cycle.begin(), it);
-                    while (match_len < static_cast<INT>(path.size()) &&
-                            new_cycle[(cycle_start + match_len) % new_cycle.size()] == path[match_len]) {
-                        ++match_len;
-                    }
-                    // delete the common part && new head >> pointees
-                    if (match_len > 0) {
-                        if (match_len < static_cast<INT>(path.size())) {
-                            pointees.insert(path[match_len - 1]);
+                    // process all paths involved in new_cycle
+                    VINT involved;
+                    // 1. record involved paths
+                    for (auto node: new_cycle) {
+                        auto it = heads.find(node);
+                        if (it != heads.end()) {
+                            involved.emplace_back(it->second);
+                            heads.erase(it);
                         }
-                        path.erase(path.begin(), path.begin() + match_len);
                     }
-                }
-                // since renewed heads, start from begin again
-                it1 = heads.begin();
-                // end if both heads and self_paths_tmp are empty
-                if (heads.empty() && self_paths_tmp.empty()) {
-                    exit_code = 2;
-                    goto end;
+                    // 2. process each involved paths
+                    for (auto pid: involved) {
+                        pord.emplace_back(pid);
+                        auto& path = paths[pid];
+                        auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
+                        if (it == new_cycle.end()) {
+                            cerr << "Error: No matching node found in new_cycle.\n";
+                            continue;
+                        }
+                        // calc common length of new_cycle and path
+                        INT match_len = 0;
+                        INT cycle_start = distance(new_cycle.begin(), it);
+                        while (match_len < static_cast<INT>(path.size()) &&
+                                new_cycle[(cycle_start + match_len) % new_cycle.size()] == path[match_len]) {
+                            ++match_len;
+                        }
+                        // delete the common part && new head >> pointees
+                        if (match_len > 0) {
+                            if (match_len < static_cast<INT>(path.size())) {
+                                pointees.insert(path[match_len - 1]);
+                            }
+                            path.erase(path.begin(), path.begin() + match_len);
+                        }
+                    }                
+                    // end if both heads and self_paths_tmp are empty
+                    if (heads.empty() && self_paths_tmp.empty()) {
+                        exit_code = 2;
+                        goto end;
+                    }
                 }
             }
             cout << "Resolved\n";
+
+            // init visited all with 0, and mark 1 iff path in pord
+            for (INT i = 0; i < P; ++i) visited[i] = 0;
+            for (const auto& pid : pord) visited[pid] = 1;
 
             // If no pointing cycle, append one of self paths to pord
             if (static_cast<INT>(pord.size()) == from && !self_paths_tmp.empty()) {
@@ -832,10 +834,6 @@ public:
                 if (heads.empty() && self_paths_tmp.empty()) 
                     {exit_code = 3; goto end;}
             }
-            // if (static_cast<INT>(pord.size()) == from) {
-            //     cerr << "\nError: Failed in finding existing new_cycle.\n";
-            //     exit(1);
-            // }
         }
         end:
         finished("Pointing");
@@ -848,35 +846,6 @@ public:
              << "2: At least one pointer cycle in the initial decomposition.\n"
              << "3: At least one self-path which has no pointer to it.\n"
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
-
-        // debug
-        cout << "========== DEBUG ==========\n";
-        cout << "# non-self paths: " << heads.size()
-             << "\n# self paths: " << self_paths.size() << "\n\n";
-        cout << "Cycles (after):\n";
-        for (INT i = 0; i < static_cast<INT>(cycles.size()); ++i) {
-            string s;
-            auto cycle = cycles[i];
-            cout << "Cycle" << i << ": ";
-            for (const auto& node: cycle) {
-                cout << node << " ";
-                s += reads[idpos[node].first][idpos[node].second + K - 1];
-            }
-            cout << s << "\n";
-        }
-        cout << "Paths (after):\n";
-        for (INT i = 0; i < static_cast<INT>(paths.size()); ++i) {
-            string s;
-            auto path = paths[pord[i]];
-            cout << "Path" << pord[i] << ": ";
-            s += reads[idpos[path[0]].first].substr(idpos[path[0]].second, K - 1);
-            for (const auto& node: path) {
-                cout << node << " ";
-                s += reads[idpos[node].first][idpos[node].second + K - 1];
-            }
-            cout << s << "\n";
-        }
-        cout << "========== DEBUG ==========\n";
         
         // representation
         string txt;
@@ -955,7 +924,7 @@ public:
             return;
         }
         for (const auto& p: rep.second)
-            pntfile << p << " ";
+            pntfile << p << ",";
         pntfile.close();
         cout << "File created: " << path_to_filename(pntfilename, '/');
         fs::path pntfilepath = pntfilename;
