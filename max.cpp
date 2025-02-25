@@ -763,24 +763,28 @@ public:
             } 
             from = pord.size();
 
+            cout << "\nheads.size: " << heads.size() << "\n"; // debug
+
             unordered_set<INT> visited, memo;
+            cout << "Resolving pointer cycles...\n";
             for (auto it1 = heads.begin(); it1 != heads.end();) {
                 VINT new_cycle;
                 auto start = it1->second;
                 // find pointer cycle
-                if (!has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
+                if (!has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)
+                    || new_cycle.empty()) {
                     ++it1; continue;
                 }
                 // append new_cycle to cycles if found
                 cycles.emplace_back(new_cycle);
 
                 // process all paths involved in new_cycle
-                unordered_set<INT> involved;
+                VINT involved;
                 // 1. record involved paths
                 for (auto node: new_cycle) {
                     auto it = heads.find(node);
                     if (it != heads.end()) {
-                        involved.insert(it->second);
+                        involved.emplace_back(it->second);
                         heads.erase(it);
                     }
                 }
@@ -803,19 +807,20 @@ public:
                     // delete the common part && new head >> pointees
                     if (match_len > 0) {
                         if (match_len < static_cast<INT>(path.size())) {
-                            pointees.insert(path[match_len]);
+                            pointees.insert(path[match_len - 1]);
                         }
                         path.erase(path.begin(), path.begin() + match_len);
                     }
                 }
-                // // since renewed heads, start from begin again
-                // it1 = heads.begin();
+                // since renewed heads, start from begin again
+                it1 = heads.begin();
                 // end if both heads and self_paths_tmp are empty
                 if (heads.empty() && self_paths_tmp.empty()) {
                     exit_code = 2;
                     goto end;
                 }
             }
+            cout << "Resolved\n";
 
             // If no pointing cycle, append one of self paths to pord
             if (static_cast<INT>(pord.size()) == from && !self_paths_tmp.empty()) {
@@ -827,13 +832,13 @@ public:
                 if (heads.empty() && self_paths_tmp.empty()) 
                     {exit_code = 3; goto end;}
             }
-            if (static_cast<INT>(pord.size()) == from) {
-                cerr << "\nError: Failed in finding existing new_cycle.\n";
-                exit(1);
-            }
+            // if (static_cast<INT>(pord.size()) == from) {
+            //     cerr << "\nError: Failed in finding existing new_cycle.\n";
+            //     exit(1);
+            // }
         }
         end:
-        finished("\nPointing");
+        finished("Pointing");
         if (heads.empty()) 
             cout << "\nAll paths are pointed.\n";
         else cout << "\n" << heads.size() << " paths are not pointed.\n";
@@ -844,6 +849,35 @@ public:
              << "3: At least one self-path which has no pointer to it.\n"
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
+        // debug
+        cout << "========== DEBUG ==========\n";
+        cout << "# non-self paths: " << heads.size()
+             << "\n# self paths: " << self_paths.size() << "\n\n";
+        cout << "Cycles (after):\n";
+        for (INT i = 0; i < static_cast<INT>(cycles.size()); ++i) {
+            string s;
+            auto cycle = cycles[i];
+            cout << "Cycle" << i << ": ";
+            for (const auto& node: cycle) {
+                cout << node << " ";
+                s += reads[idpos[node].first][idpos[node].second + K - 1];
+            }
+            cout << s << "\n";
+        }
+        cout << "Paths (after):\n";
+        for (INT i = 0; i < static_cast<INT>(paths.size()); ++i) {
+            string s;
+            auto path = paths[pord[i]];
+            cout << "Path" << pord[i] << ": ";
+            s += reads[idpos[path[0]].first].substr(idpos[path[0]].second, K - 1);
+            for (const auto& node: path) {
+                cout << node << " ";
+                s += reads[idpos[node].first][idpos[node].second + K - 1];
+            }
+            cout << s << "\n";
+        }
+        cout << "========== DEBUG ==========\n";
+        
         // representation
         string txt;
         VINT pnt;
