@@ -741,7 +741,7 @@ public:
             } ++pos;
         }
         
-        while (static_cast<INT>(pointees.size()) != P) {         
+        while (static_cast<INT>(pointees.size()) < P) {         
             // add pointers from paths to other paths in pord
             auto bound = pord.size();
 
