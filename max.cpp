@@ -720,7 +720,7 @@ public:
              << "\n# self paths: " << self_paths.size() << "\n";
 
         VINT pord; // sorted path ID order
-        VINT visited(P, 0), memo(P, 0); // for pointer cycle detection
+        VINT memo(P, 0); // for pointer cycle detection
 
         // add pointers from paths to cycles
         INT pos = 0, exit_code = -1;
@@ -762,15 +762,15 @@ public:
                     progress(pos, S, "Pointing");
                 } ++pos;
             } 
-            from = pord.size();
-
-            cout << "\nheads.size: " << heads.size() << " "; // debug
-            cout << ((P == (INT)(pord.size() + heads.size() + self_paths_tmp.size())) ? "(OK)" : "(Anomaly)") << "\n"; // debug
+            from = bound;
 
             cout << "Resolving pointer cycles...\n";
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 auto start = it1->second;
+                if (memo[start]) continue;
+                VINT visited(P, 0);
+
                 // find pointer cycle
                 if (has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)
                     && !new_cycle.empty()) {
@@ -778,18 +778,27 @@ public:
                     cycles.emplace_back(new_cycle);
 
                     // process all paths involved in new_cycle
-                    VINT involved;
+                    VPINT involved; // {node=head/has_head-outneigh, 0/1}
                     // 1. record involved paths
                     for (auto node: new_cycle) {
                         auto it = heads.find(node);
                         if (it != heads.end()) {
-                            involved.emplace_back(it->second);
+                            involved.emplace_back(it->second, 0);
                             heads.erase(it);
+                        }
+                        for (const auto& c: base) {
+                            auto next = forward(reads, kmers, idpos, node, c);
+                            if (next == -1) continue;
+                            auto itit = heads.find(next);
+                            if (itit == heads.end()) continue;
+                            involved.emplace_back(itit->second, 1);
+                            heads.erase(itit);
                         }
                     }
                     // 2. process each involved paths
-                    for (auto pid: involved) {
+                    for (auto& [pid, non_member]: involved) {
                         pord.emplace_back(pid);
+                        if (non_member) continue;
                         auto& path = paths[pid];
                         auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
                         if (it == new_cycle.end()) {
@@ -820,10 +829,6 @@ public:
             }
             cout << "Resolved\n";
 
-            // init visited all with 0, and mark 1 iff path in pord
-            for (INT i = 0; i < P; ++i) visited[i] = 0;
-            for (const auto& pid : pord) visited[pid] = 1;
-
             // If no pointing cycle, append one of self paths to pord
             if (static_cast<INT>(pord.size()) == from && !self_paths_tmp.empty()) {
                 auto it = self_paths_tmp.begin();
@@ -840,7 +845,7 @@ public:
         if (heads.empty()) 
             cout << "\nAll paths are pointed.\n";
         else cout << "\n" << heads.size() << " paths are not pointed.\n";
-        cout << "\nExit code: " << exit_code << "\n";
+        cout << "\nResult code: " << exit_code << "\n";
         cout << "0: All pointers to cycles\n"
              << "1: At least one pointer to a path. (No pointer cycle)\n"
              << "2: At least one pointer cycle in the initial decomposition.\n"
