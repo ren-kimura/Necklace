@@ -780,7 +780,9 @@ public:
                     // process all paths involved in new_cycle
                     VPINT involved; // {node=head/has_head-outneigh, 0/1}
                     // 1. record involved paths
-                    for (auto node: new_cycle) {
+                    INT R = static_cast<INT>(new_cycle.size());
+                    for (INT i = 0; i < R; ++i) {
+                        auto node = new_cycle[i];
                         auto it = heads.find(node);
                         if (it != heads.end()) {
                             involved.emplace_back(it->second, 0);
@@ -788,9 +790,10 @@ public:
                         }
                         for (const auto& c: base) {
                             auto next = forward(reads, kmers, idpos, node, c);
-                            if (next == -1) continue;
+                            if (next == -1 || next == new_cycle[(i + 1) % R]) continue;
                             auto itit = heads.find(next);
                             if (itit == heads.end()) continue;
+                            pointees.insert(node);
                             involved.emplace_back(itit->second, 1);
                             heads.erase(itit);
                         }
@@ -851,12 +854,15 @@ public:
              << "2: At least one pointer cycle in the initial decomposition.\n"
              << "3: At least one self-path which has no pointer to it.\n"
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
+
+        INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
         
         // representation
         string txt;
         VINT pnt;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
+                ++N_count;
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
@@ -864,6 +870,7 @@ public:
             if (self_paths.find(pid) != self_paths.end())
                 txt += "$" + reads[idpos[paths[pid][0]].first].substr(idpos[paths[pid][0]].second, K - 1);
             for (const auto& node: paths[pid]) {
+                ++N_count;
                 auto x = idpos[node];
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
@@ -887,6 +894,11 @@ public:
             } ++pos;
         }
         to_diff(pnt); // take difference of pointers, since they are sorted in ASC
+
+        // ||cycles|| + ||paths|| == N ?
+        if (N_count == N) cout << "||cycles|| + ||paths|| == N (OK)\n";
+        else              cout << "||cycles|| + ||paths|| != N (NG)\n";
+        
         return {txt, pnt};
     }
 
