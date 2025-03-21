@@ -705,9 +705,8 @@ public:
     REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
-        INT S = CnP.first + P + N, from = 0;
+        INT S = CnP.first + P + N, ofst = 0, from = 0;
         unordered_set<INT> self_paths, self_paths_tmp;
-        unordered_set<INT> pointees;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
                 self_paths.insert(i);
@@ -720,10 +719,11 @@ public:
              << "\n# self paths: " << self_paths.size() << "\n";
 
         VINT pord; // sorted path ID order
+        VINT pntc, pntp; // record the relative positions of pointees
         VINT memo(P, 0); // for pointer cycle detection
 
         // add pointers from paths to cycles
-        INT pos = 0, exit_code = -1;
+        INT pos = 0, dist = 0, exit_code = -1;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
@@ -732,20 +732,25 @@ public:
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     pord.emplace_back(it->second);
-                    pointees.insert(node);
+                    pntc.emplace_back(dist);
+                    dist = 0;
                     heads.erase(it);
                     if (heads.empty() && self_paths_tmp.empty())
                         {exit_code = 0; goto end;}
-                } ++pos;
+                } ++pos; ++dist;
                 progress(pos, S, "Pointing");
-            } ++pos;
+            } ++pos; ++dist;
         }
+        ofst = dist; // distance from pos of the last pointee in cycles and the end
+        cout << "ofst(right after finishing scanning cycles): " << ofst << "\n";
+        dist = 0;
         
-        while (static_cast<INT>(pointees.size()) < P) {         
+        while (static_cast<INT>(pord.size()) < P) {         
             // add pointers from paths to other paths in pord
             auto bound = pord.size();
 
-            for (auto i = from; i < min(static_cast<INT>(bound), P); ++i) {
+            for (auto i = from; i < static_cast<INT>(bound); ++i) {
+                dist = 1;
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
                         auto next = forward(reads, kmers, idpos, node, c);
@@ -753,18 +758,20 @@ public:
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
                         pord.emplace_back(it->second);
+                        pntp.emplace_back(dist);
+                        dist = 0;
                         ++bound;
-                        pointees.insert(node);
                         heads.erase(it);
                         if (heads.empty() && self_paths_tmp.empty()) 
                             {exit_code = 1; goto end;}
-                    } ++pos;
+                    } ++pos; ++dist;
                     progress(pos, S, "Pointing");
-                } ++pos;
+                } ++pos; ++dist;
             } 
             from = bound;
 
             cout << "Resolving pointer cycles...\n";
+            INT flg = 1;
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 auto start = it1->second;
@@ -776,53 +783,56 @@ public:
                     && !new_cycle.empty()) {
                     // append new_cycle to cycles if found
                     cycles.emplace_back(new_cycle);
+                    // debug
+                    cout << "\n\nnew cycle: ";
+                    string s;
+                    for (const auto& node: new_cycle) {
+                        cout << node << " ";
+                        s += reads[idpos[node].first][idpos[node].second + K - 1];
+                    }
+                    cout << s << "\n\n";
 
                     // process all paths involved in new_cycle
-                    VPINT involved; // {node=head/has_head-outneigh, 0/1}
-                    // 1. record involved paths
-                    INT R = static_cast<INT>(new_cycle.size());
-                    for (INT i = 0; i < R; ++i) {
-                        auto node = new_cycle[i];
-                        auto it = heads.find(node);
+                    INT R = static_cast<INT>(new_cycle.size()), i = 0, distb = 0;
+                    while (i < R) {
+                        auto it = heads.find(new_cycle[i]);
                         if (it != heads.end()) {
-                            involved.emplace_back(it->second, 0);
+                            auto pid = it->second;
+                            auto& path = paths[pid];
+                            INT j = 0;
+                            while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
+                                for (const auto& c: base) {
+                                    auto next = forward(reads, kmers, idpos, new_cycle[i], c);
+                                    if (next == -1 || next == new_cycle[(i + 1) % R]) continue;
+                                    auto itit = heads.find(next);
+                                    if (itit == heads.end()) continue;
+                                    pord.emplace_back(itit->second);
+                                    if (flg) {
+                                        pntc.emplace_back(ofst + i + 1); // ADDED 1 (TMP)
+                                        cout << "pntc added: " << ofst + i << "\n";
+                                        --flg; distb = 0;
+                                    } else {
+                                        pntc.emplace_back(distb);
+                                        cout << "pntc added: " << distb << "\n";
+                                        distb = 0;
+                                    }
+                                    heads.erase(itit);
+                                }
+                                ++i; ++j; ++distb;
+                            }
+                            pord.emplace_back(pid);
+                            if (flg) {
+                                pntc.emplace_back(ofst + i - 1);
+                                --flg; distb = 0;
+                            } else {
+                                pntc.emplace_back(distb);
+                                distb = 0;
+                            }
+                            path.erase(path.begin(), path.begin() + j);
                             heads.erase(it);
                         }
-                        for (const auto& c: base) {
-                            auto next = forward(reads, kmers, idpos, node, c);
-                            if (next == -1 || next == new_cycle[(i + 1) % R]) continue;
-                            auto itit = heads.find(next);
-                            if (itit == heads.end()) continue;
-                            pointees.insert(node);
-                            involved.emplace_back(itit->second, 1);
-                            heads.erase(itit);
-                        }
                     }
-                    // 2. process each involved paths
-                    for (auto& [pid, non_member]: involved) {
-                        pord.emplace_back(pid);
-                        if (non_member) continue;
-                        auto& path = paths[pid];
-                        auto it = find(new_cycle.begin(), new_cycle.end(), path[0]);
-                        if (it == new_cycle.end()) {
-                            cerr << "Error: No matching node found in new_cycle.\n";
-                            continue;
-                        }
-                        // calc common length of new_cycle and path
-                        INT match_len = 0;
-                        INT cycle_start = distance(new_cycle.begin(), it);
-                        while (match_len < static_cast<INT>(path.size()) &&
-                                new_cycle[(cycle_start + match_len) % new_cycle.size()] == path[match_len]) {
-                            ++match_len;
-                        }
-                        // delete the common part && new head >> pointees
-                        if (match_len > 0) {
-                            if (match_len < static_cast<INT>(path.size())) {
-                                pointees.insert(path[match_len - 1]);
-                            }
-                            path.erase(path.begin(), path.begin() + match_len);
-                        }
-                    }                
+                    ofst = distb;             
                     // end if both heads and self_paths_tmp are empty
                     if (heads.empty() && self_paths_tmp.empty()) {
                         exit_code = 2;
@@ -837,7 +847,7 @@ public:
                 auto it = self_paths_tmp.begin();
                 auto pid = *it;
                 pord.emplace_back(pid);
-                pointees.insert(paths[pid][0]);
+                pntp.emplace_back(dist);
                 self_paths_tmp.erase(it);
                 if (heads.empty() && self_paths_tmp.empty()) 
                     {exit_code = 3; goto end;}
@@ -856,10 +866,23 @@ public:
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
         INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
+        if (pntp.size()) pntp[0] += ofst + 1; // because there is a delimiter in between
+
+        // debug
+        if ((INT)pord.size() == P) cout << "CORRECT #PATHS!!\n";
+        else                  cout << "INCORRECT #PATHS!!\n";
+        cout << "pntc: ";
+        for (const auto& p: pntc) cout << p << " ";
+        cout << "\npntp: ";
+        for (const auto& p: pntp) cout << p << " ";
+        cout << "\n";
         
         // representation
         string txt;
         VINT pnt;
+        pnt.insert(pnt.end(), pntc.begin(), pntc.end());
+        pnt.insert(pnt.end(), pntp.begin(), pntp.end());
+
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 ++N_count;
@@ -875,41 +898,25 @@ public:
                 txt += reads[x.first][x.second + K - 1];
             } txt += "$";
         } if(!txt.empty()) txt.pop_back();
-        pos = 0;
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle) {
-                if (pointees.find(node) != pointees.end())
-                    pnt.emplace_back(pos);
-                ++pos;
-            } ++pos;
-        } for (const auto& pid: pord) {
-            for (const auto& node: paths[pid]) {
-                if (pointees.find(node) != pointees.end()){
-                    pnt.emplace_back(pos);
-                    if (node == paths[pid][0] && 
-                        self_paths.find(pid) != self_paths.end())
-                        pos += K;
-                }
-                ++pos;
-            } ++pos;
-        }
-        to_diff(pnt); // take difference of pointers, since they are sorted in ASC
 
         // ||cycles|| + ||paths|| == N ?
         if (N_count == N) cout << "||cycles|| + ||paths|| == N (OK)\n";
-        else              cout << "||cycles|| + ||paths|| != N (NG)\n";
+        else {
+            cout << "||cycles|| + ||paths|| != N (NG)\n";
+            cout << "||cycles|| + ||paths|| == " << N_count
+                 << ", N == " << N << "\n";
+        }
         
         return {txt, pnt};
     }
 
-    void to_diff(VINT& v) {
-        if (v.size() < 2) return;
-        INT prev = v[0];
-        for (INT i = 1; i < static_cast<INT>(v.size()); ++i) {
-            INT tmp = v[i];
-            v[i] -= prev;
-            prev = tmp;
-        }
+    REP forest(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
+        VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
+        string txt;
+        // for each cycle construct a path tree
+        // for each unused paths, arbitrarily pick one (if indegree-0 path exists, pick it) and construct a path tree
+        // if all paths used, represent resulting forest-like structure using parentheses
+        return {txt, {}};
     }
 
     void write(const REP& rep) {
