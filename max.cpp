@@ -750,7 +750,6 @@ public:
             auto bound = pord.size();
 
             for (auto i = from; i < static_cast<INT>(bound); ++i) {
-                dist = 1;
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
                         auto next = forward(reads, kmers, idpos, node, c);
@@ -797,6 +796,7 @@ public:
                     while (i < R) {
                         auto it = heads.find(new_cycle[i]);
                         if (it != heads.end()) {
+                            distb = 0;
                             auto pid = it->second;
                             auto& path = paths[pid];
                             INT j = 0;
@@ -823,10 +823,9 @@ public:
                             pord.emplace_back(pid);
                             if (flg) {
                                 pntc.emplace_back(ofst + i - 1);
-                                --flg; distb = 0;
+                                --flg;
                             } else {
                                 pntc.emplace_back(distb);
-                                distb = 0;
                             }
                             path.erase(path.begin(), path.begin() + j);
                             heads.erase(it);
@@ -847,7 +846,9 @@ public:
                 auto it = self_paths_tmp.begin();
                 auto pid = *it;
                 pord.emplace_back(pid);
+                cout << "dist HERE = " << dist << "\n"; // debug
                 pntp.emplace_back(dist);
+                dist = K;
                 self_paths_tmp.erase(it);
                 if (heads.empty() && self_paths_tmp.empty()) 
                     {exit_code = 3; goto end;}
@@ -866,7 +867,7 @@ public:
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
         INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
-        if (pntp.size()) pntp[0] += ofst + 1; // because there is a delimiter in between
+        if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
 
         // debug
         if ((INT)pord.size() == P) cout << "CORRECT #PATHS!!\n";
