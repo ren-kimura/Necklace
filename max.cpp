@@ -26,7 +26,6 @@ using VSTR = vector<string>;
 using Vint = vector<int8_t>;
 using VINT = vector<INT>;
 using PINT = pair<INT, INT>;
-using VPINT = vector<PINT>;
 using VTINT = vector<tuple<INT, INT, INT, INT>>;
 using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
@@ -166,10 +165,10 @@ public:
         cout << "Initial Memory: " << initial_memory << " MB\n\n";
 
         VSTR reads;
-        VPINT idpos; 
+        VINT kmerv; 
         
         auto start_time = chrono::high_resolution_clock::now();
-        INT N = get_kmers(reads, kmers, idpos);
+        INT N = get_kmers(reads, kmers, kmerv);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
         size_t get_kmers_memory = get_memory_usage();
@@ -177,7 +176,7 @@ public:
         VVINT adj(N), inv_adj(N);
 
         start_time = chrono::high_resolution_clock::now();
-        INT E = add_edges(reads, kmers, idpos, N, adj, inv_adj);
+        INT E = add_edges(reads, kmers, kmerv, N, adj, inv_adj);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> add_edges_time = end_time - start_time;
         size_t add_edges_memory = get_memory_usage();
@@ -208,21 +207,21 @@ public:
         if (option == 0) {
             // plain
             start_time = chrono::high_resolution_clock::now();
-            rep = plain(reads, idpos, cycles, paths);
+            rep = plain(reads, kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
         } else if (option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
-            rep = unsorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
+            rep = unsorted(reads, kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
         } else {
             // sorted
             start_time = chrono::high_resolution_clock::now();
-            rep = sorted(reads, kmers, N, idpos, inv_adj, cycles, paths, CnP);
+            rep = sorted(reads, kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
@@ -284,6 +283,10 @@ public:
         return kmer;
     }
     
+    char decode_base(uint64_t val) {
+        return "ACGT"[val];
+    }
+
     INT rolling_valid_kmer_start(const string& read, INT start) {
         INT len = read.size();
         INT count = 0;
@@ -299,7 +302,7 @@ public:
         return -1;
     }
 
-    INT get_kmers(VSTR& reads, Kmers& kmers, VPINT& idpos) {
+    INT get_kmers(VSTR& reads, Kmers& kmers, VINT& kmerv) {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
@@ -351,7 +354,7 @@ public:
             auto it = kmers.find(hash);
             if (it == kmers.end()) {
                 kmers[hash] = id;
-                idpos.emplace_back(i, j);
+                kmerv.emplace_back(hash);
                 ++id;
             }
 
@@ -373,7 +376,7 @@ public:
                 auto it = kmers.find(hash);
                 if (it == kmers.end()) {
                     kmers[hash] = id;
-                    idpos.emplace_back(i, j);
+                    kmerv.emplace_back(hash);
                     ++id;
                 }
 
@@ -389,9 +392,8 @@ public:
     }
 
     INT forward(const VSTR& reads, Kmers& kmers, 
-                const VPINT& idpos, INT id, char c) {
-        auto pos = idpos[id]; 
-        uint64_t hash = encode_kmer(reads[pos.first].substr(pos.second, K));
+                const VINT& kmerv, INT id, char c) {
+        uint64_t hash = kmerv[id]; 
         if (hash == UINT64_MAX) return -1;
 
         uint64_t mask = (1ULL << (2 * (K - 1))) - 1;
@@ -410,14 +412,14 @@ public:
     }
 
     INT add_edges(const VSTR& reads, Kmers& kmers, 
-                const VPINT& idpos, const INT& N, VVINT& adj, VVINT& inv_adj) {
+                const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
         INT cnt = 0, E = 0;
         adj.resize(N);
         inv_adj.resize(N);
         for (const auto& entry : kmers) {
             auto id = entry.second;
             for (auto const c : base) {
-                auto next_id = forward(reads, kmers, idpos, id, c);
+                auto next_id = forward(reads, kmers, kmerv, id, c);
                 if (next_id != -1 && next_id != id) {
                     adj[id].emplace_back(next_id);
                     inv_adj[next_id].emplace_back(id);
@@ -568,30 +570,30 @@ public:
         return check(cycles) || check(paths);
     }
 
-    REP plain(const VSTR& reads, const VPINT& idpos,
+    REP plain(const VSTR& reads, const VINT& kmerv,
                 const VVINT& cycles, const VVINT& paths) {
         string txt;
         VINT pnt;
         cout << "Generating SPSS...";
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
-                auto x = idpos[node];
-                txt += reads[x.first][x.second + K - 1];
+                auto c = decode_base(kmerv[node] % 4);
+                txt += c;
             } txt += "$";
         } txt += "$";
         for (const auto& path: paths) {
             for (const auto& node: path) {
-                auto x = idpos[node];
+                auto hash = kmerv[node];
                 if (node == path.front())
-                        txt += reads[x.first].substr(x.second, K - 1);
-                txt += reads[x.first][x.second + K - 1];
+                    txt += decode_kmer(hash).substr(0, K - 1);
+                txt += decode_base(hash % 4);
             } txt += "$";
         } if (!txt.empty()) txt.pop_back();
         cout << "\rCompleted generating SPSS.\n";
         return {txt, {}};
     }
 
-    REP unsorted(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
+    REP unsorted(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
                 const VVINT& inv_adj, const VVINT& cycles, const VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;  
         INT S = CnP.first + P + N;
@@ -605,7 +607,7 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, idpos, node, c);
+                    auto next = forward(reads, kmers, kmerv, node, c);
                     if (next == -1) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -619,7 +621,7 @@ public:
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, idpos, node, c);
+                    auto next = forward(reads, kmers, kmerv, node, c);
                     if (next == -1) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -643,16 +645,16 @@ public:
         string txt;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
-                auto x = idpos[node];
-                txt += reads[x.first][x.second + K - 1];
+                auto c = decode_base(kmerv[node] % 4);
+                txt += c;
             } txt += "$";
         } for (INT i = 0; i < P; ++i) {
             auto path = paths[i];
             if (self_paths.find(i) != self_paths.end())
-                txt += "$" + reads[idpos[path[0]].first].substr(idpos[path[0]].second, K - 1);
+                txt += "$" + decode_kmer(kmerv[path[0]]).substr(0, K - 1);
             for (const auto& node: path) {
-                auto x = idpos[node];
-                txt += reads[x.first][x.second + K - 1];
+                auto c = decode_base(kmerv[node] % 4);
+                txt += c;
             } txt += "$";
         } if(!txt.empty()) txt.pop_back();
 
@@ -664,7 +666,7 @@ public:
         VVINT& paths,
         const VSTR& reads,
         Kmers& kmers,
-        const VPINT& idpos,
+        const VINT& kmerv,
         VINT& new_cycle,
         VINT& memo,
         VINT& visited
@@ -682,13 +684,13 @@ public:
         for (const auto& node: path) {
             new_cycle.emplace_back(node);
             for (const auto& c: base) {
-                auto next = forward(reads, kmers, idpos, node, c);
+                auto next = forward(reads, kmers, kmerv, node, c);
                 if (next == -1) continue;
 
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
-                    if (has_pointer_cycle(next_path, paths, reads, kmers, idpos, new_cycle, memo, visited)) {
+                    if (has_pointer_cycle(next_path, paths, reads, kmers, kmerv, new_cycle, memo, visited)) {
                         return true;
                     }
                     dead_end = true; // "next" found in heads
@@ -702,7 +704,7 @@ public:
         return false; // no pointer cycle found
     }
 
-    REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
+    REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, ofst = 0, from = 0;
@@ -727,7 +729,7 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, idpos, node, c);
+                    auto next = forward(reads, kmers, kmerv, node, c);
                     if (next == -1) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -752,7 +754,7 @@ public:
             for (auto i = from; i < static_cast<INT>(bound); ++i) {
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
-                        auto next = forward(reads, kmers, idpos, node, c);
+                        auto next = forward(reads, kmers, kmerv, node, c);
                         if (next == -1) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -778,7 +780,7 @@ public:
                 VINT visited(P, 0);
 
                 // find pointer cycle
-                if (has_pointer_cycle(start, paths, reads, kmers, idpos, new_cycle, memo, visited)
+                if (has_pointer_cycle(start, paths, reads, kmers, kmerv, new_cycle, memo, visited)
                     && !new_cycle.empty()) {
                     // append new_cycle to cycles if found
                     cycles.emplace_back(new_cycle);
@@ -787,7 +789,7 @@ public:
                     string s;
                     for (const auto& node: new_cycle) {
                         cout << node << " ";
-                        s += reads[idpos[node].first][idpos[node].second + K - 1];
+                        s += decode_base(kmerv[node] % 4);
                     }
                     cout << s << "\n\n";
 
@@ -802,7 +804,7 @@ public:
                             INT j = 0;
                             while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
                                 for (const auto& c: base) {
-                                    auto next = forward(reads, kmers, idpos, new_cycle[i], c);
+                                    auto next = forward(reads, kmers, kmerv, new_cycle[i], c);
                                     if (next == -1 || next == new_cycle[(i + 1) % R]) continue;
                                     auto itit = heads.find(next);
                                     if (itit == heads.end()) continue;
@@ -887,16 +889,16 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 ++N_count;
-                auto x = idpos[node];
-                txt += reads[x.first][x.second + K - 1];
+                auto c = decode_base(kmerv[node] % 4);
+                txt += c;
             } txt += "$";
         } for (const auto& pid: pord) {
             if (self_paths.find(pid) != self_paths.end())
-                txt += "$" + reads[idpos[paths[pid][0]].first].substr(idpos[paths[pid][0]].second, K - 1);
+                txt += "$" + decode_kmer(kmerv[paths[pid][0]]).substr(0, K - 1);
             for (const auto& node: paths[pid]) {
                 ++N_count;
-                auto x = idpos[node];
-                txt += reads[x.first][x.second + K - 1];
+                auto c = decode_base(kmerv[node] % 4);
+                txt += c;
             } txt += "$";
         } if(!txt.empty()) txt.pop_back();
 
@@ -911,7 +913,7 @@ public:
         return {txt, pnt};
     }
 
-    REP forest(const VSTR& reads, Kmers& kmers, const INT& N, const VPINT& idpos,
+    REP forest(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         string txt;
         // for each cycle construct a path tree
