@@ -21,7 +21,7 @@ using namespace std;
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
 
-using INT = int64_t;
+using INT = uint64_t;
 using VSTR = vector<string>;
 using Vint = vector<int8_t>;
 using VINT = vector<INT>;
@@ -31,7 +31,7 @@ using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
 
 unordered_set<char> base = {'A', 'C', 'G', 'T'};
-const INT INF = INT64_MAX;
+const INT INF = UINT64_MAX;
 
 size_t get_available_memory() {
     return sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
@@ -356,6 +356,10 @@ public:
                 kmers[hash] = id;
                 kmerv.emplace_back(hash);
                 ++id;
+                if (id == INF) {
+                    cerr << "Too much k-mers!!\n\n";
+                    exit(1);
+                }
             }
 
             // update kmer by rolling hash
@@ -378,6 +382,10 @@ public:
                     kmers[hash] = id;
                     kmerv.emplace_back(hash);
                     ++id;
+                    if (id == INF) {
+                        cerr << "Too much k-mers!!\n\n";
+                        exit(1);
+                    }
                 }
 
                 progress(footing + j, tlen, "Detecting k-mers");
@@ -394,7 +402,7 @@ public:
     INT forward(const VSTR& reads, Kmers& kmers, 
                 const VINT& kmerv, INT id, char c) {
         uint64_t hash = kmerv[id]; 
-        if (hash == UINT64_MAX) return -1;
+        if (hash == INF) return INF;
 
         uint64_t mask = (1ULL << (2 * (K - 1))) - 1;
         hash = (hash & mask) << 2;
@@ -403,12 +411,12 @@ public:
         else if (c == 'C')  hash |= 1;
         else if (c == 'G')  hash |= 2;
         else if (c == 'T')  hash |= 3;
-        else return -1; // invalid for non-ACGT c
+        else return INF; // invalid for non-ACGT c
 
         if (kmers.find(hash) != kmers.end() && kmers[hash] != id)
             return kmers[hash];
         
-        return -1; // no branch to c
+        return INF; // no branch to c
     }
 
     INT add_edges(const VSTR& reads, Kmers& kmers, 
@@ -420,7 +428,7 @@ public:
             auto id = entry.second;
             for (auto const c : base) {
                 auto next_id = forward(reads, kmers, kmerv, id, c);
-                if (next_id != -1 && next_id != id) {
+                if (next_id != INF && next_id != id) {
                     adj[id].emplace_back(next_id);
                     inv_adj[next_id].emplace_back(id);
                     ++E;
@@ -608,7 +616,7 @@ public:
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
                     auto next = forward(reads, kmers, kmerv, node, c);
-                    if (next == -1) continue;
+                    if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     pnt[heads[next]] = pos;
@@ -622,7 +630,7 @@ public:
             for (const auto& node: path) {
                 for (const auto& c: base) {
                     auto next = forward(reads, kmers, kmerv, node, c);
-                    if (next == -1) continue;
+                    if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     pnt[heads[next]] = pos;
@@ -685,7 +693,7 @@ public:
             new_cycle.emplace_back(node);
             for (const auto& c: base) {
                 auto next = forward(reads, kmers, kmerv, node, c);
-                if (next == -1) continue;
+                if (next == INF) continue;
 
                 auto it = heads.find(next);
                 if (it != heads.end()) {
@@ -730,7 +738,7 @@ public:
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
                     auto next = forward(reads, kmers, kmerv, node, c);
-                    if (next == -1) continue;
+                    if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     pord.emplace_back(it->second);
@@ -755,7 +763,7 @@ public:
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
                         auto next = forward(reads, kmers, kmerv, node, c);
-                        if (next == -1) continue;
+                        if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
                         pord.emplace_back(it->second);
@@ -805,7 +813,7 @@ public:
                             while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
                                 for (const auto& c: base) {
                                     auto next = forward(reads, kmers, kmerv, new_cycle[i], c);
-                                    if (next == -1 || next == new_cycle[(i + 1) % R]) continue;
+                                    if (next == INF || next == new_cycle[(i + 1) % R]) continue;
                                     auto itit = heads.find(next);
                                     if (itit == heads.end()) continue;
                                     pord.emplace_back(itit->second);
