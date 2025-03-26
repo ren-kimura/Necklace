@@ -23,7 +23,7 @@ namespace chrono = std::chrono;
 
 using INT = uint64_t;
 using VSTR = vector<string>;
-using Vint = vector<int8_t>;
+using Vint = vector<uint8_t>;
 using VINT = vector<INT>;
 using PINT = pair<INT, INT>;
 using VTINT = vector<tuple<INT, INT, INT, INT>>;
@@ -40,16 +40,16 @@ size_t get_available_memory() {
 void progress(INT now, INT total, const string& task) {
     const int disp_interval = total / 100;
     if (total >= 100 && now % disp_interval != 0) return;
-    double progress = static_cast<double>(now) / static_cast<double>(total);
+    double progress = (double)(now) / (double)(total);
     int width = 30;
-    int pos = static_cast<int>(width * progress);
+    int pos = (int)(width * progress);
     cout << "\r" << task << " [";
     for (int i = 0; i < width; ++i) {
         if (i < pos)        cout << "=";
         else if (i == pos)  cout << ">";
         else                cout << " ";
     }
-    cout << "] " << static_cast<int>(progress * 100.0) << "%";
+    cout << "] " << (int)(progress * 100.0) << "%";
     cout.flush();
 }
 
@@ -176,7 +176,7 @@ public:
         VVINT adj(N), inv_adj(N);
 
         start_time = chrono::high_resolution_clock::now();
-        INT E = add_edges(reads, kmers, kmerv, N, adj, inv_adj);
+        INT E = add_edges(kmers, kmerv, N, adj, inv_adj);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> add_edges_time = end_time - start_time;
         size_t add_edges_memory = get_memory_usage();
@@ -207,21 +207,21 @@ public:
         if (option == 0) {
             // plain
             start_time = chrono::high_resolution_clock::now();
-            rep = plain(reads, kmerv, cycles, paths);
+            rep = plain(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
         } else if (option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
-            rep = unsorted(reads, kmers, N, kmerv, inv_adj, cycles, paths, CnP);
+            rep = unsorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
         } else {
             // sorted
             start_time = chrono::high_resolution_clock::now();
-            rep = sorted(reads, kmers, N, kmerv, inv_adj, cycles, paths, CnP);
+            rep = sorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
@@ -272,7 +272,7 @@ public:
 
     string decode_kmer(uint64_t hash) {
         string kmer;
-        for (int i = 0; i < K; ++i) {
+        for (INT i = 0; i < K; ++i) {
             int base = hash & 3;  // take rightmost 2 bits
             if (base == 0)        kmer = 'A' + kmer;  // 00 -> A
             else if (base == 1)   kmer = 'C' + kmer;  // 01 -> C
@@ -299,7 +299,7 @@ public:
                 count = 0; // reset if read[j] is non-ACGT
             }
         }
-        return -1;
+        return INF;
     }
 
     INT get_kmers(VSTR& reads, Kmers& kmers, VINT& kmerv) {
@@ -342,14 +342,14 @@ public:
         INT id = 0, footing = 0;
         uint64_t mask = (1ULL << (2 * (K - 1))) - 1; // 2K-bits mask
 
-        for (auto i = 0; i < static_cast<INT>(reads.size()); ++i) {
+        for (INT i = 0; i < (INT)(reads.size()); ++i) {
             const string& read = reads[i];
             INT len = read.size();
             if (len < K) continue;
             uint64_t hash;
 
             INT j = rolling_valid_kmer_start(read, 0);
-            if (j == -1) continue; // if not any valid k-mer, go to next read
+            if (j == INF) continue; // if not any valid k-mer, go to next read
             hash = encode_kmer(read.substr(j, K));
             auto it = kmers.find(hash);
             if (it == kmers.end()) {
@@ -372,7 +372,7 @@ public:
                 else if (c_in == 'T')   hash = ((hash & mask) << 2) | 3;
                 else {
                     j = rolling_valid_kmer_start(read, j + 1);
-                    if (j == -1) break;
+                    if (j == INF) break;
                     hash = encode_kmer(read.substr(j, K));
                 }
 
@@ -399,12 +399,11 @@ public:
         return N;
     }
 
-    INT forward(const VSTR& reads, Kmers& kmers, 
-                const VINT& kmerv, INT id, char c) {
-        uint64_t hash = kmerv[id]; 
+    INT forward(Kmers& kmers, const VINT& kmerv, INT id, char c) {
+        INT hash = kmerv[id]; 
         if (hash == INF) return INF;
 
-        uint64_t mask = (1ULL << (2 * (K - 1))) - 1;
+        INT mask = (1ULL << (2 * (K - 1))) - 1;
         hash = (hash & mask) << 2;
 
         if (c == 'A')       hash |= 0;
@@ -419,15 +418,14 @@ public:
         return INF; // no branch to c
     }
 
-    INT add_edges(const VSTR& reads, Kmers& kmers, 
-                const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
+    INT add_edges(Kmers& kmers, const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
         INT cnt = 0, E = 0;
         adj.resize(N);
         inv_adj.resize(N);
         for (const auto& entry : kmers) {
             auto id = entry.second;
             for (auto const c : base) {
-                auto next_id = forward(reads, kmers, kmerv, id, c);
+                auto next_id = forward(kmers, kmerv, id, c);
                 if (next_id != INF && next_id != id) {
                     adj[id].emplace_back(next_id);
                     inv_adj[next_id].emplace_back(id);
@@ -447,7 +445,7 @@ public:
         queue<INT> q;
         bool found_augpath = false;
         for (INT u = 0; u < N; ++u) {
-            if (match_u[u] == -1) {
+            if (match_u[u] == INF) {
                 dist[u] = 0;
                 q.push(u);
             } else dist[u] = INF;
@@ -456,7 +454,7 @@ public:
             INT u = q.front();
             q.pop();
             for (auto v : adj[u]) {
-                if (match_v[v] == -1) {
+                if (match_v[v] == INF) {
                     found_augpath = true;
                 } else if (dist[match_v[v]] == INF) {
                     dist[match_v[v]] = dist[u] + 1;
@@ -470,7 +468,7 @@ public:
     bool dfs (const VVINT& adj, VINT& match_u, VINT& match_v, 
             VINT& dist, INT u) {
         for (auto v : adj[u]) {
-            if (match_v[v] == -1 || (dist[match_v[v]] == dist[u] + 1 && dfs(adj, match_u, match_v, dist, match_v[v]))) {
+            if (match_v[v] == INF || (dist[match_v[v]] == dist[u] + 1 && dfs(adj, match_u, match_v, dist, match_v[v]))) {
                 match_u[u] = v;
                 match_v[v] = u;
                 return true;
@@ -484,11 +482,11 @@ public:
                 VINT& match_v) {
         VINT dist(N); // distance of bfs
         INT M = 0;
-        match_u.assign(N, -1);
-        match_v.assign(N, -1);
+        match_u.assign(N, INF);
+        match_v.assign(N, INF);
         while (bfs(N, adj, match_u, match_v, dist)) {
             for (INT u = 0; u < N; ++u) {
-                if (match_u[u] == -1 && dfs(adj, match_u, match_v, dist, u))
+                if (match_u[u] == INF && dfs(adj, match_u, match_v, dist, u))
                     M++; // found an augpath
             }
             progress(M, N, "Maximum matching");
@@ -509,7 +507,7 @@ public:
             trl.emplace_back(crnt);
 
             auto next = match_u[crnt];
-            if (next == -1) break;
+            if (next == INF) break;
             seen_v[next] = 1;
             crnt = next;
         }
@@ -526,7 +524,7 @@ public:
             lrt.emplace_back(crnt);
 
             auto prev = match_v[crnt];
-            if (prev == -1) break;
+            if (prev == INF) break;
             seen_u[prev] = 1;
             crnt = prev;
         }
@@ -578,8 +576,7 @@ public:
         return check(cycles) || check(paths);
     }
 
-    REP plain(const VSTR& reads, const VINT& kmerv,
-                const VVINT& cycles, const VVINT& paths) {
+    REP plain(const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
         string txt;
         VINT pnt;
         cout << "Generating SPSS...";
@@ -601,7 +598,7 @@ public:
         return {txt, {}};
     }
 
-    REP unsorted(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
+    REP unsorted(Kmers& kmers, const INT& N, const VINT& kmerv,
                 const VVINT& inv_adj, const VVINT& cycles, const VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;  
         INT S = CnP.first + P + N;
@@ -615,7 +612,7 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, kmerv, node, c);
+                    auto next = forward(kmers, kmerv, node, c);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -629,7 +626,7 @@ public:
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, kmerv, node, c);
+                    auto next = forward(kmers, kmerv, node, c);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -672,16 +669,16 @@ public:
     bool has_pointer_cycle(
         INT current,
         VVINT& paths,
-        const VSTR& reads,
         Kmers& kmers,
         const VINT& kmerv,
         VINT& new_cycle,
-        VINT& memo,
+        Vint& memo,
         VINT& visited
     ) {
         if (memo[current]) return false;
         if (visited[current]) {
             memo[current] = 1;
+            cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
             return true;
         }        
         visited[current] = 1;
@@ -692,13 +689,14 @@ public:
         for (const auto& node: path) {
             new_cycle.emplace_back(node);
             for (const auto& c: base) {
-                auto next = forward(reads, kmers, kmerv, node, c);
+                auto next = forward(kmers, kmerv, node, c);
                 if (next == INF) continue;
 
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
-                    if (has_pointer_cycle(next_path, paths, reads, kmers, kmerv, new_cycle, memo, visited)) {
+                    if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, memo, visited)) {
+                        memo[current] = 1;
                         return true;
                     }
                     dead_end = true; // "next" found in heads
@@ -707,12 +705,12 @@ public:
         }
         visited[current] = 0;
         // record if all nexts not in heads
-        if (dead_end) memo[current] = 1;
+        if (dead_end) {memo[current] = 1; cout << "(2) REVISED! memo[" << current << "] = 1\n";} // debug
 
         return false; // no pointer cycle found
     }
 
-    REP sorted(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
+    REP sorted(Kmers& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, ofst = 0, from = 0;
@@ -730,14 +728,14 @@ public:
 
         VINT pord; // sorted path ID order
         VINT pntc, pntp; // record the relative positions of pointees
-        VINT memo(P, 0); // for pointer cycle detection
+        Vint memo(P, 0); // for pointer cycle detection
 
         // add pointers from paths to cycles
         INT pos = 0, dist = 0, exit_code = -1;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(reads, kmers, kmerv, node, c);
+                    auto next = forward(kmers, kmerv, node, c);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -755,14 +753,14 @@ public:
         cout << "ofst(right after finishing scanning cycles): " << ofst << "\n";
         dist = 0;
         
-        while (static_cast<INT>(pord.size()) < P) {         
+        while ((INT)(pord.size()) < P) {         
             // add pointers from paths to other paths in pord
-            auto bound = pord.size();
+            INT bound = (INT)pord.size();
 
-            for (auto i = from; i < static_cast<INT>(bound); ++i) {
+            for (INT i = from; i < bound; ++i) {
                 for (const auto& node: paths[pord[i]]) {
                     for (const auto& c: base) {
-                        auto next = forward(reads, kmers, kmerv, node, c);
+                        auto next = forward(kmers, kmerv, node, c);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -788,21 +786,13 @@ public:
                 VINT visited(P, 0);
 
                 // find pointer cycle
-                if (has_pointer_cycle(start, paths, reads, kmers, kmerv, new_cycle, memo, visited)
+                if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, memo, visited)
                     && !new_cycle.empty()) {
                     // append new_cycle to cycles if found
                     cycles.emplace_back(new_cycle);
-                    // debug
-                    cout << "\n\nnew cycle: ";
-                    string s;
-                    for (const auto& node: new_cycle) {
-                        cout << node << " ";
-                        s += decode_base(kmerv[node] % 4);
-                    }
-                    cout << s << "\n\n";
 
                     // process all paths involved in new_cycle
-                    INT R = static_cast<INT>(new_cycle.size()), i = 0, distb = 0;
+                    INT R = (INT)(new_cycle.size()), i = 0, distb = 0;
                     while (i < R) {
                         auto it = heads.find(new_cycle[i]);
                         if (it != heads.end()) {
@@ -812,18 +802,16 @@ public:
                             INT j = 0;
                             while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
                                 for (const auto& c: base) {
-                                    auto next = forward(reads, kmers, kmerv, new_cycle[i], c);
+                                    auto next = forward(kmers, kmerv, new_cycle[i], c);
                                     if (next == INF || next == new_cycle[(i + 1) % R]) continue;
                                     auto itit = heads.find(next);
                                     if (itit == heads.end()) continue;
                                     pord.emplace_back(itit->second);
                                     if (flg) {
                                         pntc.emplace_back(ofst + i + 1); // ADDED 1 (TMP)
-                                        cout << "pntc added: " << ofst + i << "\n";
                                         --flg; distb = 0;
                                     } else {
                                         pntc.emplace_back(distb);
-                                        cout << "pntc added: " << distb << "\n";
                                         distb = 0;
                                     }
                                     heads.erase(itit);
@@ -851,12 +839,16 @@ public:
             }
             cout << "Resolved\n";
 
+            // debug
+            for (INT i = 0; i < P; ++i) {
+                cout << "memo[" << i << "] = " << (int)memo[i] << "\n";
+            }
+
             // If no pointing cycle, append one of self paths to pord
-            if (static_cast<INT>(pord.size()) == from && !self_paths_tmp.empty()) {
+            if ((INT)(pord.size()) == from && !self_paths_tmp.empty()) {
                 auto it = self_paths_tmp.begin();
                 auto pid = *it;
                 pord.emplace_back(pid);
-                cout << "dist HERE = " << dist << "\n"; // debug
                 pntp.emplace_back(dist);
                 dist = K;
                 self_paths_tmp.erase(it);
@@ -880,13 +872,8 @@ public:
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
 
         // debug
-        if ((INT)pord.size() == P) cout << "CORRECT #PATHS!!\n";
-        else                  cout << "INCORRECT #PATHS!!\n";
-        cout << "pntc: ";
-        for (const auto& p: pntc) cout << p << " ";
-        cout << "\npntp: ";
-        for (const auto& p: pntp) cout << p << " ";
-        cout << "\n";
+        if ((INT)pord.size() == P) cout << "CORRECT #PATHS!!\n\n";
+        else                  cout << "INCORRECT #PATHS!!\n\n";
         
         // representation
         string txt;
@@ -921,14 +908,84 @@ public:
         return {txt, pnt};
     }
 
-    REP forest(const VSTR& reads, Kmers& kmers, const INT& N, const VINT& kmerv,
-        VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-        string txt;
-        // for each cycle construct a path tree
-        // for each unused paths, arbitrarily pick one (if indegree-0 path exists, pick it) and construct a path tree
-        // if all paths used, represent resulting forest-like structure using parentheses
-        return {txt, {}};
-    }
+    // string cp_spell_out(VINT& kmerv, const VINT& walk, bool is_cycle) {
+    //     string s;
+    //     for (auto id: walk) {
+    //         if (id == walk.front() && !is_cycle) {
+    //             s += decode_kmer(kmerv[id]).substr(0, K - 1);
+    //         }
+    //         s += decode_base(kmerv[id] % 4);
+    //     }
+    //     return s;
+    // }
+
+    // void embed(VVINT& paths, Vint& embedded, string& current, INT pid) {
+    //     if (embedded[pid]) return;
+
+    //     embedded[pid] = 1;
+    //     auto head = paths[pid][0];
+    //     heads.erase(head);
+
+    //     if (heads.count(head)) {
+    //         INT pid_new = heads[head];
+    //         embed(paths[pid_new], pid_new);
+    //     }
+
+    //     current += "(" + cp_spell_out(paths[pid], false).substr(K - 1) + ")";
+    // }
+
+    // void embed_from_cycle(Kmers& kmers, VINT& kmerv, VVINT& paths, Vint& embedded, VVINT& cycles) {
+    //     for (INT i = 0; i < (INT)(cycles.size()); ++i) {
+    //         string& cst = cp_spell_out(kmerv, cycles[i], true);
+    //         for (INT j = 0; j < (INT)(cycles[i].size()); ++j) {
+    //             INT mask = (1ULL << (2 * (K - 1))) - 1;
+    //             string hash = (hash & mask) << 2;
+    //             for (int i = 0; i < 4; ++i) {
+    //                 hash |= i;
+    //                 if (kmers.count(hash)) {
+    //                     auto id = kmers[hash];
+    //                     if (heads.count(id)) {
+    //                         auto pid = heads[id];
+    //                         embed(paths, embedded, cst, pid);
+    //                     }
+    //                 }
+    //             }
+    //         }
+    //     }
+    // }
+
+    // void embed_from_path(VINT& kmerv, VVINT& paths, unordered_set<INT>& roots, Vint& embedded) {
+    //     for (INT i = 0; i < (INT)(paths.size()); ++i) {
+    //         if (!embedded[i] && roots.count(i)) {
+    //             string& pst = cp_spell_out(kmerv, paths[i], false);
+    //             embed(paths, embedded, pst, i);
+    //         }
+    //     }
+    //     for (INT i = 0; i < (INT)(paths.size()); ++i) {
+    //         if (!embedded[i]) {
+    //             string& pst = cp_spell_out(kmerv, paths[i], false);
+    //             embed(paths, embedded, pst, i);
+    //         }
+    //     }
+    // }
+
+    // REP forest(Kmers& kmers, const INT& N, const VINT& kmerv,
+    //     VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
+    //     string txt;
+    //     INT P = CnP.second;
+    //     unordered_set<INT> roots;
+    //     for (INT i = 0; i < P; ++i) {
+    //         if (inv_adj[paths[i][0]].empty()){
+    //             roots.insert(i);
+    //         }
+    //         else heads[paths[i][0]] = i; // record paths' heads
+    //     }
+    //     Vint embedded(P, 0); // embedded[pid] = 1 iff path pid is already embedded
+    //     embed_from_cycle(kmers, kmerv, paths, embedded, cycles);
+    //     embed_from_path(kmerv, paths, roots, embedded);
+
+    //     return {txt, {}};
+    // }
 
     void write(const REP& rep) {
         if (rep.first.empty()) {
