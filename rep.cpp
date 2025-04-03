@@ -695,8 +695,10 @@ public:
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
+                    if (next_path == current) return true;
                     if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, memo, visited)) {
                         memo[current] = 1;
+                        cout << "(3) REVISED! memo[" << current << "] = 1\n";
                         return true;
                     }
                     dead_end = true; // "next" found in heads
