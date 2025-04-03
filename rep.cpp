@@ -29,6 +29,7 @@ using PINT = pair<INT, INT>;
 using VTINT = vector<tuple<INT, INT, INT, INT>>;
 using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
+using USET = unordered_set<INT>;
 
 unordered_set<char> base = {'A', 'C', 'G', 'T'};
 const INT INF = UINT64_MAX;
@@ -74,12 +75,101 @@ string path_to_filename(string path, const char& dlm) {
     return path;
 }
 
-class DeBruijnGraph{
+string get_current_timestamp() {
+    auto now = chrono::system_clock::now();
+    auto in_time_t = chrono::system_clock::to_time_t(now);
+    stringstream ss;
+    ss << put_time(localtime(&in_time_t), "%Y-%m-%d %X");
+    return ss.str();
+}
+
+size_t get_memory_usage() {
+    size_t memory_used = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
+    return memory_used / (1024 * 1024);
+}
+
+void log_time_and_memory(const string& task_name, const chrono::duration<double>& elapsed_time, size_t memory_usage, ofstream& logfile) {
+    string task_name_trimmed = task_name.substr(0, 20);
+
+    logfile << left << setw(20) << task_name_trimmed
+            << setw(20) << fixed << setprecision(4) << elapsed_time.count()
+            << setw(20) << memory_usage << "\n";
+
+    cout << left << setw(20) << task_name_trimmed
+         << setw(20) << fixed << setprecision(4) << elapsed_time.count()
+         << setw(20) << memory_usage << "\n";
+}
+
+void print_table_header(ofstream& logfile) {
+    const int col_width = 20;
+
+    logfile << string(col_width * 3, '-') << "\n";
+    logfile << left << setw(col_width) << "Task name"
+            << setw(col_width) << "Time (s)"
+            << setw(col_width) << "Memory (MB)" << endl;
+    logfile << string(col_width * 3, '-') << "\n"; 
+
+    cout << string(col_width * 3, '-') << "\n";
+    cout << left << setw(col_width) << "Task name"
+         << setw(col_width) << "Time (s)"
+         << setw(col_width) << "Memory (MB)" << endl;
+    cout << string(col_width * 3, '-') << "\n"; 
+}
+
+void to_uppercase(VSTR& strs) {
+    for (auto& str: strs)
+        transform(str.begin(), str.end(), str.begin(),
+                [](unsigned char c) {return toupper(c);});
+}
+
+uint64_t encode_kmer(const string& kmer) {
+    uint64_t val = 0;
+    for (char c : kmer) {
+        if (c == 'A')      val = (val << 2) | 0; // A -> 00
+        else if (c == 'C') val = (val << 2) | 1; // C -> 01
+        else if (c == 'G') val = (val << 2) | 2; // G -> 10
+        else if (c == 'T') val = (val << 2) | 3; // T -> 11
+        else return UINT64_MAX;
+    }
+    return val;
+}
+
+string decode_kmer(uint64_t hash, INT K) {
+    string kmer;
+    for (INT i = 0; i < K; ++i) {
+        int base = hash & 3;  // take rightmost 2 bits
+        if (base == 0)        kmer = 'A' + kmer;  // 00 -> A
+        else if (base == 1)   kmer = 'C' + kmer;  // 01 -> C
+        else if (base == 2)   kmer = 'G' + kmer;  // 10 -> G
+        else if (base == 3)   kmer = 'T' + kmer;  // 11 -> T
+        hash >>= 2;
+    }
+    return kmer;
+}
+
+char decode_base(uint64_t val) {
+    return "ACGT"[val];
+}
+
+INT rolling_valid_kmer_start(const string& read, INT start, INT K) {
+    INT len = read.size();
+    INT count = 0;
+    for (INT j = start; j < len; ++j) {
+        if (read[j] == 'A' || read[j] == 'C' ||
+            read[j] == 'G' || read[j] == 'T') {
+            ++count;
+            if (count == K) return j - K + 1;
+        } else {
+            count = 0; // reset if read[j] is non-ACGT
+        }
+    }
+    return INF;
+}
+
+class EDBG{
 public:
-    string filename, logfilename;
+    string filename;
     INT K;
-    INT option;
-    bool is_node_centric;
 
     size_t total_memory = get_available_memory();
     size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
@@ -90,14 +180,160 @@ public:
                                                                          10'000'000;
     
     pmr::monotonic_buffer_resource pool{pool_size};
-    using Kmers = pmr::unordered_map<uint64_t, INT>;
-    using MINT = pmr::unordered_map<INT, INT>;
-    Kmers kmers;
-    MINT heads;
+    using UMAP = pmr::unordered_map<INT, INT>;
+    pmr::unordered_map<INT, int64_t> k_minus_1mers;
+    USET kmers;
 
-    DeBruijnGraph(string _filename, INT _K, INT _option, bool _is_node_centric)
-        : filename(_filename), K(_K), option(_option), is_node_centric(_is_node_centric),
-        kmers(&pool), heads(&pool)
+    EDBG(string _filename, INT _K)
+        : filename(_filename), K(_K), k_minus_1mers(&pool)
+    {
+        k_minus_1mers.reserve(reserve_size);
+        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "K-mers reserve size: " << reserve_size << "\n";
+    };
+
+    INT process() {
+        string timestamp = get_current_timestamp();
+        cout << "Timestamp: " << timestamp << "\n";
+        size_t initial_memory = get_memory_usage();
+        cout << "Initial Memory: " << initial_memory << " MB\n\n";
+        
+        INT S = get_kmers(k_minus_1mers, kmers);
+        return S;
+    }
+
+    INT get_kmers(pmr::unordered_map<INT, int64_t>& k_minus_1mers, USET& kmers) {
+        ifstream inputFile(filename, ios::in | ios::binary);
+        if (!inputFile) {
+            cerr << "Error opening input file." << "\n";
+            exit(1);
+        }
+
+        const size_t BUF_SIZE = 64 * 1024 * 1024; // 64MB
+        char *buffer = new char[BUF_SIZE];
+        inputFile.rdbuf()->pubsetbuf(buffer, BUF_SIZE);
+
+        VSTR reads;
+        string line, read;
+        bool is_new_read = true;
+        while (getline(inputFile, line)) {
+            if (line.empty()) continue;
+            if (line[0] == '>') {
+                if (!read.empty()) {
+                    reads.emplace_back(read);
+                    read.clear();
+                }
+                is_new_read = true;
+                continue;
+            }
+            if (is_new_read) {
+                read = line;
+                is_new_read = false;
+            } else read += line;
+        }
+        if (!read.empty()) reads.emplace_back(read);
+        inputFile.close();
+        delete[] buffer;
+
+        INT tlen = 0;
+        to_uppercase(reads);
+        for (string& read: reads)
+            tlen += read.size();
+        
+        INT id = 0, footing = 0;
+        uint64_t mask = (1ULL << (2 * (K - 1))) - 1; // 2K-bits mask
+
+        for (INT i = 0; i < (INT)(reads.size()); ++i) {
+            const string& read = reads[i];
+            INT len = read.size();
+            if (len < K) continue;
+            uint64_t hash;
+
+            INT j = rolling_valid_kmer_start(read, 0, K);
+            if (j == INF) continue; // if not any valid k-mer, go to next read
+            hash = encode_kmer(read.substr(j, K));
+            auto it = kmers.find(hash);
+            if (it == kmers.end()) {
+                kmers.insert(hash);
+                --k_minus_1mers[hash / 4];
+                ++k_minus_1mers[hash & mask];
+                ++id;
+                if (id == INF) {
+                    cerr << "Too much k-mers!!\n\n";
+                    exit(1);
+                }
+            }
+
+            // update kmer by rolling hash
+            for (++j; j <= len - K; ++j) {
+                char c_in = read[j + K - 1];
+
+                if (c_in == 'A')        hash = ((hash & mask) << 2) | 0;
+                else if (c_in == 'C')   hash = ((hash & mask) << 2) | 1;
+                else if (c_in == 'G')   hash = ((hash & mask) << 2) | 2;
+                else if (c_in == 'T')   hash = ((hash & mask) << 2) | 3;
+                else {
+                    j = rolling_valid_kmer_start(read, j + 1, K);
+                    if (j == INF) break;
+                    hash = encode_kmer(read.substr(j, K));
+                }
+
+                // register k-mer to kmers
+                auto it = kmers.find(hash);
+                if (it == kmers.end()) {
+                    kmers.insert(hash);
+                    --k_minus_1mers[hash / 4];
+                    ++k_minus_1mers[hash & mask];
+                    ++id;
+                    if (id == INF) {
+                        cerr << "Too much k-mers!!\n\n";
+                        exit(1);
+                    }
+                }
+
+                progress(footing + j, tlen, "Detecting k-mers");
+            }
+            footing += len;
+        }
+        finished("Detecting k-mers");
+
+        INT N = k_minus_1mers.size();
+        INT M = kmers.size();
+        cout << "\nTotal number of (k-1)-mers: " << N << "\n"
+            << "Total number of k-mers: " << M << "\n";
+
+        // calc number of breaking edges
+        INT S = 0;
+        for (const auto& entry: k_minus_1mers) {
+            int64_t val = entry.second;
+            if (val > 0) S += val;
+        }
+        cout << "Number of breaking edges: " << S << "\n\n";
+        return S * (K - 1) + M;
+    }
+};
+
+class NDBG{
+public:
+    string filename, logfilename;
+    INT K;
+    INT option;
+
+    size_t total_memory = get_available_memory();
+    size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
+                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
+                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
+    size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
+                          (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
+                                                                         10'000'000;
+    
+    pmr::monotonic_buffer_resource pool{pool_size};
+    using UMAP = pmr::unordered_map<INT, INT>;
+    UMAP kmers;
+    UMAP heads;
+
+    NDBG(string _filename, INT _K, INT _option)
+        : filename(_filename), K(_K), option(_option), kmers(&pool), heads(&pool)
     {
         if (option != 0 && option != 1 && option != 2) {
             cerr << "\nInvalid option value\n";
@@ -108,47 +344,6 @@ public:
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
-
-    string get_current_timestamp() {
-        auto now = chrono::system_clock::now();
-        auto in_time_t = chrono::system_clock::to_time_t(now);
-        stringstream ss;
-        ss << put_time(localtime(&in_time_t), "%Y-%m-%d %X");
-        return ss.str();
-    }
-
-    size_t get_memory_usage() {
-        size_t memory_used = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
-        return memory_used / (1024 * 1024);
-    }
-
-    void log_time_and_memory(const string& task_name, const chrono::duration<double>& elapsed_time, size_t memory_usage, ofstream& logfile) {
-        string task_name_trimmed = task_name.substr(0, 20);
-    
-        logfile << left << setw(20) << task_name_trimmed
-                << setw(20) << fixed << setprecision(4) << elapsed_time.count()
-                << setw(20) << memory_usage << "\n";
-    
-        cout << left << setw(20) << task_name_trimmed
-             << setw(20) << fixed << setprecision(4) << elapsed_time.count()
-             << setw(20) << memory_usage << "\n";
-    }
-    
-    void print_table_header(ofstream& logfile) {
-        const int col_width = 20;
-    
-        logfile << string(col_width * 3, '-') << "\n";
-        logfile << left << setw(col_width) << "Task name"
-                << setw(col_width) << "Time (s)"
-                << setw(col_width) << "Memory (MB)" << endl;
-        logfile << string(col_width * 3, '-') << "\n"; 
-    
-        cout << string(col_width * 3, '-') << "\n";
-        cout << left << setw(col_width) << "Task name"
-             << setw(col_width) << "Time (s)"
-             << setw(col_width) << "Memory (MB)" << endl;
-        cout << string(col_width * 3, '-') << "\n"; 
-    }
 
     REP process() {
         ofstream logfile(logfilename, ios::trunc);
@@ -163,12 +358,10 @@ public:
         size_t initial_memory = get_memory_usage();
         logfile << "Initial Memory: " << initial_memory << " MB\n\n";
         cout << "Initial Memory: " << initial_memory << " MB\n\n";
-
-        VSTR reads;
         VINT kmerv; 
         
         auto start_time = chrono::high_resolution_clock::now();
-        INT N = get_kmers(reads, kmers, kmerv);
+        INT N = get_kmers(kmers, kmerv);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
         size_t get_kmers_memory = get_memory_usage();
@@ -252,57 +445,7 @@ public:
         return rep;
     }
 
-    void to_uppercase(VSTR& strs) {
-        for (auto& str: strs)
-            transform(str.begin(), str.end(), str.begin(),
-                    [](unsigned char c) {return toupper(c);});
-    }
-
-    uint64_t encode_kmer(const string& kmer) {
-        uint64_t val = 0;
-        for (char c : kmer) {
-            if (c == 'A')      val = (val << 2) | 0; // A -> 00
-            else if (c == 'C') val = (val << 2) | 1; // C -> 01
-            else if (c == 'G') val = (val << 2) | 2; // G -> 10
-            else if (c == 'T') val = (val << 2) | 3; // T -> 11
-            else return UINT64_MAX;
-        }
-        return val;
-    }
-
-    string decode_kmer(uint64_t hash) {
-        string kmer;
-        for (INT i = 0; i < K; ++i) {
-            int base = hash & 3;  // take rightmost 2 bits
-            if (base == 0)        kmer = 'A' + kmer;  // 00 -> A
-            else if (base == 1)   kmer = 'C' + kmer;  // 01 -> C
-            else if (base == 2)   kmer = 'G' + kmer;  // 10 -> G
-            else if (base == 3)   kmer = 'T' + kmer;  // 11 -> T
-            hash >>= 2;
-        }
-        return kmer;
-    }
-    
-    char decode_base(uint64_t val) {
-        return "ACGT"[val];
-    }
-
-    INT rolling_valid_kmer_start(const string& read, INT start) {
-        INT len = read.size();
-        INT count = 0;
-        for (INT j = start; j < len; ++j) {
-            if (read[j] == 'A' || read[j] == 'C' ||
-                read[j] == 'G' || read[j] == 'T') {
-                ++count;
-                if (count == K) return j - K + 1;
-            } else {
-                count = 0; // reset if read[j] is non-ACGT
-            }
-        }
-        return INF;
-    }
-
-    INT get_kmers(VSTR& reads, Kmers& kmers, VINT& kmerv) {
+    INT get_kmers(UMAP& kmers, VINT& kmerv) {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
@@ -313,6 +456,7 @@ public:
         char *buffer = new char[BUF_SIZE];
         inputFile.rdbuf()->pubsetbuf(buffer, BUF_SIZE);
 
+        VSTR reads;
         string line, read;
         bool is_new_read = true;
         while (getline(inputFile, line)) {
@@ -348,7 +492,7 @@ public:
             if (len < K) continue;
             uint64_t hash;
 
-            INT j = rolling_valid_kmer_start(read, 0);
+            INT j = rolling_valid_kmer_start(read, 0, K);
             if (j == INF) continue; // if not any valid k-mer, go to next read
             hash = encode_kmer(read.substr(j, K));
             auto it = kmers.find(hash);
@@ -371,7 +515,7 @@ public:
                 else if (c_in == 'G')   hash = ((hash & mask) << 2) | 2;
                 else if (c_in == 'T')   hash = ((hash & mask) << 2) | 3;
                 else {
-                    j = rolling_valid_kmer_start(read, j + 1);
+                    j = rolling_valid_kmer_start(read, j + 1, K);
                     if (j == INF) break;
                     hash = encode_kmer(read.substr(j, K));
                 }
@@ -399,7 +543,7 @@ public:
         return N;
     }
 
-    INT forward(Kmers& kmers, const VINT& kmerv, INT id, char c) {
+    INT forward(UMAP& kmers, const VINT& kmerv, INT id, char c) {
         INT hash = kmerv[id]; 
         if (hash == INF) return INF;
 
@@ -418,7 +562,7 @@ public:
         return INF; // no branch to c
     }
 
-    INT add_edges(Kmers& kmers, const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
+    INT add_edges(UMAP& kmers, const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
         INT cnt = 0, E = 0;
         adj.resize(N);
         inv_adj.resize(N);
@@ -565,7 +709,7 @@ public:
     }
 
     bool has_dup(const VVINT& cycles, const VVINT& paths) {
-        unordered_set<INT> seen;
+        USET seen;
         auto check = [&](const VVINT& v) {
             for (const auto& vec: v)
                 for (const auto& x: vec)
@@ -590,7 +734,7 @@ public:
             for (const auto& node: path) {
                 auto hash = kmerv[node];
                 if (node == path.front())
-                    txt += decode_kmer(hash).substr(0, K - 1);
+                    txt += decode_kmer(hash, K).substr(0, K - 1);
                 txt += decode_base(hash % 4);
             } txt += "$";
         } if (!txt.empty()) txt.pop_back();
@@ -598,11 +742,11 @@ public:
         return {txt, {}};
     }
 
-    REP unsorted(Kmers& kmers, const INT& N, const VINT& kmerv,
+    REP unsorted(UMAP& kmers, const INT& N, const VINT& kmerv,
                 const VVINT& inv_adj, const VVINT& cycles, const VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;  
         INT S = CnP.first + P + N;
-        unordered_set<INT> self_paths;
+        USET self_paths;
         for (INT i = 0; i < P; ++i)
             if (inv_adj[paths[i][0]].empty())
                 self_paths.insert(i);
@@ -656,7 +800,7 @@ public:
         } for (INT i = 0; i < P; ++i) {
             auto path = paths[i];
             if (self_paths.find(i) != self_paths.end())
-                txt += "$" + decode_kmer(kmerv[path[0]]).substr(0, K - 1);
+                txt += "$" + decode_kmer(kmerv[path[0]], K).substr(0, K - 1);
             for (const auto& node: path) {
                 auto c = decode_base(kmerv[node] % 4);
                 txt += c;
@@ -669,16 +813,16 @@ public:
     bool has_pointer_cycle(
         INT current,
         VVINT& paths,
-        Kmers& kmers,
+        UMAP& kmers,
         const VINT& kmerv,
         VINT& new_cycle,
         Vint& memo,
-        VINT& visited
+        Vint& visited
     ) {
         if (memo[current]) return false;
         if (visited[current]) {
-            memo[current] = 1;
-            cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
+            // memo[current] = 1;
+            // cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
             return true;
         }        
         visited[current] = 1;
@@ -712,11 +856,11 @@ public:
         return false; // no pointer cycle found
     }
 
-    REP sorted(Kmers& kmers, const INT& N, const VINT& kmerv,
+    REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, ofst = 0, from = 0;
-        unordered_set<INT> self_paths, self_paths_tmp;
+        USET self_paths, self_paths_tmp;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
                 self_paths.insert(i);
@@ -785,7 +929,7 @@ public:
                 VINT new_cycle;
                 auto start = it1->second;
                 if (memo[start]) continue;
-                VINT visited(P, 0);
+                Vint visited(P, 0);
 
                 // find pointer cycle
                 if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, memo, visited)
@@ -891,7 +1035,7 @@ public:
             } txt += "$";
         } for (const auto& pid: pord) {
             if (self_paths.find(pid) != self_paths.end())
-                txt += "$" + decode_kmer(kmerv[paths[pid][0]]).substr(0, K - 1);
+                txt += "$" + decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1);
             for (const auto& node: paths[pid]) {
                 ++N_count;
                 auto c = decode_base(kmerv[node] % 4);
@@ -914,7 +1058,7 @@ public:
     //     string s;
     //     for (auto id: walk) {
     //         if (id == walk.front() && !is_cycle) {
-    //             s += decode_kmer(kmerv[id]).substr(0, K - 1);
+    //             s += decode_kmer(kmerv[id], K).substr(0, K - 1);
     //         }
     //         s += decode_base(kmerv[id] % 4);
     //     }
@@ -936,7 +1080,7 @@ public:
     //     current += "(" + cp_spell_out(paths[pid], false).substr(K - 1) + ")";
     // }
 
-    // void embed_from_cycle(Kmers& kmers, VINT& kmerv, VVINT& paths, Vint& embedded, VVINT& cycles) {
+    // void embed_from_cycle(UMAP& kmers, VINT& kmerv, VVINT& paths, Vint& embedded, VVINT& cycles) {
     //     for (INT i = 0; i < (INT)(cycles.size()); ++i) {
     //         string& cst = cp_spell_out(kmerv, cycles[i], true);
     //         for (INT j = 0; j < (INT)(cycles[i].size()); ++j) {
@@ -956,7 +1100,7 @@ public:
     //     }
     // }
 
-    // void embed_from_path(VINT& kmerv, VVINT& paths, unordered_set<INT>& roots, Vint& embedded) {
+    // void embed_from_path(VINT& kmerv, VVINT& paths, USET& roots, Vint& embedded) {
     //     for (INT i = 0; i < (INT)(paths.size()); ++i) {
     //         if (!embedded[i] && roots.count(i)) {
     //             string& pst = cp_spell_out(kmerv, paths[i], false);
@@ -971,11 +1115,11 @@ public:
     //     }
     // }
 
-    // REP forest(Kmers& kmers, const INT& N, const VINT& kmerv,
+    // REP forest(UMAP& kmers, const INT& N, const VINT& kmerv,
     //     VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
     //     string txt;
     //     INT P = CnP.second;
-    //     unordered_set<INT> roots;
+    //     USET roots;
     //     for (INT i = 0; i < P; ++i) {
     //         if (inv_adj[paths[i][0]].empty()){
     //             roots.insert(i);
@@ -1039,22 +1183,49 @@ public:
     }
 };
 
+void print_usage(string cmdname) {
+    cerr << "Usage: " << cmdname << "[0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2])\n"
+        << "Output options(node-centric) are...\n"
+        << "0: explicit representation without pointers (SPSS)\n"
+        << "1: representation with unsorted pointers\n"
+        << "2: representation with sorted pointers\n"
+        << "\nFor edge-centric, set 1st arg = 0\n";
+}
+
 int main(int argc, char *argv[]) {
-    if (argc < 4) {
-        cerr << "Usage: " << argv[0] << " [****.fa] [k] [0 / 1 / 2]\n"
-             << "Output options are...\n"
-             << "0: explicit representation without pointers (SPSS)\n"
-             << "1: representation with unsorted pointers\n"
-             << "2: representation with sorted pointers\n";
+    if (argc < 4 || 5 < argc) {
+        print_usage(argv[0]);
         return 1;
     }
-    string _filename = argv[1];
-    INT _K = atoi(argv[2]);
-    INT _option = atoi(argv[3]);
+    string _filename = argv[2];
+    INT _K = atoi(argv[3]);
 
-    DeBruijnGraph ncdbg = DeBruijnGraph(_filename, _K, _option, true);
-    REP rep = ncdbg.process();
-    ncdbg.write(rep);
+    // calc size of undirected eulertigs
+    if (atoi(argv[1]) == 1) {
+        if (argc != 4) {
+            print_usage(argv[0]);
+            return 1;
+        }
+        EDBG edbg = EDBG(_filename, _K);
+        INT S = edbg.process();
+        cout << "Total base count: " << S << "\n";
+    }
+    // ours
+    else if (atoi(argv[1]) == 0) {
+        if (argc != 5) {
+            print_usage(argv[0]);
+            return 1;
+        }
+        INT _option = atoi(argv[4]);
+
+        NDBG ndbg = NDBG(_filename, _K, _option);
+        REP rep = ndbg.process();
+        ndbg.write(rep);
+    }
+    else {
+        print_usage(argv[0]);
+        return 1;
+    }    
 
     return 0;
 }
