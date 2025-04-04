@@ -811,26 +811,15 @@ public:
     }
 
     bool has_pointer_cycle(
-        INT current,
-        VVINT& paths,
-        UMAP& kmers,
-        const VINT& kmerv,
-        VINT& new_cycle,
-        Vint& memo,
+        INT current, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& new_cycle,
         Vint& visited
     ) {
-        if (memo[current]) return false;
-        if (visited[current]) {
-            memo[current] = 1;
-            cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
-            return true;
-        }        
+        if (visited[current]) return true;
         visited[current] = 1;
-
         auto& path = paths[current];
 
-        for (const auto& node: path) {
-            new_cycle.emplace_back(node);
+        for (INT i = 0; i < (INT)(path.size()); ++i) {
+            auto node = path[i];
             for (const auto& c: base) {
                 auto next = forward(kmers, kmerv, node, c);
                 if (next == INF) continue;
@@ -838,19 +827,17 @@ public:
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
-                    if (next_path == current) return true;
-                    if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, memo, visited)) {
-                        memo[current] = 1;
-                        cout << "(3) REVISED! memo[" << current << "] = 1\n";
+                    if (next_path == current) {
+                        new_cycle.assign(path.begin(), path.begin() + i + 1);
+                        return true;
+                    }
+                    if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, visited)) {
+                        new_cycle.insert(new_cycle.begin(), path.begin(), path.begin() + i + 1);
                         return true;
                     }
                 }
             }
         }
-        // record if all nexts not in heads
-        memo[current] = 1;
-        cout << "(2) REVISED! memo[" << current << "] = 1\n";
-
         return false; // no pointer cycle found
     }
 
@@ -871,7 +858,6 @@ public:
 
         VINT pord; // sorted path ID order
         VINT pntc, pntp; // record the relative positions of pointees
-        Vint memo(P, 0); // for pointer cycle detection
 
         // add pointers from paths to cycles
         INT pos = 0, dist = 0, exit_code = -1;
@@ -942,15 +928,15 @@ public:
             } 
             from = bound;
 
-            cout << "Resolving pointer cycles...\n";
+            cout << "\n# remaining paths: " << heads.size() << "\n"
+                 << "Resolving pointer cycles...\n";
             int flg = 1;
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 auto start = it1->second;
-                if (memo[start]) continue;
                 Vint visited(P, 0);
 
-                if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, memo, visited)
+                if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
                     && !new_cycle.empty()) {
                     cycles.emplace_back(new_cycle); // append new_cycle to cycles if found
 
@@ -960,6 +946,7 @@ public:
                         if (it != heads.end()) {
                             distb = 0;
                             auto pid = it->second;
+                            heads.erase(it);
                             auto& path = paths[pid];
                             INT j = 0;
                             while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
@@ -988,7 +975,6 @@ public:
                                 pntc.emplace_back(distb);
                             }
                             path.erase(path.begin(), path.begin() + j);
-                            heads.erase(it);
                         }
                     }
                     ofst = distb;
@@ -999,12 +985,8 @@ public:
                     }
                 }
             }
-            cout << "Resolved\n";
-
-            // debug
-            for (INT i = 0; i < P; ++i) {
-                cout << "memo[" << i << "] = " << (int)memo[i] << "\n";
-            }
+            cout << "\n# remaining paths: " << heads.size() << "\n"
+                 << "Resolved\n";
         }
         end:
         finished("Pointing");
