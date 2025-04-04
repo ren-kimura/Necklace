@@ -335,7 +335,7 @@ public:
     NDBG(string _filename, INT _K, INT _option)
         : filename(_filename), K(_K), option(_option), kmers(&pool), heads(&pool)
     {
-        if (option != 0 && option != 1 && option != 2) {
+        if (option != 0 && option != 1 && option != 2 && option != 3) {
             cerr << "\nInvalid option value\n";
             exit(1);
         }
@@ -411,13 +411,23 @@ public:
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
-        } else {
+        } else if (option == 2) {
             // sorted
             start_time = chrono::high_resolution_clock::now();
             rep = sorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
             align_memory = get_memory_usage();
+        } else if (option == 3) {
+            // tree (BP)
+            start_time = chrono::high_resolution_clock::now();
+            rep = forest(kmers, kmerv, inv_adj, cycles, paths, CnP);
+            end_time = chrono::high_resolution_clock::now();
+            align_time = end_time - start_time;
+            align_memory = get_memory_usage();
+        } else {
+            cerr << "Invalid option !\n";
+            exit(1);
         }
 
         // display benchmarks
@@ -426,7 +436,7 @@ public:
         log_time_and_memory("add_edges", add_edges_time, add_edges_memory, logfile);
         log_time_and_memory("hopcroft_karp", hopcroft_karp_time, hopcroft_karp_memory, logfile);
         log_time_and_memory("decompose", decompose_time, decompose_memory, logfile);
-        log_time_and_memory((option == 0 ? "plain" : option == 1 ? "unsorted" : "sorted"),
+        log_time_and_memory((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
                             align_time, align_memory, logfile);
         logfile << string(60, '-');
         cout << string(60, '-');
@@ -1028,31 +1038,115 @@ public:
         return {txt, pnt};
     }
 
-    string cp_spell_out(VINT& kmerv, const VINT& walk, bool is_cycle) {
-        string s;
-        for (auto id: walk) {
-            if (id == walk.front() && !is_cycle) {
-                s += decode_kmer(kmerv[id], K).substr(0, K - 1);
+    void new_tree(UMAP& kmers, const VINT& kmerv, INT& pid, VVINT& paths, UMAP& heads, Vint& embedded, string& s) {
+        if (embedded[pid]) return;
+        embedded[pid] = 1;
+
+        auto walk = paths[pid];
+        INT w = walk.size();
+        for (INT i = 0; i < w; ++i) {
+            auto node = walk[i];
+            s += decode_base(kmerv[node] % 4);
+            for (const auto& c: base) {
+                auto next = forward(kmers, kmerv, node, c);
+                if (next == INF || next == walk[(i + 1) % w]) continue;
+                auto it = heads.find(next);
+                if (it == heads.end()) continue;
+                auto next_pid = it->second;
+                heads.erase(it);
+                s += "(";
+                new_tree(kmers, kmerv, next_pid, paths, heads, embedded, s);
+                s += ")";
+                if (heads.empty()) return;
             }
-            s += decode_base(kmerv[id] % 4);
         }
-        return s;
     }
 
-    REP forest(UMAP& kmers, const INT& N, const VINT& kmerv,
+    REP forest(UMAP& kmers, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-        string txt;
-        INT P = CnP.second;
-        USET roots;
+        VSTR ss;
+        INT C = CnP.first, P = CnP.second, S = C + P, n = 0;
+        USET root_paths;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
-                roots.insert(i);
+                root_paths.insert(i);
             }
             else heads[paths[i][0]] = i; // record paths' heads
         }
-        Vint embedded(P, 0); // embedded[pid] = 1 iff path pid is already embedded
-        // embed_from_cycle(kmers, kmerv, paths, embedded, cycles);
-        // embed_from_path(kmerv, paths, roots, embedded);
+        Vint embedded(P, 0); // 1 iff path already embedded
+        for (INT i = 0; i < C; ++i, ++n) {
+            string s;
+            auto cycle = cycles[i];
+            for (const auto& node: cycle) {
+                for (const auto& c: base) {
+                    auto next = forward(kmers, kmerv, node, c);
+                    if (next == INF || next == cycle[(i + 1) % cycle.size()]) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    auto pid = it->second;
+                    heads.erase(it);
+                    string t;
+                    new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
+                    s += "(" + t + ")";
+                }
+            }
+            ss.emplace_back(s);
+            if (heads.empty()) goto end;
+            progress(n, S, "Constructing trees");
+        }
+        for (auto root_path: root_paths) {
+            string s;
+            new_tree(kmers, kmerv, root_path, paths, heads, embedded, s);
+            ss.emplace_back("*" + s);
+            if (heads.empty()) goto end;
+            ++n;
+            progress(n, S, "Constructing trees");
+        }
+        for (auto it = heads.begin(); it != heads.end(); ++it, ++n) {
+            VINT new_cycle;
+            auto start = it->second;
+            Vint visited(P, 0);
+            if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
+                && !new_cycle.empty()) {
+                INT R = (INT)(new_cycle.size()), i = 0;
+                while (i < R) {
+                    auto it = heads.find(new_cycle[i]);
+                    if (it != heads.end()) {
+                        auto pid = it->second;
+                        auto& path = paths[pid];
+                        INT j = 0;
+                        while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
+                            ++i; ++j;
+                        }
+                        path.erase(path.begin(), path.begin() + j);
+                    }
+                }
+
+                string s;
+                for (const auto& node: new_cycle) {
+                    for (const auto& c: base) {
+                        auto next = forward(kmers, kmerv, node, c);
+                        if (next == INF || next == new_cycle[(i + 1) % new_cycle.size()]) continue;
+                        auto it = heads.find(next);
+                        if (it == heads.end()) continue;
+                        auto pid = it->second;
+                        heads.erase(it);
+                        string t;
+                        new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
+                        s += "(" + t + ")";
+                    }
+                }
+                ss.emplace_back(s);
+                if (heads.empty()) goto end;                                
+            }
+            progress(n, S, "Constructing trees");
+        }
+        end:
+        finished("Constructing trees");
+        cout << "\n";
+        string txt;
+        for (const auto& s: ss) txt += s + ",";
+        if (!txt.empty()) txt.pop_back();
 
         return {txt, {}};
     }
@@ -1108,11 +1202,12 @@ public:
 };
 
 void print_usage(string cmdname) {
-    cerr << "Usage: " << cmdname << "[0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2])\n"
+    cerr << "Usage: " << cmdname << "[0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2 / 3])\n"
         << "Output options(node-centric) are...\n"
         << "0: explicit representation without pointers (SPSS)\n"
         << "1: representation with unsorted pointers\n"
         << "2: representation with sorted pointers\n"
+        << "3: tree representation (BP)\n"
         << "\nFor edge-centric, set 1st arg = 0\n";
 }
 
