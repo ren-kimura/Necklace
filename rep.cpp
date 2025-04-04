@@ -390,9 +390,9 @@ public:
         chrono::duration<double> decompose_time = end_time - start_time;
         size_t decompose_memory = get_memory_usage();
 
-        cout << "(#k-mers, #edges, #matching, #cycles, #paths) = (" 
+        cout << "\n(#k-mers, #edges, #matching, #cycles, #paths) = (" 
             << N << ", " << E << ", " << M << ", "
-            << CnP.first << ", " << CnP.second << ")\n";
+            << CnP.first << ", " << CnP.second << ")\n\n";
 
         REP rep;
         chrono::duration<double> align_time;
@@ -713,7 +713,7 @@ public:
         else
             cout << "\nNo duplicates found.\n";
         INT C = cycles.size(), P = paths.size();
-        cout << "Found " << C << " cycles and " << P << " paths.\n\n";
+        cout << "Found " << C << " cycles and " << P << " paths.\n";
 
         return {C, P};
     }
@@ -842,7 +842,7 @@ public:
                         return true;
                     }
                     if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, visited)) {
-                        new_cycle.insert(new_cycle.begin(), path.begin(), path.begin() + i + 1);
+                        new_cycle.insert(new_cycle.end(), path.begin(), path.begin() + i + 1);
                         return true;
                     }
                 }
@@ -1057,7 +1057,6 @@ public:
                 s += "(";
                 new_tree(kmers, kmerv, next_pid, paths, heads, embedded, s);
                 s += ")";
-                if (heads.empty()) return;
             }
         }
     }
@@ -1074,10 +1073,12 @@ public:
             else heads[paths[i][0]] = i; // record paths' heads
         }
         Vint embedded(P, 0); // 1 iff path already embedded
+
         for (INT i = 0; i < C; ++i, ++n) {
             string s;
             auto cycle = cycles[i];
             for (const auto& node: cycle) {
+                s += decode_base(kmerv[node] % 4);
                 for (const auto& c: base) {
                     auto next = forward(kmers, kmerv, node, c);
                     if (next == INF || next == cycle[(i + 1) % cycle.size()]) continue;
@@ -1091,23 +1092,26 @@ public:
                 }
             }
             ss.emplace_back(s);
-            if (heads.empty()) goto end;
+            if (heads.empty() && root_paths.empty()) goto end;
             progress(n, S, "Constructing trees");
         }
+
         for (auto root_path: root_paths) {
             string s;
             new_tree(kmers, kmerv, root_path, paths, heads, embedded, s);
-            ss.emplace_back("*" + s);
-            if (heads.empty()) goto end;
+            auto head = paths[root_path][0];
+            ss.emplace_back("*" + decode_kmer(kmerv[head], K).substr(0, K - 1) + s);
             ++n;
             progress(n, S, "Constructing trees");
         }
+        if (heads.empty()) goto end;
+
         for (auto it = heads.begin(); it != heads.end(); ++it, ++n) {
             VINT new_cycle;
             auto start = it->second;
             Vint visited(P, 0);
             if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
-                && !new_cycle.empty()) {
+                && !new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0;
                 while (i < R) {
                     auto it = heads.find(new_cycle[i]);
@@ -1123,17 +1127,21 @@ public:
                 }
 
                 string s;
+                INT current = heads[new_cycle[0]];
                 for (const auto& node: new_cycle) {
+                    s += decode_base(kmerv[node] % 4);
                     for (const auto& c: base) {
                         auto next = forward(kmers, kmerv, node, c);
                         if (next == INF || next == new_cycle[(i + 1) % new_cycle.size()]) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
-                        auto pid = it->second;
+
+                        auto tmp = it->second;
                         heads.erase(it);
                         string t;
-                        new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
+                        new_tree(kmers, kmerv, current, paths, heads, embedded, t);
                         s += "(" + t + ")";
+                        current = tmp;
                     }
                 }
                 ss.emplace_back(s);
@@ -1143,7 +1151,7 @@ public:
         }
         end:
         finished("Constructing trees");
-        cout << "\n";
+        cout << "\n\n";
         string txt;
         for (const auto& s: ss) txt += s + ",";
         if (!txt.empty()) txt.pop_back();
