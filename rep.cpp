@@ -821,14 +821,13 @@ public:
     ) {
         if (memo[current]) return false;
         if (visited[current]) {
-            // memo[current] = 1;
-            // cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
+            memo[current] = 1;
+            cout << "(1) REVISED! memo[" << current << "] = 1\n"; // debug
             return true;
         }        
         visited[current] = 1;
 
         auto& path = paths[current];
-        bool dead_end = false; // all nexts not in heads ??
 
         for (const auto& node: path) {
             new_cycle.emplace_back(node);
@@ -845,13 +844,12 @@ public:
                         cout << "(3) REVISED! memo[" << current << "] = 1\n";
                         return true;
                     }
-                    dead_end = true; // "next" found in heads
                 }
             }
         }
-        visited[current] = 0;
         // record if all nexts not in heads
-        if (dead_end) {memo[current] = 1; cout << "(2) REVISED! memo[" << current << "] = 1\n";} // debug
+        memo[current] = 1;
+        cout << "(2) REVISED! memo[" << current << "] = 1\n";
 
         return false; // no pointer cycle found
     }
@@ -860,11 +858,10 @@ public:
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, ofst = 0, from = 0;
-        USET self_paths, self_paths_tmp;
+        USET self_paths;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
                 self_paths.insert(i);
-                self_paths_tmp.insert(i);
             }
             else heads[paths[i][0]] = i; // record paths' heads
         }
@@ -889,7 +886,7 @@ public:
                     pntc.emplace_back(dist);
                     dist = 0;
                     heads.erase(it);
-                    if (heads.empty() && self_paths_tmp.empty())
+                    if ((INT)pord.size() == P)
                         {exit_code = 0; goto end;}
                 } ++pos; ++dist;
                 progress(pos, S, "Pointing");
@@ -898,9 +895,31 @@ public:
         ofst = dist; // distance from pos of the last pointee in cycles and the end
         cout << "ofst(right after finishing scanning cycles): " << ofst << "\n";
         dist = 0;
+
+        if (!self_paths.empty()) {
+            for (const auto& pid: self_paths) {
+                pord.emplace_back(pid);
+                pntp.emplace_back(dist);
+                dist = K;
+                for (const auto& node: paths[pid]) {
+                    for (const auto& c: base) {
+                        auto next = forward(kmers, kmerv, node, c);
+                        if (next == INF) continue;
+                        auto it = heads.find(next);
+                        if (it == heads.end()) continue;
+                        pord.emplace_back(it->second);
+                        pntp.emplace_back(dist);
+                        dist = 0;
+                        heads.erase(it);
+                        if ((INT)pord.size() == P) 
+                            {exit_code = 3; goto end;}
+                    } ++pos; ++dist;
+                    progress(pos, S, "Pointing");
+                } ++pos; ++dist;
+            }
+        }
         
         while ((INT)(pord.size()) < P) {         
-            // add pointers from paths to other paths in pord
             INT bound = (INT)pord.size();
 
             for (INT i = from; i < bound; ++i) {
@@ -915,7 +934,7 @@ public:
                         dist = 0;
                         ++bound;
                         heads.erase(it);
-                        if (heads.empty() && self_paths_tmp.empty()) 
+                        if ((INT)pord.size() == P) 
                             {exit_code = 1; goto end;}
                     } ++pos; ++dist;
                     progress(pos, S, "Pointing");
@@ -924,20 +943,17 @@ public:
             from = bound;
 
             cout << "Resolving pointer cycles...\n";
-            INT flg = 1;
+            int flg = 1;
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
                 auto start = it1->second;
                 if (memo[start]) continue;
                 Vint visited(P, 0);
 
-                // find pointer cycle
                 if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, memo, visited)
                     && !new_cycle.empty()) {
-                    // append new_cycle to cycles if found
-                    cycles.emplace_back(new_cycle);
+                    cycles.emplace_back(new_cycle); // append new_cycle to cycles if found
 
-                    // process all paths involved in new_cycle
                     INT R = (INT)(new_cycle.size()), i = 0, distb = 0;
                     while (i < R) {
                         auto it = heads.find(new_cycle[i]);
@@ -954,7 +970,7 @@ public:
                                     if (itit == heads.end()) continue;
                                     pord.emplace_back(itit->second);
                                     if (flg) {
-                                        pntc.emplace_back(ofst + i + 1); // ADDED 1 (TMP)
+                                        pntc.emplace_back(ofst + i);
                                         --flg; distb = 0;
                                     } else {
                                         pntc.emplace_back(distb);
@@ -975,9 +991,9 @@ public:
                             heads.erase(it);
                         }
                     }
-                    ofst = distb;             
-                    // end if both heads and self_paths_tmp are empty
-                    if (heads.empty() && self_paths_tmp.empty()) {
+                    ofst = distb;
+
+                    if ((INT)pord.size() == P) {
                         exit_code = 2;
                         goto end;
                     }
@@ -988,18 +1004,6 @@ public:
             // debug
             for (INT i = 0; i < P; ++i) {
                 cout << "memo[" << i << "] = " << (int)memo[i] << "\n";
-            }
-
-            // If no pointing cycle, append one of self paths to pord
-            if ((INT)(pord.size()) == from && !self_paths_tmp.empty()) {
-                auto it = self_paths_tmp.begin();
-                auto pid = *it;
-                pord.emplace_back(pid);
-                pntp.emplace_back(dist);
-                dist = K;
-                self_paths_tmp.erase(it);
-                if (heads.empty() && self_paths_tmp.empty()) 
-                    {exit_code = 3; goto end;}
             }
         }
         end:
@@ -1016,10 +1020,6 @@ public:
 
         INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
-
-        // debug
-        if ((INT)pord.size() == P) cout << "CORRECT #PATHS!!\n\n";
-        else                  cout << "INCORRECT #PATHS!!\n\n";
         
         // representation
         string txt;
@@ -1042,96 +1042,38 @@ public:
                 txt += c;
             } txt += "$";
         } if(!txt.empty()) txt.pop_back();
-
-        // ||cycles|| + ||paths|| == N ?
-        if (N_count == N) cout << "||cycles|| + ||paths|| == N (OK)\n";
-        else {
-            cout << "||cycles|| + ||paths|| != N (NG)\n";
-            cout << "||cycles|| + ||paths|| == " << N_count
-                 << ", N == " << N << "\n";
-        }
         
         return {txt, pnt};
     }
 
-    // string cp_spell_out(VINT& kmerv, const VINT& walk, bool is_cycle) {
-    //     string s;
-    //     for (auto id: walk) {
-    //         if (id == walk.front() && !is_cycle) {
-    //             s += decode_kmer(kmerv[id], K).substr(0, K - 1);
-    //         }
-    //         s += decode_base(kmerv[id] % 4);
-    //     }
-    //     return s;
-    // }
+    string cp_spell_out(VINT& kmerv, const VINT& walk, bool is_cycle) {
+        string s;
+        for (auto id: walk) {
+            if (id == walk.front() && !is_cycle) {
+                s += decode_kmer(kmerv[id], K).substr(0, K - 1);
+            }
+            s += decode_base(kmerv[id] % 4);
+        }
+        return s;
+    }
 
-    // void embed(VVINT& paths, Vint& embedded, string& current, INT pid) {
-    //     if (embedded[pid]) return;
+    REP forest(UMAP& kmers, const INT& N, const VINT& kmerv,
+        VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
+        string txt;
+        INT P = CnP.second;
+        USET roots;
+        for (INT i = 0; i < P; ++i) {
+            if (inv_adj[paths[i][0]].empty()){
+                roots.insert(i);
+            }
+            else heads[paths[i][0]] = i; // record paths' heads
+        }
+        Vint embedded(P, 0); // embedded[pid] = 1 iff path pid is already embedded
+        // embed_from_cycle(kmers, kmerv, paths, embedded, cycles);
+        // embed_from_path(kmerv, paths, roots, embedded);
 
-    //     embedded[pid] = 1;
-    //     auto head = paths[pid][0];
-    //     heads.erase(head);
-
-    //     if (heads.count(head)) {
-    //         INT pid_new = heads[head];
-    //         embed(paths[pid_new], pid_new);
-    //     }
-
-    //     current += "(" + cp_spell_out(paths[pid], false).substr(K - 1) + ")";
-    // }
-
-    // void embed_from_cycle(UMAP& kmers, VINT& kmerv, VVINT& paths, Vint& embedded, VVINT& cycles) {
-    //     for (INT i = 0; i < (INT)(cycles.size()); ++i) {
-    //         string& cst = cp_spell_out(kmerv, cycles[i], true);
-    //         for (INT j = 0; j < (INT)(cycles[i].size()); ++j) {
-    //             INT mask = (1ULL << (2 * (K - 1))) - 1;
-    //             string hash = (hash & mask) << 2;
-    //             for (int i = 0; i < 4; ++i) {
-    //                 hash |= i;
-    //                 if (kmers.count(hash)) {
-    //                     auto id = kmers[hash];
-    //                     if (heads.count(id)) {
-    //                         auto pid = heads[id];
-    //                         embed(paths, embedded, cst, pid);
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
-
-    // void embed_from_path(VINT& kmerv, VVINT& paths, USET& roots, Vint& embedded) {
-    //     for (INT i = 0; i < (INT)(paths.size()); ++i) {
-    //         if (!embedded[i] && roots.count(i)) {
-    //             string& pst = cp_spell_out(kmerv, paths[i], false);
-    //             embed(paths, embedded, pst, i);
-    //         }
-    //     }
-    //     for (INT i = 0; i < (INT)(paths.size()); ++i) {
-    //         if (!embedded[i]) {
-    //             string& pst = cp_spell_out(kmerv, paths[i], false);
-    //             embed(paths, embedded, pst, i);
-    //         }
-    //     }
-    // }
-
-    // REP forest(UMAP& kmers, const INT& N, const VINT& kmerv,
-    //     VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-    //     string txt;
-    //     INT P = CnP.second;
-    //     USET roots;
-    //     for (INT i = 0; i < P; ++i) {
-    //         if (inv_adj[paths[i][0]].empty()){
-    //             roots.insert(i);
-    //         }
-    //         else heads[paths[i][0]] = i; // record paths' heads
-    //     }
-    //     Vint embedded(P, 0); // embedded[pid] = 1 iff path pid is already embedded
-    //     embed_from_cycle(kmers, kmerv, paths, embedded, cycles);
-    //     embed_from_path(kmerv, paths, roots, embedded);
-
-    //     return {txt, {}};
-    // }
+        return {txt, {}};
+    }
 
     void write(const REP& rep) {
         if (rep.first.empty()) {
