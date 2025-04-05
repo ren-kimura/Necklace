@@ -19,7 +19,7 @@ To run the program, use the following command:
 
 - set `[flag]` with respect to the purpose of computation
     - 0 : Computes representations of node-centric path/cycle cover.
-    - 1 : Computes the size of Eulertigs in bytes.
+    - 1 : Computes the cumulative length of Eulertigs.
 
 - `[path to <input.fa>]` is a path to an input FASTA file.
 
@@ -33,9 +33,14 @@ To run the program, use the following command:
 
 # Example
 ```bash
-./rep.out input.fa 11 2
+./rep.out 0 input.fa 11 2
 ```
 This command processes the input file `input.fa` with k-mer length 11 and generates a representation with sorted pointers.
+
+```bash
+./rep.out 1 input.fa 11
+```
+This command processes the input file `input.fa` with k-mer length 11 and computes the cumulative length of its Eulertigs (not bidirected).
 
 # Requirements
 - C++17 or later
