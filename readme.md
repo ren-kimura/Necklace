@@ -14,7 +14,7 @@ This will generate the executable `rep.out`.
 To run the program, use the following command:
 
 ```bash
-./max.out [flag] [path to <input.fa>] [k] [option]
+./rep.out [flag] [path to <input.fa>] [k] [option]
 ```
 
 - set `[flag]` with respect to the purpose of computation
