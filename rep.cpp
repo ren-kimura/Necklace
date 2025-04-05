@@ -1042,14 +1042,14 @@ public:
         if (embedded[pid]) return;
         embedded[pid] = 1;
 
-        auto walk = paths[pid];
-        INT w = walk.size();
-        for (INT i = 0; i < w; ++i) {
-            auto node = walk[i];
+        auto path = paths[pid];
+        INT p = path.size();
+        for (INT i = 0; i < p; ++i) {
+            auto node = path[i];
             s += decode_base(kmerv[node] % 4);
             for (const auto& c: base) {
                 auto next = forward(kmers, kmerv, node, c);
-                if (next == INF || next == walk[(i + 1) % w]) continue;
+                if (next == INF || next == path[(i + 1) % p] || next == path[0]) continue;
                 auto it = heads.find(next);
                 if (it == heads.end()) continue;
                 auto next_pid = it->second;
@@ -1152,6 +1152,12 @@ public:
         end:
         finished("Constructing trees");
         cout << "\n\n";
+
+        // debug
+        INT count = 0;
+        for (const auto& e: embedded) if (!e) ++count;
+        cout << "# unembedded paths = " << count << "\n\n";
+
         string txt;
         for (const auto& s: ss) txt += s + ",";
         if (!txt.empty()) txt.pop_back();
