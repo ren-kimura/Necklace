@@ -320,14 +320,11 @@ public:
     INT option;
 
     size_t total_memory = get_available_memory();
-    size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
-                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
-                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
+    size_t pool_size;
     size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
                           (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
                                                                          10'000'000;
-    
-    pmr::monotonic_buffer_resource pool{pool_size};
+    pmr::monotonic_buffer_resource pool;
     using UMAP = pmr::unordered_map<INT, INT>;
     UMAP kmers;
     UMAP heads;
@@ -335,6 +332,11 @@ public:
     NDBG(string _filename, INT _K, INT _option)
         : filename(_filename), K(_K), option(_option), kmers(&pool), heads(&pool)
     {
+        pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
+                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
+                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
+        
+        new (&pool) pmr::monotonic_buffer_resource(pool_size);
         if (option != 0 && option != 1 && option != 2 && option != 3) {
             cerr << "\nInvalid option value\n";
             exit(1);
@@ -1139,7 +1141,6 @@ public:
                         if (next == INF || next == new_cycle[(i + 1) % new_cycle.size()]) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
-
                         auto pid = it->second;
                         heads.erase(it);
                         string t;
