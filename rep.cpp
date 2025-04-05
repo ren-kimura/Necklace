@@ -1061,6 +1061,7 @@ public:
             }
         }
     }
+    
 
     REP forest(UMAP& kmers, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
