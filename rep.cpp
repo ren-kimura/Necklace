@@ -1064,7 +1064,7 @@ public:
     REP forest(UMAP& kmers, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         VSTR ss;
-        INT C = CnP.first, P = CnP.second, S = C + P, n = 0;
+        INT C = CnP.first, P = CnP.second, S = C + P, n = 0, nn = 0;
         USET root_paths;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
@@ -1072,6 +1072,7 @@ public:
             }
             else heads[paths[i][0]] = i; // record paths' heads
         }
+        cout << "# root_paths = " << root_paths.size() << "\n";
         Vint embedded(P, 0); // 1 iff path already embedded
 
         for (INT i = 0; i < C; ++i, ++n) {
@@ -1112,22 +1113,25 @@ public:
             Vint visited(P, 0);
             if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
                 && !new_cycle.empty()) {                
-                INT R = (INT)(new_cycle.size()), i = 0;
+                INT R = (INT)(new_cycle.size()), i = 0; ++nn;
+                USET new_cycle_pids;
                 while (i < R) {
                     auto it = heads.find(new_cycle[i]);
                     if (it != heads.end()) {
                         auto pid = it->second;
+                        new_cycle_pids.insert(pid);
+                        heads.erase(it);
                         auto& path = paths[pid];
                         INT j = 0;
                         while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
                             ++i; ++j;
                         }
+                        heads[path[j]] = pid;
                         path.erase(path.begin(), path.begin() + j);
                     }
                 }
 
                 string s;
-                INT current = heads[new_cycle[0]];
                 for (const auto& node: new_cycle) {
                     s += decode_base(kmerv[node] % 4);
                     for (const auto& c: base) {
@@ -1136,12 +1140,11 @@ public:
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
 
-                        auto tmp = it->second;
+                        auto pid = it->second;
                         heads.erase(it);
                         string t;
-                        new_tree(kmers, kmerv, current, paths, heads, embedded, t);
+                        new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
                         s += "(" + t + ")";
-                        current = tmp;
                     }
                 }
                 ss.emplace_back(s);
@@ -1154,6 +1157,7 @@ public:
         cout << "\n\n";
 
         // debug
+        cout << "# new_cycles = " << nn << "\n";
         INT count = 0;
         for (const auto& e: embedded) if (!e) ++count;
         cout << "# unembedded paths = " << count << "\n\n";
