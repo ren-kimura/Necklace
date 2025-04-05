@@ -16,7 +16,6 @@
 #include <unordered_set>
 #include <algorithm>
 
-
 using namespace std;
 namespace fs = std::filesystem;
 namespace chrono = std::chrono;
@@ -747,7 +746,9 @@ public:
                     txt += decode_kmer(hash, K).substr(0, K - 1);
                 txt += decode_base(hash % 4);
             } txt += "$";
-        } if (!txt.empty()) txt.pop_back();
+        } 
+        if (!txt.empty()) txt.pop_back();
+        if (paths.empty()) txt.pop_back();
         cout << "\rCompleted generating SPSS.\n";
         return {txt, {}};
     }
@@ -1053,7 +1054,7 @@ public:
                 auto it = heads.find(next);
                 if (it == heads.end()) continue;
                 auto next_pid = it->second;
-                heads.erase(it);
+                if (embedded[next_pid]) continue;
                 s += "(";
                 new_tree(kmers, kmerv, next_pid, paths, heads, embedded, s);
                 s += ")";
@@ -1086,14 +1087,12 @@ public:
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     auto pid = it->second;
-                    heads.erase(it);
                     string t;
                     new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
                     s += "(" + t + ")";
                 }
             }
             ss.emplace_back(s);
-            if (heads.empty() && root_paths.empty()) goto end;
             progress(n, S, "Constructing trees");
         }
 
@@ -1105,7 +1104,6 @@ public:
             ++n;
             progress(n, S, "Constructing trees");
         }
-        if (heads.empty()) goto end;
 
         for (auto it = heads.begin(); it != heads.end(); ++it, ++n) {
             VINT new_cycle;
@@ -1140,18 +1138,15 @@ public:
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
                         auto pid = it->second;
-                        heads.erase(it);
                         string t;
                         new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
                         s += "(" + t + ")";
                     }
                 }
-                ss.emplace_back(s);
-                if (heads.empty()) goto end;                                
+                ss.emplace_back(s);                               
             }
             progress(n, S, "Constructing trees");
         }
-        end:
         finished("Constructing trees");
         cout << "\n\n";
 
