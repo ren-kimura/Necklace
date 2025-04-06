@@ -1039,29 +1039,31 @@ public:
         return {txt, pnt};
     }
 
-    void new_tree(UMAP& kmers, const VINT& kmerv, INT& pid, VVINT& paths, UMAP& heads, Vint& embedded, string& s) {
-        if (embedded[pid]) return;
+    string new_tree(UMAP& kmers, const VINT& kmerv, INT& pid, VVINT& paths, Vint& embedded) {
+        if (embedded[pid]) return "";
         embedded[pid] = 1;
 
+        string s;
         auto path = paths[pid];
+        auto it = heads.find(path[0]);
+        if (it != heads.end())
+            heads.erase(it);
         INT p = path.size();
         for (INT i = 0; i < p; ++i) {
             auto node = path[i];
             s += decode_base(kmerv[node] % 4);
             for (const auto& c: base) {
                 auto next = forward(kmers, kmerv, node, c);
-                if (next == INF || next == path[(i + 1) % p] || next == path[0]) continue;
-                auto it = heads.find(next);
-                if (it == heads.end()) continue;
-                auto next_pid = it->second;
-                if (embedded[next_pid]) continue;
-                s += "(";
-                new_tree(kmers, kmerv, next_pid, paths, heads, embedded, s);
-                s += ")";
+                if (next == INF || next == path[0]) continue;
+                auto itit = heads.find(next);
+                if (itit == heads.end()) continue;
+                auto next_pid = itit->second;
+                string t = new_tree(kmers, kmerv, next_pid, paths, embedded);
+                if (!t.empty()) s += "(" + t + ")";
             }
         }
+        return s;
     }
-    
 
     REP forest(UMAP& kmers, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
@@ -1088,8 +1090,7 @@ public:
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     auto pid = it->second;
-                    string t;
-                    new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
+                    string t = new_tree(kmers, kmerv, pid, paths, embedded);
                     s += "(" + t + ")";
                 }
             }
@@ -1098,19 +1099,18 @@ public:
         }
 
         for (auto root_path: root_paths) {
-            string s;
-            new_tree(kmers, kmerv, root_path, paths, heads, embedded, s);
+            string s = new_tree(kmers, kmerv, root_path, paths, embedded);
             auto head = paths[root_path][0];
             ss.emplace_back("*" + decode_kmer(kmerv[head], K).substr(0, K - 1) + s);
             ++n;
             progress(n, S, "Constructing trees");
         }
 
-        for (auto it = heads.begin(); it != heads.end(); ++it, ++n) {
+        for (INT p = 0; p < P; ++p) {
+            if (embedded[p]) continue;
             VINT new_cycle;
-            auto start = it->second;
             Vint visited(P, 0);
-            if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
+            if (has_pointer_cycle(p, paths, kmers, kmerv, new_cycle, visited)
                 && !new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0; ++nn;
                 USET new_cycle_pids;
@@ -1125,7 +1125,10 @@ public:
                         while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
                             ++i; ++j;
                         }
-                        heads[path[j]] = pid;
+                        if (j < (INT)path.size())
+                            heads[path[j]] = pid;
+                        else
+                            {cerr << "out of bound.\n"; exit(1);}
                         path.erase(path.begin(), path.begin() + j);
                     }
                 }
@@ -1139,8 +1142,7 @@ public:
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
                         auto pid = it->second;
-                        string t;
-                        new_tree(kmers, kmerv, pid, paths, heads, embedded, t);
+                        string t = new_tree(kmers, kmerv, pid, paths, embedded);
                         s += "(" + t + ")";
                     }
                 }
