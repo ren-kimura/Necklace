@@ -1014,6 +1014,9 @@ public:
         INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
         
+        // temporary (to calc the size of tree representation)
+        cout << "Size of tree rep. :  " << N + (cycles.size() + self_paths.size() - 1) + 2 * P + K * self_paths.size() << "\n\n";
+
         // representation
         string txt;
         VINT pnt;
