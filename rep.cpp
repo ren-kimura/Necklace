@@ -30,7 +30,7 @@ using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
 using USET = unordered_set<INT>;
 
-unordered_set<char> base = {'A', 'C', 'G', 'T'};
+vector<char> base = {'A', 'C', 'G', 'T'};
 const INT INF = UINT64_MAX;
 
 size_t get_available_memory() {
