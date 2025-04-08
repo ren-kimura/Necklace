@@ -389,9 +389,9 @@ public:
         chrono::duration<double> decompose_time = end_time - start_time;
         size_t decompose_memory = get_memory_usage();
 
-        cout << "\n(#k-mers, #edges, #matching, #cycles, #paths) = (" 
+        cout << "\n(#k-mers, #edges, #matching, #cycles, #paths)\n= (" 
             << N << ", " << E << ", " << M << ", "
-            << CnP.first << ", " << CnP.second << ")\n\n";
+            << CnP.first << ", " << CnP.second << ")\n";
 
         REP rep;
         chrono::duration<double> align_time;
@@ -822,53 +822,48 @@ public:
     }
 
     bool has_pointer_cycle(
-        INT current, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& new_cycle,
-        Vint& visited
+        INT current, const INT& start, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& new_cycle,
+        Vint& visited, int depth = 0
     ) {
-        if (visited[current]) return true;
+        if (depth > 0 && current == start) return true;
         visited[current] = 1;
-        auto& path = paths[current];
+        auto path = paths[current];
 
         for (INT i = 0; i < (INT)(path.size()); ++i) {
             auto node = path[i];
+            new_cycle.emplace_back(node);
             for (const auto& c: base) {
                 auto next = forward(kmers, kmerv, node, c);
                 if (next == INF) continue;
-
                 auto it = heads.find(next);
                 if (it != heads.end()) {
                     INT next_path = it->second;
-                    if (next_path == current) {
-                        new_cycle.assign(path.begin(), path.begin() + i + 1);
+                    if (visited[next_path] && depth > 0) continue;
+                    if (has_pointer_cycle(next_path, start, paths, kmers, kmerv, new_cycle, visited, depth + 1))
                         return true;
-                    }
-                    if (has_pointer_cycle(next_path, paths, kmers, kmerv, new_cycle, visited)) {
-                        new_cycle.insert(new_cycle.end(), path.begin(), path.begin() + i + 1);
-                        return true;
-                    }
                 }
             }
         }
-        return false; // no pointer cycle found
+        return false;
     }
 
     REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
         INT S = CnP.first + P + N, ofst = 0, from = 0;
-        USET self_paths;
+        USET root_paths;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
-                self_paths.insert(i);
+                root_paths.insert(i);
             }
             else heads[paths[i][0]] = i; // record paths' heads
         }
-
-        cout << "\n# non-self paths: " << heads.size()
-             << "\n# self paths: " << self_paths.size() << "\n";
+        cout << "\n(#non-root paths, #root paths) = (" << heads.size()
+             << ", " << root_paths.size() << ")\n\n";
 
         VINT pord; // sorted path ID order
         VINT pntc, pntp; // record the relative positions of pointees
+        // Vint memo(P, 0); // for cyclic pointers detection
 
         // add pointers from paths to cycles
         INT pos = 0, dist = 0, exit_code = -1;
@@ -890,11 +885,10 @@ public:
             } ++pos; ++dist;
         }
         ofst = dist; // distance from pos of the last pointee in cycles and the end
-        cout << "ofst(right after finishing scanning cycles): " << ofst << "\n";
         dist = 0;
 
-        if (!self_paths.empty()) {
-            for (const auto& pid: self_paths) {
+        if (!root_paths.empty()) {
+            for (const auto& pid: root_paths) {
                 pord.emplace_back(pid);
                 pntp.emplace_back(dist);
                 dist = K;
@@ -944,17 +938,22 @@ public:
             int flg = 1;
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
                 VINT new_cycle;
-                auto start = it1->second;
                 Vint visited(P, 0);
+                auto start = it1->second;
 
-                if (has_pointer_cycle(start, paths, kmers, kmerv, new_cycle, visited)
+                if (has_pointer_cycle(start, start, paths, kmers, kmerv, new_cycle, visited)
                     && !new_cycle.empty()) {
+                    cout << "Cycle found!!\n"; // debug
                     cycles.emplace_back(new_cycle); // append new_cycle to cycles if found
 
-                    INT R = (INT)(new_cycle.size()), i = 0, distb = 0;
+                    INT R = (INT)(new_cycle.size()), i = 0, distb = 0, itr = 0;
                     while (i < R) {
+                        cout << itr << "-th path in the new_cycle\n"; //debug
+                        cout << "i = " << i << "(R = " << R << ")\n"; // debug
                         auto it = heads.find(new_cycle[i]);
                         if (it != heads.end()) {
+                            itr++;
+                            cout << "head here\n"; // debug
                             distb = 0;
                             auto pid = it->second;
                             heads.erase(it);
@@ -990,13 +989,12 @@ public:
                     }
                     ofst = distb;
 
-                    if ((INT)pord.size() == P) {
-                        exit_code = 2;
-                        goto end;
-                    }
+                    if ((INT)pord.size() == P)
+                        {exit_code = 2; goto end;}
+                    break;
                 }
             }
-            cout << "\n# remaining paths: " << heads.size() << "\n"
+            cout << "\n#remaining paths = " << heads.size() << "\n"
                  << "Resolved\n";
         }
         end:
@@ -1011,11 +1009,10 @@ public:
              << "3: At least one self-path which has no pointer to it.\n"
              << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
 
-        INT N_count = 0; // verify the resulting cumulative length of cycles & paths is N
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
         
         // temporary (to calc the size of tree representation)
-        cout << "Size of tree rep. :  " << N + (cycles.size() + self_paths.size() - 1) + 2 * P + K * self_paths.size() << "\n\n";
+        cout << "Size of tree rep. :  " << N + (cycles.size() + root_paths.size() - 1) + 2 * P + K * root_paths.size() << "\n\n";
 
         // representation
         string txt;
@@ -1025,15 +1022,13 @@ public:
 
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
-                ++N_count;
                 auto c = decode_base(kmerv[node] % 4);
                 txt += c;
             } txt += "$";
         } for (const auto& pid: pord) {
-            if (self_paths.find(pid) != self_paths.end())
+            if (root_paths.find(pid) != root_paths.end())
                 txt += "$" + decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1);
             for (const auto& node: paths[pid]) {
-                ++N_count;
                 auto c = decode_base(kmerv[node] % 4);
                 txt += c;
             } txt += "$";
@@ -1073,6 +1068,8 @@ public:
         VSTR ss;
         INT C = CnP.first, P = CnP.second, S = C + P, n = 0, nn = 0;
         USET root_paths;
+        // Vint memo(P, 0);
+        
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
                 root_paths.insert(i);
@@ -1113,7 +1110,7 @@ public:
             if (embedded[p]) continue;
             VINT new_cycle;
             Vint visited(P, 0);
-            if (has_pointer_cycle(p, paths, kmers, kmerv, new_cycle, visited)
+            if (has_pointer_cycle(p, p, paths, kmers, kmerv, new_cycle, visited)
                 && !new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0; ++nn;
                 USET new_cycle_pids;
