@@ -822,26 +822,58 @@ public:
     }
 
     bool has_pointer_cycle(
-        INT current, const INT& start, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& new_cycle,
-        Vint& visited, int depth = 0
+        INT start, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& pcyc,
+        Vint& visited
     ) {
-        if (depth > 0 && current == start) return true;
-        visited[current] = 1;
-        auto path = paths[current];
+        struct Frame {
+            INT current;
+            INT idx;
+            INT b_idx;
+        };
+        vector<Frame> stack;
+        VINT cycle;
 
-        for (INT i = 0; i < (INT)(path.size()); ++i) {
-            auto node = path[i];
-            new_cycle.emplace_back(node);
-            for (const auto& c: base) {
-                auto next = forward(kmers, kmerv, node, c);
-                if (next == INF) continue;
-                auto it = heads.find(next);
-                if (it != heads.end()) {
-                    INT next_path = it->second;
-                    if (visited[next_path] && depth > 0) continue;
-                    if (has_pointer_cycle(next_path, start, paths, kmers, kmerv, new_cycle, visited, depth + 1))
-                        return true;
+        visited[start] = 1;
+        stack.push_back({start, 0, 0});
+
+        while (!stack.empty()) {
+            Frame &top = stack.back();
+            const VINT &cur_path = paths[top.current];
+
+            // rm from stack if explored all the nodes in cur_path
+            if (top.idx >= (INT)cur_path.size()) {
+                stack.pop_back();
+                if (!cycle.empty()) {cout << "Erased " << cycle.back() << " from cycle\n"; cycle.pop_back();}
+                continue;
+            }
+
+            // when entering new node (on start of this frame)
+            if (top.b_idx == 0) {cycle.push_back(top.current); cout << "Added " << top.current << " to cycle\n";}
+
+            // try next base
+            if (top.b_idx < 4) {
+                char c = base[top.b_idx];
+                ++top.b_idx;
+                
+                INT cur_node = cur_path[top.idx];
+                INT next_node = forward(kmers, kmerv, cur_node, c);
+                if (next_node == INF) continue;
+                auto it = heads.find(next_node);
+                if (it == heads.end()) continue;
+                INT next_pid = it->second;
+                if (next_pid == start) {
+                    pcyc = cycle; // cycle found
+                    return true;
                 }
+                // skip visited path
+                if (visited[next_pid]) continue;
+
+                visited[next_pid] = 1;
+                stack.push_back({next_pid, 0, 0});
+            } else {
+                // already tried all bases. proceed to next node
+                ++top.idx;
+                top.b_idx = 0;
             }
         }
         return false;
@@ -860,6 +892,32 @@ public:
         }
         cout << "\n(#non-root paths, #root paths) = (" << heads.size()
              << ", " << root_paths.size() << ")\n\n";
+
+        /*
+        for (INT i = 0; i < CnP.first; ++i) {
+            cout << "cycle" << i << ": ";
+            auto cycle = cycles[i];
+            string s;
+            for (const auto& node: cycle) {
+                s += decode_base(kmerv[node] % 4);
+                cout << node << " ";
+            }
+            cout << s << "\n";
+        }
+        cout << "\n";
+        for (INT i = 0; i < P; ++i) {
+            cout << "path" << i << ": ";
+            auto path = paths[i];
+            string s;
+            s += decode_kmer(kmerv[path[0]], K).substr(0, K - 1);
+            for (const auto& node: path) {
+                s += decode_base(kmerv[node] % 4);
+                cout << node << " ";
+            }
+            cout << s << "\n";
+        }
+        cout << "\n";
+        */
 
         VINT pord; // sorted path ID order
         VINT pntc, pntp; // record the relative positions of pointees
@@ -935,59 +993,52 @@ public:
 
             cout << "\n# remaining paths: " << heads.size() << "\n"
                  << "Resolving pointer cycles...\n";
-            int flg = 1;
             for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
-                VINT new_cycle;
+                VINT pcyc;
                 Vint visited(P, 0);
                 auto start = it1->second;
 
-                if (has_pointer_cycle(start, start, paths, kmers, kmerv, new_cycle, visited)
-                    && !new_cycle.empty()) {
+                if (has_pointer_cycle(start, paths, kmers, kmerv, pcyc, visited)
+                    && !pcyc.empty()) {
                     cout << "Cycle found!!\n"; // debug
-                    cycles.emplace_back(new_cycle); // append new_cycle to cycles if found
+                    for (auto& pid: pcyc) {
+                        cout << pid << " ";
+                    } cout << "(pids' sequence)\n";
+                    VINT new_cycle;
+                    INT pp = (INT)pcyc.size(), distb = 0;
+                    int flg = 1, proceed = 0;
+                    for (INT ii = 0; ii < pp; ++ii) {
+                        auto& path = paths[pcyc[ii]];
+                        auto psz = (INT)path.size();
+                        heads.erase(path[0]);
+                        for (INT jj = 0; jj < psz; ++jj) {
+                            auto node = path[jj];
+                            new_cycle.emplace_back(node);
+                            for (auto& c: base) {
+                                auto next = forward(kmers, kmerv, node, c);
+                                if (next == INF || next == path[(jj + 1) % psz]) continue;
+                                if (next == paths[pcyc[(ii + 1) % pp]][0]) proceed = 1;
 
-                    INT R = (INT)(new_cycle.size()), i = 0, distb = 0, itr = 0;
-                    while (i < R) {
-                        cout << itr << "-th path in the new_cycle\n"; //debug
-                        cout << "i = " << i << "(R = " << R << ")\n"; // debug
-                        auto it = heads.find(new_cycle[i]);
-                        if (it != heads.end()) {
-                            itr++;
-                            cout << "head here\n"; // debug
-                            distb = 0;
-                            auto pid = it->second;
-                            heads.erase(it);
-                            auto& path = paths[pid];
-                            INT j = 0;
-                            while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
-                                for (const auto& c: base) {
-                                    auto next = forward(kmers, kmerv, new_cycle[i], c);
-                                    if (next == INF || next == new_cycle[(i + 1) % R]) continue;
-                                    auto itit = heads.find(next);
-                                    if (itit == heads.end()) continue;
-                                    pord.emplace_back(itit->second);
-                                    if (flg) {
-                                        pntc.emplace_back(ofst + i);
-                                        --flg; distb = 0;
-                                    } else {
-                                        pntc.emplace_back(distb);
-                                        distb = 0;
-                                    }
-                                    heads.erase(itit);
-                                }
-                                ++i; ++j; ++distb;
+                                auto it = heads.find(next);
+                                if (it == heads.end()) continue;
+                                pord.emplace_back(it->second);
+                                heads.erase(it);
+
+                                if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
+                                else {pntc.emplace_back(distb); distb = 0;}
                             }
-                            pord.emplace_back(pid);
-                            if (flg) {
-                                pntc.emplace_back(ofst + i - 1);
-                                --flg;
-                            } else {
-                                pntc.emplace_back(distb);
+                            if (proceed) {
+                                pord.emplace_back(pcyc[ii]);
+                                if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
+                                else {pntc.emplace_back(distb); distb = 0;}
+                                path.erase(path.begin(), path.begin() + jj);
+                                break;
                             }
-                            path.erase(path.begin(), path.begin() + j);
+                            ++distb;
                         }
                     }
-                    ofst = distb;
+                    cycles.emplace_back(new_cycle);
+                    ofst = 2;
 
                     if ((INT)pord.size() == P)
                         {exit_code = 2; goto end;}
@@ -1110,7 +1161,7 @@ public:
             if (embedded[p]) continue;
             VINT new_cycle;
             Vint visited(P, 0);
-            if (has_pointer_cycle(p, p, paths, kmers, kmerv, new_cycle, visited)
+            if (has_pointer_cycle(p, paths, kmers, kmerv, new_cycle, visited)
                 && !new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0; ++nn;
                 USET new_cycle_pids;
