@@ -707,26 +707,39 @@ public:
             progress(u, N, "Decomposing");
         }
         finished("Decomposing");
-        if (has_dup(cycles, paths))
-            cout << "\nDuplicates found.\n";
-        else
-            cout << "\nNo duplicates found.\n";
+
+        // Error handling
+        Vint seen(N, 0); INT base_count = 0;
+        for (const auto& cycle: cycles) {
+            for (const auto& node: cycle) {
+                if (seen[node]) {
+                    cerr << "\nNODE" << node << " IS DUPLICATED\n";
+                    exit(1);
+                }
+                seen[node] = 1;
+                ++base_count;
+            }
+        }
+        for (const auto& path: paths) {
+            for (const auto& node: path) {
+                if (seen[node]) {
+                    cerr << "\nNODE" << node << " IS DUPLICATED\n";
+                    exit(1);
+                }
+                seen[node] = 1;
+                ++base_count;
+            }
+        }
+        if (base_count != N) {
+            cerr << "\nWRONG NUMBER OF BASES IN CYCLES AND PATHS\n";
+            exit(1);
+        }
+        cout << "\nNo duplicates found. Total number of bases is correct.\n";
+
         INT C = cycles.size(), P = paths.size();
         cout << "Found " << C << " cycles and " << P << " paths.\n";
 
         return {C, P};
-    }
-
-    bool has_dup(const VVINT& cycles, const VVINT& paths) {
-        USET seen;
-        auto check = [&](const VVINT& v) {
-            for (const auto& vec: v)
-                for (const auto& x: vec)
-                    if (!seen.insert(x).second)
-                        return true;
-            return false;
-        };
-        return check(cycles) || check(paths);
     }
 
     REP plain(const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
@@ -1062,19 +1075,26 @@ public:
         VINT pnt;
         pnt.insert(pnt.end(), pntc.begin(), pntc.end());
         pnt.insert(pnt.end(), pntp.begin(), pntp.end());
+        if (pnt.size() != P) {
+            cerr << "WRONG NUMBER OF POINTERS!\n";
+            exit(1);
+        }
 
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 auto c = decode_base(kmerv[node] % 4);
                 txt += c;
-            } txt += "$";
-        } for (const auto& pid: pord) {
+            } 
+            txt += "$";
+        } 
+        for (const auto& pid: pord) {
             if (root_paths.find(pid) != root_paths.end())
                 txt += "$" + decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1);
             for (const auto& node: paths[pid]) {
                 auto c = decode_base(kmerv[node] % 4);
                 txt += c;
-            } txt += "$";
+            } 
+            txt += "$";
         } if(!txt.empty()) txt.pop_back();
         
         return {txt, pnt};
