@@ -822,7 +822,7 @@ public:
     }
 
     bool has_pointer_cycle(
-        INT start, VVINT& paths, UMAP& kmers, const VINT& kmerv, VINT& pcyc,
+        INT start, VVINT& paths, Vint& in_pord, UMAP& kmers, const VINT& kmerv, VINT& pcyc,
         Vint& visited
     ) {
         struct Frame {
@@ -843,12 +843,12 @@ public:
             // rm from stack if explored all the nodes in cur_path
             if (top.idx >= (INT)cur_path.size()) {
                 stack.pop_back();
-                if (!cycle.empty()) {cout << "Erased " << cycle.back() << " from cycle\n"; cycle.pop_back();}
+                if (!cycle.empty()) cycle.pop_back();
                 continue;
             }
 
             // when entering new node (on start of this frame)
-            if (top.idx == 0 && top.b_idx == 0) {cycle.push_back(top.current); cout << "Added " << top.current << " to cycle\n";}
+            if (top.idx == 0 && top.b_idx == 0) cycle.push_back(top.current);
 
             // try next base
             if (top.b_idx < 4) {
@@ -861,6 +861,7 @@ public:
                 auto it = heads.find(next_node);
                 if (it == heads.end()) continue;
                 INT next_pid = it->second;
+                if (in_pord[next_pid]) continue;
                 if (next_pid == start) {
                     pcyc = cycle; // cycle found
                     return true;
@@ -974,7 +975,7 @@ public:
                 if (in_pord[i]) continue;
                 VINT pcyc;
                 Vint visited(P, 0);
-                if (has_pointer_cycle(i, paths, kmers, kmerv, pcyc, visited)
+                if (has_pointer_cycle(i, paths, in_pord, kmers, kmerv, pcyc, visited)
                     && !pcyc.empty()) {
                     cout << "Cycle found!!\n"; // debug
                     ++pcycs_count;
@@ -1143,7 +1144,7 @@ public:
             if (embedded[p]) continue;
             VINT new_cycle;
             Vint visited(P, 0);
-            if (has_pointer_cycle(p, paths, kmers, kmerv, new_cycle, visited)
+            if (has_pointer_cycle(p, paths, embedded, kmers, kmerv, new_cycle, visited)
                 && !new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0; ++nn;
                 USET new_cycle_pids;
