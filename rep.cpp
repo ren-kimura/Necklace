@@ -848,7 +848,7 @@ public:
             }
 
             // when entering new node (on start of this frame)
-            if (top.b_idx == 0) {cycle.push_back(top.current); cout << "Added " << top.current << " to cycle\n";}
+            if (top.idx == 0 && top.b_idx == 0) {cycle.push_back(top.current); cout << "Added " << top.current << " to cycle\n";}
 
             // try next base
             if (top.b_idx < 4) {
@@ -882,7 +882,7 @@ public:
     REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
         INT P = CnP.second;
-        INT S = CnP.first + P + N, ofst = 0, from = 0;
+        INT S = CnP.first + P + N, ofst = 0, from = 0, pcycs_count = 0;
         USET root_paths;
         for (INT i = 0; i < P; ++i) {
             if (inv_adj[paths[i][0]].empty()){
@@ -893,38 +893,12 @@ public:
         cout << "\n(#non-root paths, #root paths) = (" << heads.size()
              << ", " << root_paths.size() << ")\n\n";
 
-        /*
-        for (INT i = 0; i < CnP.first; ++i) {
-            cout << "cycle" << i << ": ";
-            auto cycle = cycles[i];
-            string s;
-            for (const auto& node: cycle) {
-                s += decode_base(kmerv[node] % 4);
-                cout << node << " ";
-            }
-            cout << s << "\n";
-        }
-        cout << "\n";
-        for (INT i = 0; i < P; ++i) {
-            cout << "path" << i << ": ";
-            auto path = paths[i];
-            string s;
-            s += decode_kmer(kmerv[path[0]], K).substr(0, K - 1);
-            for (const auto& node: path) {
-                s += decode_base(kmerv[node] % 4);
-                cout << node << " ";
-            }
-            cout << s << "\n";
-        }
-        cout << "\n";
-        */
-
         VINT pord; // sorted path ID order
+        Vint in_pord(P, 0);
         VINT pntc, pntp; // record the relative positions of pointees
-        // Vint memo(P, 0); // for cyclic pointers detection
 
         // add pointers from paths to cycles
-        INT pos = 0, dist = 0, exit_code = -1;
+        INT pos = 0, dist = 0;
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
@@ -932,12 +906,13 @@ public:
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
+                    if (in_pord[it->second]) continue;
                     pord.emplace_back(it->second);
+                    in_pord[it->second] = 1;
                     pntc.emplace_back(dist);
                     dist = 0;
                     heads.erase(it);
-                    if ((INT)pord.size() == P)
-                        {exit_code = 0; goto end;}
+                    if ((INT)pord.size() == P) goto end;
                 } ++pos; ++dist;
                 progress(pos, S, "Pointing");
             } ++pos; ++dist;
@@ -945,27 +920,28 @@ public:
         ofst = dist; // distance from pos of the last pointee in cycles and the end
         dist = 0;
 
-        if (!root_paths.empty()) {
-            for (const auto& pid: root_paths) {
-                pord.emplace_back(pid);
-                pntp.emplace_back(dist);
-                dist = K;
-                for (const auto& node: paths[pid]) {
-                    for (const auto& c: base) {
-                        auto next = forward(kmers, kmerv, node, c);
-                        if (next == INF) continue;
-                        auto it = heads.find(next);
-                        if (it == heads.end()) continue;
-                        pord.emplace_back(it->second);
-                        pntp.emplace_back(dist);
-                        dist = 0;
-                        heads.erase(it);
-                        if ((INT)pord.size() == P) 
-                            {exit_code = 3; goto end;}
-                    } ++pos; ++dist;
-                    progress(pos, S, "Pointing");
+        for (const auto& pid: root_paths) {
+            if (in_pord[pid]) continue;
+            pord.emplace_back(pid);
+            in_pord[pid] = 1;
+            pntp.emplace_back(dist);
+            dist = K;
+            for (const auto& node: paths[pid]) {
+                for (const auto& c: base) {
+                    auto next = forward(kmers, kmerv, node, c);
+                    if (next == INF) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    if (in_pord[it->second]) continue;
+                    pord.emplace_back(it->second);
+                    in_pord[it->second] = 1;
+                    pntp.emplace_back(dist);
+                    dist = 0;
+                    heads.erase(it);
+                    if ((INT)pord.size() == P) goto end;
                 } ++pos; ++dist;
-            }
+                progress(pos, S, "Pointing");
+            } ++pos; ++dist;
         }
         
         while ((INT)(pord.size()) < P) {         
@@ -978,13 +954,14 @@ public:
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
+                        if (in_pord[it->second]) continue;
                         pord.emplace_back(it->second);
+                        in_pord[it->second] = 1;
                         pntp.emplace_back(dist);
                         dist = 0;
                         ++bound;
                         heads.erase(it);
-                        if ((INT)pord.size() == P) 
-                            {exit_code = 1; goto end;}
+                        if ((INT)pord.size() == P) goto end;
                     } ++pos; ++dist;
                     progress(pos, S, "Pointing");
                 } ++pos; ++dist;
@@ -993,14 +970,14 @@ public:
 
             cout << "\n# remaining paths: " << heads.size() << "\n"
                  << "Resolving pointer cycles...\n";
-            for (auto it1 = heads.begin(); it1 != heads.end(); ++it1) {
+            for (INT i = 0; i < P; ++i) {
+                if (in_pord[i]) continue;
                 VINT pcyc;
                 Vint visited(P, 0);
-                auto start = it1->second;
-
-                if (has_pointer_cycle(start, paths, kmers, kmerv, pcyc, visited)
+                if (has_pointer_cycle(i, paths, kmers, kmerv, pcyc, visited)
                     && !pcyc.empty()) {
                     cout << "Cycle found!!\n"; // debug
+                    ++pcycs_count;
                     for (auto& pid: pcyc) {
                         cout << pid << " ";
                     } cout << "(pids' sequence)\n";
@@ -1021,14 +998,19 @@ public:
 
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
-                                pord.emplace_back(it->second);
+                                auto next_pid = it->second;
+                                if (in_pord[next_pid] || (ii > 0 && next_pid == pcyc[ii])) continue;
+                                pord.emplace_back(next_pid);
+                                in_pord[next_pid] = 1;
                                 heads.erase(it);
 
                                 if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
                                 else {pntc.emplace_back(distb); distb = 0;}
                             }
                             if (proceed) {
+                                if (in_pord[pcyc[ii]]) continue;
                                 pord.emplace_back(pcyc[ii]);
+                                in_pord[pcyc[ii]] = 1;
                                 if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
                                 else {pntc.emplace_back(distb); distb = 0;}
                                 path.erase(path.begin(), path.begin() + jj);
@@ -1040,8 +1022,7 @@ public:
                     cycles.emplace_back(new_cycle);
                     ofst = 2;
 
-                    if ((INT)pord.size() == P)
-                        {exit_code = 2; goto end;}
+                    if ((INT)pord.size() == P) goto end;
                     break;
                 }
             }
@@ -1052,18 +1033,19 @@ public:
         finished("Pointing");
         if (heads.empty()) 
             cout << "\nAll paths are pointed.\n";
-        else cout << "\n" << heads.size() << " paths are not pointed.\n";
-        cout << "\nResult code: " << exit_code << "\n";
-        cout << "0: All pointers to cycles\n"
-             << "1: At least one pointer to a path. (No pointer cycle)\n"
-             << "2: At least one pointer cycle in the initial decomposition.\n"
-             << "3: At least one self-path which has no pointer to it.\n"
-             << "-1: No paths || Self-pointing paths only || Unexpected behavior (Exception)\n\n";
+        else {
+            cout << "\n" << heads.size() << " paths are not pointed.\n";
+            cout << "pord.size() = " << pord.size() << ", heads.size() = " << heads.size() << ", paths.size() = " << P << "\n";
+            for (INT i = 0; i < P; ++i) if (!in_pord[i]) cout << "path" << i << " was not added\n";
+            cout << "\n";
+        }
+        cout << "#pcycs detected = " << pcycs_count << "\n";
 
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
         
         // temporary (to calc the size of tree representation)
-        cout << "Size of tree rep. :  " << N + (cycles.size() + root_paths.size() - 1) + 2 * P + K * root_paths.size() << "\n\n";
+        INT R = (INT)root_paths.size();
+        cout << "Size of tree rep. :  " << N + (cycles.size() + R + pcycs_count - 1) + 2 * (P - R) + K * R << "\n\n";
 
         // representation
         string txt;
