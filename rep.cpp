@@ -892,7 +892,7 @@ public:
             else heads[paths[i][0]] = i; // record paths' heads
         }
         cout << "\n(#non-root paths, #root paths) = (" << heads.size()
-             << ", " << root_paths.size() << ")\n\n";
+             << ", " << root_paths.size() << ")\n";
 
         VINT pord; // sorted path ID order
         Vint in_pord(P, 0);
@@ -912,7 +912,6 @@ public:
                     in_pord[it->second] = 1;
                     pntc.emplace_back(dist);
                     dist = 0;
-                    heads.erase(it);
                     if ((INT)pord.size() == P) goto end;
                 } ++pos; ++dist;
                 progress(pos, S, "Pointing");
@@ -938,7 +937,6 @@ public:
                     in_pord[it->second] = 1;
                     pntp.emplace_back(dist);
                     dist = 0;
-                    heads.erase(it);
                     if ((INT)pord.size() == P) goto end;
                 } ++pos; ++dist;
                 progress(pos, S, "Pointing");
@@ -961,7 +959,6 @@ public:
                         pntp.emplace_back(dist);
                         dist = 0;
                         ++bound;
-                        heads.erase(it);
                         if ((INT)pord.size() == P) goto end;
                     } ++pos; ++dist;
                     progress(pos, S, "Pointing");
@@ -969,26 +966,23 @@ public:
             } 
             from = bound;
 
-            cout << "\n# remaining paths: " << heads.size() << "\n"
-                 << "Resolving pointer cycles...\n";
+            cout << "\n\n#remaining paths = " << P - pord.size() << "\n"
+                 << "Resolving pointer cycles...";
             for (INT i = 0; i < P; ++i) {
                 if (in_pord[i]) continue;
                 VINT pcyc;
                 Vint visited(P, 0);
                 if (has_pointer_cycle(i, paths, in_pord, kmers, kmerv, pcyc, visited)
                     && !pcyc.empty()) {
-                    cout << "Cycle found!!\n"; // debug
+                    cout << "\rFound a cycle of " << pcyc.size() << " paths       \n";
                     ++pcycs_count;
-                    for (auto& pid: pcyc) {
-                        cout << pid << " ";
-                    } cout << "(pids' sequence)\n";
+
                     VINT new_cycle;
                     INT pp = (INT)pcyc.size(), distb = 0;
                     int flg = 1, proceed = 0;
                     for (INT ii = 0; ii < pp; ++ii) {
                         auto& path = paths[pcyc[ii]];
                         auto psz = (INT)path.size();
-                        heads.erase(path[0]);
                         for (INT jj = 0; jj < psz; ++jj) {
                             auto node = path[jj];
                             new_cycle.emplace_back(node);
@@ -1000,10 +994,9 @@ public:
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
                                 auto next_pid = it->second;
-                                if (in_pord[next_pid] || (ii > 0 && next_pid == pcyc[ii])) continue;
+                                if (in_pord[next_pid] || next_pid == pcyc[ii]) continue;
                                 pord.emplace_back(next_pid);
                                 in_pord[next_pid] = 1;
-                                heads.erase(it);
 
                                 if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
                                 else {pntc.emplace_back(distb); distb = 0;}
@@ -1027,20 +1020,36 @@ public:
                     break;
                 }
             }
-            cout << "\n#remaining paths = " << heads.size() << "\n"
-                 << "Resolved\n";
+            cout << "Resolved\n"
+                 << "#remaining paths = " << P - pord.size() << "\n\n";
         }
         end:
         finished("Pointing");
-        if (heads.empty()) 
-            cout << "\nAll paths are pointed.\n";
+
+        if (P - pord.size() == 0) 
+            cout << "\n\nAll paths are pointed.\n\n";
         else {
-            cout << "\n" << heads.size() << " paths are not pointed.\n";
-            cout << "pord.size() = " << pord.size() << ", heads.size() = " << heads.size() << ", paths.size() = " << P << "\n";
+            cout << "\n\n" << P - pord.size() << " paths are not pointed.\n";
             for (INT i = 0; i < P; ++i) if (!in_pord[i]) cout << "path" << i << " was not added\n";
-            cout << "\n";
+            cout << "\n\n";
         }
-        cout << "#pcycs detected = " << pcycs_count << "\n";
+        cout << "#newly found cycles = " << pcycs_count << "\n";
+
+        // size check of pord
+        if (pord.size() != P) {
+            cout << "FORCED EXITING --> pord.size() != P (Error)\n";
+            exit(1);
+        }
+
+        // duplicate check in pord
+        Vint seen(P, 0);
+        for (const auto& pid: pord) {
+            if (seen[pid]) {
+                cout << "FORCED EXITING --> exist duplicate of path ID in pord (Error)\n";
+                exit(1);
+            }
+            seen[pid] = 1;
+        }
 
         if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
         
