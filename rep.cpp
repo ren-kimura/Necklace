@@ -979,7 +979,8 @@ public:
             } 
             from = bound;
 
-            cout << "\n\n#remaining paths = " << P - pord.size() << "\n"
+            INT remains = P - pord.size();
+            cout << "\n\n#remaining paths = " << remains << "\n"
                  << "Resolving pointer cycles...";
             for (INT i = 0; i < P; ++i) {
                 if (in_pord[i]) continue;
@@ -991,19 +992,24 @@ public:
                     ++pcycs_count;
 
                     VINT new_cycle;
-                    INT pp = (INT)pcyc.size(), distb = 0;
+                    INT pp = (INT)pcyc.size(), distb = 0, start = paths[pcyc[0]][0];
+                    INT sa = 0; // debug
                     int flg = 1, proceed = 0;
                     for (INT ii = 0; ii < pp; ++ii) {
+                        proceed = 0;
                         auto& path = paths[pcyc[ii]];
                         auto psz = (INT)path.size();
+                        in_pord[pcyc[ii]] = 1; // though not yet in_pord, needed for avoiding self cycle
+                        sa += psz; // debug
                         for (INT jj = 0; jj < psz; ++jj) {
                             auto node = path[jj];
                             new_cycle.emplace_back(node);
                             for (auto& c: base) {
                                 auto next = forward(kmers, kmerv, node, c);
                                 if (next == INF || next == path[(jj + 1) % psz]) continue;
-                                if (next == paths[pcyc[(ii + 1) % pp]][0]) proceed = 1;
-
+                                if (next == paths[pcyc[(ii + 1) % pp]][0] 
+                                    || ((ii == pp - 1) && (next == start))) proceed = 1;
+                                if (proceed) continue;
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
                                 auto next_pid = it->second;
@@ -1015,23 +1021,31 @@ public:
                                 else {pntc.emplace_back(distb); distb = 0;}
                             }
                             if (proceed) {
-                                if (in_pord[pcyc[ii]]) continue;
                                 pord.emplace_back(pcyc[ii]);
-                                in_pord[pcyc[ii]] = 1;
                                 if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
                                 else {pntc.emplace_back(distb); distb = 0;}
-                                path.erase(path.begin(), path.begin() + jj);
+                                path.erase(path.begin(), path.begin() + jj + 1);
                                 break;
                             }
                             ++distb;
                         }
+                        if (proceed == 0) {cerr << "ERROR: ENDED SCANNING PATH WITH proceed = 0\n"; exit(1);}
                     }
                     cycles.emplace_back(new_cycle);
                     ofst = 2;
 
+                    // debug
+                    INT sb = (INT)new_cycle.size();
+                    for (const auto& pid: pcyc) sb += paths[pid].size();
+                    if (sa != sb) {cerr << "ERROR: TOTAL COUNT OF NODES DOESN'T PRESERVE AT THIS RESOLVING PROCESS\n"; exit(1);}
+
                     if ((INT)pord.size() == P) goto end;
                     break;
                 }
+            }
+            if (P - pord.size() == remains) {
+                cerr << "ERROR: INFINITE LOOP!\n";
+                exit(1);
             }
             cout << "Resolved\n"
                  << "#remaining paths = " << P - pord.size() << "\n\n";
