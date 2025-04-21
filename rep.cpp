@@ -834,10 +834,7 @@ public:
         return {txt, pnt};
     }
 
-    bool has_pointer_cycle(
-        INT start, VVINT& paths, Vint& in_pord, UMAP& kmers, const VINT& kmerv, VINT& pcyc,
-        Vint& visited
-    ) {
+    VINT find_new_cycle(INT start, VVINT& paths, Vint& in_pord, UMAP& kmers, const VINT& kmerv, Vint& visited) {
         struct Frame {
             INT current;
             INT idx;
@@ -875,10 +872,7 @@ public:
                 if (it == heads.end()) continue;
                 INT next_pid = it->second;
                 if (in_pord[next_pid]) continue;
-                if (next_pid == start) {
-                    pcyc = cycle; // cycle found
-                    return true;
-                }
+                if (next_pid == start) return cycle;
                 // skip visited path
                 if (visited[next_pid]) continue;
 
@@ -890,7 +884,7 @@ public:
                 top.b_idx = 0;
             }
         }
-        return false;
+        return {};
     }
 
     REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
@@ -984,10 +978,13 @@ public:
                  << "Resolving pointer cycles...";
             for (INT i = 0; i < P; ++i) {
                 if (in_pord[i]) continue;
-                VINT pcyc;
                 Vint visited(P, 0);
-                if (has_pointer_cycle(i, paths, in_pord, kmers, kmerv, pcyc, visited)
-                    && !pcyc.empty()) {
+                VINT pcyc = find_new_cycle(i, paths, in_pord, kmers, kmerv, visited);
+                if (pcyc.empty()) {
+                    cerr << "ERROR: Funcion, find_new_cycle, returned an empty vector\n";
+                    exit(1);
+                }
+                if (!pcyc.empty()) {
                     cout << "\rFound a cycle of " << pcyc.size() << " paths       \n";
                     ++pcycs_count;
 
@@ -999,7 +996,6 @@ public:
                         proceed = 0;
                         auto& path = paths[pcyc[ii]];
                         auto psz = (INT)path.size();
-                        in_pord[pcyc[ii]] = 1; // though not yet in_pord, needed for avoiding self cycle
                         sa += psz; // debug
                         for (INT jj = 0; jj < psz; ++jj) {
                             auto node = path[jj];
@@ -1022,6 +1018,7 @@ public:
                             }
                             if (proceed) {
                                 pord.emplace_back(pcyc[ii]);
+                                in_pord[pcyc[ii]] = 1;
                                 if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
                                 else {pntc.emplace_back(distb); distb = 0;}
                                 path.erase(path.begin(), path.begin() + jj + 1);
@@ -1185,10 +1182,9 @@ public:
 
         for (INT p = 0; p < P; ++p) {
             if (embedded[p]) continue;
-            VINT new_cycle;
             Vint visited(P, 0);
-            if (has_pointer_cycle(p, paths, embedded, kmers, kmerv, new_cycle, visited)
-                && !new_cycle.empty()) {                
+            VINT new_cycle = find_new_cycle(p, paths, embedded, kmers, kmerv, visited);
+            if (!new_cycle.empty()) {                
                 INT R = (INT)(new_cycle.size()), i = 0; ++nn;
                 USET new_cycle_pids;
                 while (i < R) {
