@@ -889,225 +889,212 @@ public:
 
     REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
                 VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-        INT P = CnP.second;
-        INT S = CnP.first + P + N, ofst = 0, from = 0, pcycs_count = 0;
-        USET root_paths;
+        INT C = CnP.first, P = CnP.second, S = C + P + N, ncycs = 0;
+        USET roots;
         for (INT i = 0; i < P; ++i) {
-            if (inv_adj[paths[i][0]].empty()){
-                root_paths.insert(i);
-            }
-            else heads[paths[i][0]] = i; // record paths' heads
+            if (inv_adj[paths[i][0]].empty()) roots.insert(i);
+            else heads[paths[i][0]] = i;
         }
-        cout << "\n(#non-root paths, #root paths) = (" << heads.size()
-             << ", " << root_paths.size() << ")\n";
+        cout << "\n(#non-root paths, #root paths) = (" << heads.size() << ", "
+             << roots.size() << ")\n";
 
-        VINT pord; // sorted path ID order
-        Vint in_pord(P, 0);
-        VINT pntc, pntp; // record the relative positions of pointees
+        queue<INT> q;
+        vector<pair<uint8_t, INT>> ord; // sorted pairs (0 or 1, id), where 0 is cycle, 1 is path
+        Vint in_ord(P, 0); // 0: path is in ord, 1: not in ord yet
+        VINT pnt;
 
-        // add pointers from paths to cycles
-        INT pos = 0, dist = 0;
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle) {
-                for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
-                    if (next == INF) continue;
-                    auto it = heads.find(next);
-                    if (it == heads.end()) continue;
-                    if (in_pord[it->second]) continue;
-                    pord.emplace_back(it->second);
-                    in_pord[it->second] = 1;
-                    pntc.emplace_back(dist);
-                    dist = 0;
-                    if ((INT)pord.size() == P) goto end;
-                } ++pos; ++dist;
-                progress(pos, S, "Pointing");
-            } ++pos; ++dist;
-        }
-        ofst = dist; // distance from pos of the last pointee in cycles and the end
-        dist = 0;
+        INT pos = 0;
+        // bfs from root paths
+        for (const auto& pid: roots) {
+            q.push(pid);
+            ord.emplace_back(1, pid);
+            in_ord[pid] = 1;
+            ++pos; // extra "$" before a root path
 
-        for (const auto& pid: root_paths) {
-            if (in_pord[pid]) continue;
-            pord.emplace_back(pid);
-            in_pord[pid] = 1;
-            pntp.emplace_back(dist);
-            dist = K;
-            for (const auto& node: paths[pid]) {
-                for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
-                    if (next == INF) continue;
-                    auto it = heads.find(next);
-                    if (it == heads.end()) continue;
-                    if (in_pord[it->second]) continue;
-                    pord.emplace_back(it->second);
-                    in_pord[it->second] = 1;
-                    pntp.emplace_back(dist);
-                    dist = 0;
-                    if ((INT)pord.size() == P) goto end;
-                } ++pos; ++dist;
-                progress(pos, S, "Pointing");
-            } ++pos; ++dist;
-        }
-        
-        while ((INT)(pord.size()) < P) {         
-            INT bound = (INT)pord.size();
-
-            for (INT i = from; i < bound; ++i) {
-                for (const auto& node: paths[pord[i]]) {
+            while (!q.empty()) {
+                auto cpid = q.front();
+                q.pop();
+                for (const auto& node: paths[cpid]) {
                     for (const auto& c: base) {
                         auto next = forward(kmers, kmerv, node, c);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
-                        if (in_pord[it->second]) continue;
-                        pord.emplace_back(it->second);
-                        in_pord[it->second] = 1;
-                        pntp.emplace_back(dist);
-                        dist = 0;
-                        ++bound;
-                        if ((INT)pord.size() == P) goto end;
-                    } ++pos; ++dist;
+                        auto npid = it->second;
+                        if (in_ord[npid]) continue;
+                        q.push(npid);
+                        ord.emplace_back(1, npid);
+                        in_ord[npid] = 1;
+                        pnt.emplace_back(pos);
+                    }
+                    ++pos;
                     progress(pos, S, "Pointing");
-                } ++pos; ++dist;
-            } 
-            from = bound;
-
-            INT remains = P - pord.size();
-            cout << "\n\n#remaining paths = " << remains << "\n"
-                 << "Resolving pointer cycles...";
-            for (INT i = 0; i < P; ++i) {
-                if (in_pord[i]) continue;
-                Vint visited(P, 0);
-                VINT pcyc = find_new_cycle(i, paths, in_pord, kmers, kmerv, visited);
-                if (pcyc.empty()) {
-                    cerr << "ERROR: Funcion, find_new_cycle, returned an empty vector\n";
-                    exit(1);
                 }
-                if (!pcyc.empty()) {
-                    cout << "\rFound a cycle of " << pcyc.size() << " paths       \n";
-                    ++pcycs_count;
+                ++pos;
+            }
+        }
+        // bfs from cycles
+        for (INT i = 0; i < C; ++i) {
+            auto cycle = cycles[i];
+            ord.emplace_back(0, i);
+            ++pos; // need flag "*" for a cycle
+            for (const auto& node: cycle) {
+                for (const auto& c: base) {
+                    auto next = forward(kmers, kmerv, node, c);
+                    if (next == INF) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    auto npid = it->second;
+                    if (in_ord[npid]) continue;
+                    q.push(npid);
+                    ord.emplace_back(1, npid);
+                    in_ord[npid] = 1;
+                    pnt.emplace_back(pos);                    
+                }
+                ++pos;
+                progress(pos, S, "Pointing");
+            }
+            ++pos;
+            while (!q.empty()) {
+                auto cpid = q.front();
+                q.pop();
+                for (const auto& node: paths[cpid]) {
+                    for (const auto& c: base) {
+                        auto next = forward(kmers, kmerv, node, c);
+                        if (next == INF) continue;
+                        auto it = heads.find(next);
+                        if (it == heads.end()) continue;
+                        auto npid = it->second;
+                        if (in_ord[npid]) continue;
+                        q.push(npid);
+                        ord.emplace_back(1, npid);
+                        in_ord[npid] = 1;
+                        pnt.emplace_back(pos);
+                    }
+                    ++pos;
+                    progress(pos, S, "Pointing");
+                }
+                ++pos;
+            }
+        }
 
-                    VINT new_cycle;
-                    INT pp = (INT)pcyc.size(), distb = 0, start = paths[pcyc[0]][0];
-                    INT sa = 0; // debug
-                    int flg = 1, proceed = 0;
-                    for (INT ii = 0; ii < pp; ++ii) {
-                        proceed = 0;
-                        auto& path = paths[pcyc[ii]];
-                        auto psz = (INT)path.size();
-                        sa += psz; // debug
-                        for (INT jj = 0; jj < psz; ++jj) {
-                            auto node = path[jj];
-                            new_cycle.emplace_back(node);
+        // find a new cycle and bfs from it
+        while (INT res = count(in_ord.begin(), in_ord.end(), 0)) {
+            cout << "\n\n#residue paths = " << res << "\n"
+                 << "Searching for a new cycle...";
+            for (INT i = 0; i < P; ++i) {
+                if (in_ord[i]) continue;
+                Vint vis(P, 0);
+                VINT pids = find_new_cycle(i, paths, in_ord, kmers, kmerv, vis);
+                if (!pids.empty()) {
+                    cout << "\rFound a cycle of " << pids.size() << " paths          \n";
+                    ++ncycs;
+                    VINT cycle;
+                    INT p = (INT)pids.size();
+                    for (INT j = 0; j < p; ++j) {
+                        auto& path = paths[pids[j]];
+                        auto h = (INT)path.size();
+                        for (INT k = 0; k < h; ++k) {
+                            auto node = path[k];
+                            cycle.emplace_back(node);
                             for (auto& c: base) {
                                 auto next = forward(kmers, kmerv, node, c);
-                                if (next == INF || next == path[(jj + 1) % psz]) continue;
-                                if (next == paths[pcyc[(ii + 1) % pp]][0] 
-                                    || ((ii == pp - 1) && (next == start))) proceed = 1;
-                                if (proceed) continue;
+                                if (next == INF) continue;
+                                if (next == paths[pids[(j + 1) % p]][0]) {
+                                    // trim cycle portion from path, and renew heads
+                                    heads.erase(path[0]);
+                                    path.erase(path.begin(), path.begin() + k + 1);
+                                    heads[path[0]] = pids[j];
+                                    goto endj;
+                                }
+                            }
+                        }
+                        endj:;
+                    }
+                    cycles.emplace_back(cycle);
+                    ord.emplace_back(0, (INT)cycles.size() - 1);
+                    ++pos; // need flag "*" for a cycle
+                    for (const auto& node: cycle) {
+                        for (const auto& c: base) {
+                            auto next = forward(kmers, kmerv, node, c);
+                            if (next == INF) continue;
+                            auto it = heads.find(next);
+                            if (it == heads.end()) continue;
+                            auto npid = it->second;
+                            if (in_ord[npid]) continue;
+                            q.push(npid);
+                            ord.emplace_back(1, npid);
+                            in_ord[npid] = 1;
+                            pnt.emplace_back(pos);                    
+                        }
+                        ++pos;
+                        progress(pos, S, "Pointing");
+                    }
+                    ++pos;
+                    while (!q.empty()) {
+                        auto cpid = q.front();
+                        q.pop();
+                        for (const auto& node: paths[cpid]) {
+                            for (const auto& c: base) {
+                                auto next = forward(kmers, kmerv, node, c);
+                                if (next == INF) continue;
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
-                                auto next_pid = it->second;
-                                if (in_pord[next_pid] || next_pid == pcyc[ii]) continue;
-                                pord.emplace_back(next_pid);
-                                in_pord[next_pid] = 1;
-
-                                if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
-                                else {pntc.emplace_back(distb); distb = 0;}
+                                auto npid = it->second;
+                                if (in_ord[npid]) continue;
+                                q.push(npid);
+                                ord.emplace_back(1, npid);
+                                in_ord[npid] = 1;
+                                pnt.emplace_back(pos);
                             }
-                            if (proceed) {
-                                pord.emplace_back(pcyc[ii]);
-                                in_pord[pcyc[ii]] = 1;
-                                if (flg) {pntc.emplace_back(ofst + jj); --flg; distb = 0;}
-                                else {pntc.emplace_back(distb); distb = 0;}
-                                path.erase(path.begin(), path.begin() + jj + 1);
-                                break;
-                            }
-                            ++distb;
+                            ++pos;
+                            progress(pos, S, "Pointing");
                         }
-                        if (proceed == 0) {cerr << "ERROR: ENDED SCANNING PATH WITH proceed = 0\n"; exit(1);}
+                        ++pos;
                     }
-                    cycles.emplace_back(new_cycle);
-                    ofst = 2;
-
-                    // debug
-                    INT sb = (INT)new_cycle.size();
-                    for (const auto& pid: pcyc) sb += paths[pid].size();
-                    if (sa != sb) {cerr << "ERROR: TOTAL COUNT OF NODES DOESN'T PRESERVE AT THIS RESOLVING PROCESS\n"; exit(1);}
-
-                    if ((INT)pord.size() == P) goto end;
                     break;
                 }
             }
-            if (P - pord.size() == remains) {
-                cerr << "ERROR: INFINITE LOOP!\n";
-                exit(1);
-            }
-            cout << "Resolved\n"
-                 << "#remaining paths = " << P - pord.size() << "\n\n";
         }
-        end:
         finished("Pointing");
-
-        if (P - pord.size() == 0) 
-            cout << "\n\nAll paths are pointed.\n\n";
+        
+        // for check
+        INT res = count(in_ord.begin(), in_ord.end(), 0);
+        if (res == 0) cout << "\n\nAll paths are pointed.\n\n";
         else {
-            cout << "\n\n" << P - pord.size() << " paths are not pointed.\n";
-            for (INT i = 0; i < P; ++i) if (!in_pord[i]) cout << "path" << i << " was not added\n";
+            cout << "\n\n" << res << " paths are not pointed.\n";
+            for (INT i = 0; i < P; ++i) if (!in_ord[i])
+                cout << "path" << i << " not added\n";
             cout << "\n\n";
         }
-        cout << "#newly found cycles = " << pcycs_count << "\n";
+        cout << "#new cycles = " << ncycs << "\n";
 
-        // size check of pord
-        if (pord.size() != P) {
-            cout << "FORCED EXITING --> pord.size() != P (Error)\n";
-            exit(1);
+        // take difference of pnt
+        for (INT i = (INT)pnt.size() - 1; i > 0; --i) {
+            pnt[i] -= pnt[i - 1];
         }
 
-        // duplicate check in pord
-        Vint seen(P, 0);
-        for (const auto& pid: pord) {
-            if (seen[pid]) {
-                cout << "FORCED EXITING --> exist duplicate of path ID in pord (Error)\n";
-                exit(1);
-            }
-            seen[pid] = 1;
-        }
-
-        if (pntp.size()) pntp[0] += ofst; // because there is a delimiter in between
-        
-        // temporary (to calc the size of tree representation)
-        INT R = (INT)root_paths.size();
-        cout << "Size of tree rep. :  " << N + (cycles.size() + R + pcycs_count - 1) + 2 * (P - R) + K * R << "\n\n";
-
-        // representation
+        // generate text rep
         string txt;
-        VINT pnt;
-        pnt.insert(pnt.end(), pntc.begin(), pntc.end());
-        pnt.insert(pnt.end(), pntp.begin(), pntp.end());
-        if (pnt.size() != P) {
-            cerr << "WRONG NUMBER OF POINTERS!\n";
-            exit(1);
+        for (const auto& e: ord) {
+            auto is_path = e.first;
+            auto id = e.second;
+            if (is_path) {
+                auto path = paths[id];
+                if (roots.find(id) != roots.end())
+                    txt += "$" + decode_kmer(kmerv[path[0]], K).substr(0, K - 1);
+                for (const auto& node: path)
+                    txt += decode_base(kmerv[node] % 4);
+            } else {
+                auto cycle = cycles[id];
+                txt += "*";
+                for (const auto& node: cycle)
+                    txt += decode_base(kmerv[node] % 4);
+            }
+            txt += "$";
         }
+        if (!txt.empty()) txt.pop_back();
 
-        for (const auto& cycle: cycles) {
-            for (const auto& node: cycle) {
-                auto c = decode_base(kmerv[node] % 4);
-                txt += c;
-            } 
-            txt += "$";
-        } 
-        for (const auto& pid: pord) {
-            if (root_paths.find(pid) != root_paths.end())
-                txt += "$" + decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1);
-            for (const auto& node: paths[pid]) {
-                auto c = decode_base(kmerv[node] % 4);
-                txt += c;
-            } 
-            txt += "$";
-        } if(!txt.empty()) txt.pop_back();
-        
         return {txt, pnt};
     }
 
