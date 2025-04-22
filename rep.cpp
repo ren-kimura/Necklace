@@ -9,6 +9,7 @@
 #include <memory_resource>
 #include <string>
 #include <vector>
+#include <stack>
 #include <queue>
 #include <array> // sada
 #include <tuple> // sada
@@ -1098,27 +1099,23 @@ public:
         return {txt, pnt};
     }
 
-    string new_tree(UMAP& kmers, const VINT& kmerv, INT& pid, VVINT& paths, Vint& embedded) {
-        if (embedded[pid]) return "";
-        embedded[pid] = 1;
-
-        string s;
+    string write_subtree(INT pid, VVINT& paths, UMAP& kmers, const VINT& kmerv, 
+                         UMAP& heads, Vint& visited) {
+        if (visited[pid]) return "";
+        visited[pid] = 1;
         auto path = paths[pid];
-        auto it = heads.find(path[0]);
-        if (it != heads.end())
-            heads.erase(it);
-        INT p = path.size();
-        for (INT i = 0; i < p; ++i) {
-            auto node = path[i];
+
+        string s;        
+        for (const auto& node: path) {
             s += decode_base(kmerv[node] % 4);
             for (const auto& c: base) {
                 auto next = forward(kmers, kmerv, node, c);
-                if (next == INF || next == path[0]) continue;
-                auto itit = heads.find(next);
-                if (itit == heads.end()) continue;
-                auto next_pid = itit->second;
-                string t = new_tree(kmers, kmerv, next_pid, paths, embedded);
-                if (!t.empty()) s += "(" + t + ")";
+                if (next == INF) continue;
+                auto it = heads.find(next);
+                if (it == heads.end()) continue;
+                auto npid = it->second;
+                if (visited[npid]) continue;
+                s += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
             }
         }
         return s;
@@ -1126,103 +1123,95 @@ public:
 
     REP forest(UMAP& kmers, const VINT& kmerv,
         VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-        VSTR ss;
-        INT C = CnP.first, P = CnP.second, S = C + P, n = 0, nn = 0;
-        USET root_paths;
-        // Vint memo(P, 0);
-        
+        string txt;
+        INT P = CnP.second, S = CnP.first + P, n = 0, ncycs = 0;
+        USET roots;        
         for (INT i = 0; i < P; ++i) {
-            if (inv_adj[paths[i][0]].empty()){
-                root_paths.insert(i);
-            }
-            else heads[paths[i][0]] = i; // record paths' heads
+            if (inv_adj[paths[i][0]].empty()) roots.insert(i);
+            else heads[paths[i][0]] = i;
         }
-        cout << "# root_paths = " << root_paths.size() << "\n";
-        Vint embedded(P, 0); // 1 iff path already embedded
+        cout << "\n(#non-root paths, #root paths) = (" << heads.size() << ", "
+             << roots.size() << ")\n";
 
-        for (INT i = 0; i < C; ++i, ++n) {
-            string s;
-            auto cycle = cycles[i];
+        Vint visited(P, 0); // 1 iff path already embedded
+
+        for (const auto& pid: roots) {
+            txt += decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1)
+                   + write_subtree(pid, paths, kmers, kmerv, heads, visited)
+                   + ",";
+            ++n; progress(n, S, "Finding pseudoforest");
+        }
+
+        for (const auto& cycle: cycles) {
+            txt += "*";
             for (const auto& node: cycle) {
-                s += decode_base(kmerv[node] % 4);
+                txt += decode_base(kmerv[node] % 4);
                 for (const auto& c: base) {
                     auto next = forward(kmers, kmerv, node, c);
-                    if (next == INF || next == cycle[(i + 1) % cycle.size()]) continue;
+                    if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
-                    auto pid = it->second;
-                    string t = new_tree(kmers, kmerv, pid, paths, embedded);
-                    s += "(" + t + ")";
+                    auto npid = it->second;
+                    if (visited[npid]) continue;
+                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
                 }
             }
-            ss.emplace_back(s);
-            progress(n, S, "Constructing trees");
+            txt += ","; ++n; progress(n, S, "Finding pseudoforest");
         }
-
-        for (auto root_path: root_paths) {
-            string s = new_tree(kmers, kmerv, root_path, paths, embedded);
-            auto head = paths[root_path][0];
-            ss.emplace_back("*" + decode_kmer(kmerv[head], K).substr(0, K - 1) + s);
-            ++n;
-            progress(n, S, "Constructing trees");
-        }
-
-        for (INT p = 0; p < P; ++p) {
-            if (embedded[p]) continue;
-            Vint visited(P, 0);
-            VINT new_cycle = find_new_cycle(p, paths, embedded, kmers, kmerv, visited);
-            if (!new_cycle.empty()) {                
-                INT R = (INT)(new_cycle.size()), i = 0; ++nn;
-                USET new_cycle_pids;
-                while (i < R) {
-                    auto it = heads.find(new_cycle[i]);
-                    if (it != heads.end()) {
-                        auto pid = it->second;
-                        new_cycle_pids.insert(pid);
-                        heads.erase(it);
-                        auto& path = paths[pid];
-                        INT j = 0;
-                        while (i < R && j < (INT)path.size() && new_cycle[i] == path[j]) {
-                            ++i; ++j;
+        while (INT res = count(visited.begin(), visited.end(), 0)) {
+            cout << "\n\n#residue paths = " << res << "\n"
+                 << "Searching for a new cycle...";
+            for (INT i = 0; i < P; ++i) {
+                if (visited[i]) continue;
+                Vint vis(P, 0);
+                VINT pids = find_new_cycle(i, paths, visited, kmers, kmerv, vis);
+                if (!pids.empty()) {
+                    cout << "\rFound a cycle of " << pids.size() << " paths          \n";
+                    ++ncycs;
+                    VINT cycle;
+                    INT p = (INT)pids.size();
+                    for (INT j = 0; j < p; ++j) {
+                        auto& path = paths[pids[j]];
+                        auto h = (INT)path.size();
+                        for (INT k = 0; k < h; ++k) {
+                            auto node = path[k];
+                            cycle.emplace_back(node);
+                            for (auto& c: base) {
+                                auto next = forward(kmers, kmerv, node, c);
+                                if (next == INF) continue;
+                                if (next == paths[pids[(j + 1) % p]][0]) {
+                                    // trim cycle portion from path, and renew heads
+                                    heads.erase(path[0]);
+                                    path.erase(path.begin(), path.begin() + k + 1);
+                                    heads[path[0]] = pids[j];
+                                    goto endj;
+                                }
+                            }
                         }
-                        if (j < (INT)path.size())
-                            heads[path[j]] = pid;
-                        else
-                            {cerr << "out of bound.\n"; exit(1);}
-                        path.erase(path.begin(), path.begin() + j);
+                        endj:;
                     }
-                }
-
-                string s;
-                for (const auto& node: new_cycle) {
-                    s += decode_base(kmerv[node] % 4);
-                    for (const auto& c: base) {
-                        auto next = forward(kmers, kmerv, node, c);
-                        if (next == INF || next == new_cycle[(i + 1) % new_cycle.size()]) continue;
-                        auto it = heads.find(next);
-                        if (it == heads.end()) continue;
-                        auto pid = it->second;
-                        string t = new_tree(kmers, kmerv, pid, paths, embedded);
-                        s += "(" + t + ")";
+                    cycles.emplace_back(cycle);
+                    txt += "*";
+                    for (const auto& node: cycle) {
+                        for (const auto& c: base) {
+                            auto next = forward(kmers, kmerv, node, c);
+                            if (next == INF) continue;
+                            auto it = heads.find(next);
+                            if (it == heads.end()) continue;
+                            auto npid = it->second;
+                            if (visited[npid]) continue;
+                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
+                        }
                     }
+                    txt += ","; ++n; progress(n, S, "Finding pseudoforest");
+                    break;
                 }
-                ss.emplace_back(s);                               
             }
-            progress(n, S, "Constructing trees");
         }
-        finished("Constructing trees");
-        cout << "\n\n";
+        finished("Finding pseudoforest");
+        cout << "\n";
 
-        // debug
-        cout << "# new_cycles = " << nn << "\n";
-        INT count = 0;
-        for (const auto& e: embedded) if (!e) ++count;
-        cout << "# unembedded paths = " << count << "\n\n";
-
-        string txt;
-        for (const auto& s: ss) txt += s + ",";
         if (!txt.empty()) txt.pop_back();
-
         return {txt, {}};
     }
 
