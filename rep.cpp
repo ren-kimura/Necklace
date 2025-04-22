@@ -909,7 +909,7 @@ public:
             q.push(pid);
             ord.emplace_back(1, pid);
             in_ord[pid] = 1;
-            ++pos; // extra "$" before a root path
+            pos += K; // extra "$" and K-1 letters before a root path
 
             while (!q.empty()) {
                 auto cpid = q.front();
