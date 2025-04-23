@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <unistd.h>
 #include <memory_resource>
+#include <sys/resource.h>
 #include <string>
 #include <vector>
 #include <stack>
@@ -36,6 +37,12 @@ const INT INF = UINT64_MAX;
 
 size_t get_available_memory() {
     return sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
+}
+
+size_t get_peak_memory_kb() {
+    struct rusage usage;
+    getrusage(RUSAGE_SELF, &usage);
+    return usage.ru_maxrss; // in kilobytes
 }
 
 void progress(INT now, INT total, const string& task) {
@@ -83,21 +90,16 @@ string get_current_timestamp() {
     return ss.str();
 }
 
-size_t get_memory_usage() {
-    size_t memory_used = sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
-    return memory_used / (1024 * 1024);
-}
-
-void log_time_and_memory(const string& task_name, const chrono::duration<double>& elapsed_time, size_t memory_usage, ofstream& logfile) {
+void log_time(const string& task_name, const chrono::duration<double>& elapsed_time, ofstream& logfile) {
     string task_name_trimmed = task_name.substr(0, 20);
 
     logfile << left << setw(20) << task_name_trimmed
             << setw(20) << fixed << setprecision(4) << elapsed_time.count()
-            << setw(20) << memory_usage << "\n";
+            << "\n";
 
     cout << left << setw(20) << task_name_trimmed
          << setw(20) << fixed << setprecision(4) << elapsed_time.count()
-         << setw(20) << memory_usage << "\n";
+         << "\n";
 }
 
 void print_table_header(ofstream& logfile) {
@@ -106,13 +108,13 @@ void print_table_header(ofstream& logfile) {
     logfile << string(col_width * 3, '-') << "\n";
     logfile << left << setw(col_width) << "Task name"
             << setw(col_width) << "Time (s)"
-            << setw(col_width) << "Memory (MB)" << endl;
+            << endl;
     logfile << string(col_width * 3, '-') << "\n"; 
 
     cout << string(col_width * 3, '-') << "\n";
     cout << left << setw(col_width) << "Task name"
          << setw(col_width) << "Time (s)"
-         << setw(col_width) << "Memory (MB)" << endl;
+         << endl;
     cout << string(col_width * 3, '-') << "\n"; 
 }
 
@@ -195,8 +197,6 @@ public:
     INT process() {
         string timestamp = get_current_timestamp();
         cout << "Timestamp: " << timestamp << "\n";
-        size_t initial_memory = get_memory_usage();
-        cout << "Initial Memory: " << initial_memory << " MB\n\n";
         
         INT S = get_kmers(k_minus_1mers, kmers);
         return S;
@@ -309,7 +309,7 @@ public:
             if (val > 0) S += val;
         }
         cout << "Number of breaking edges: " << S << "\n\n";
-        return S * (K - 1) + M;
+        return S * (K - 1) + M + (S - 1); // prefix + non-prefix + delim
     }
 };
 
@@ -355,16 +355,12 @@ public:
         logfile << "Timestamp: " << timestamp << "\n";
         cout << "Timestamp: " << timestamp << "\n";
 
-        size_t initial_memory = get_memory_usage();
-        logfile << "Initial Memory: " << initial_memory << " MB\n\n";
-        cout << "Initial Memory: " << initial_memory << " MB\n\n";
         VINT kmerv; 
         
         auto start_time = chrono::high_resolution_clock::now();
         INT N = get_kmers(kmers, kmerv);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
-        size_t get_kmers_memory = get_memory_usage();
 
         VVINT adj(N), inv_adj(N);
 
@@ -372,7 +368,6 @@ public:
         INT E = add_edges(kmers, kmerv, N, adj, inv_adj);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> add_edges_time = end_time - start_time;
-        size_t add_edges_memory = get_memory_usage();
 
         VINT match_u, match_v;
 
@@ -380,7 +375,6 @@ public:
         INT M = hopcroft_karp(N, adj, match_u, match_v);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> hopcroft_karp_time = end_time - start_time;
-        size_t hopcroft_karp_memory = get_memory_usage();
 
         VVINT cycles, paths;
 
@@ -388,7 +382,6 @@ public:
         PINT CnP = decompose(N, match_u, match_v, cycles, paths);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> decompose_time = end_time - start_time;
-        size_t decompose_memory = get_memory_usage();
 
         cout << "\n(#k-mers, #edges, #matching, #cycles, #paths)\n= (" 
             << N << ", " << E << ", " << M << ", "
@@ -396,35 +389,30 @@ public:
 
         REP rep;
         chrono::duration<double> align_time;
-        size_t align_memory = 0;
         if (option == 0) {
             // plain
             start_time = chrono::high_resolution_clock::now();
             rep = plain(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-            align_memory = get_memory_usage();
         } else if (option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
             rep = unsorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-            align_memory = get_memory_usage();
         } else if (option == 2) {
             // sorted
             start_time = chrono::high_resolution_clock::now();
             rep = sorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-            align_memory = get_memory_usage();
         } else if (option == 3) {
             // tree (BP)
             start_time = chrono::high_resolution_clock::now();
             rep = forest(kmers, kmerv, inv_adj, cycles, paths, CnP);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-            align_memory = get_memory_usage();
         } else {
             cerr << "Invalid option !\n";
             exit(1);
@@ -432,24 +420,24 @@ public:
 
         // display benchmarks
         print_table_header(logfile);
-        log_time_and_memory("get_kmers", get_kmers_time, get_kmers_memory, logfile);
-        log_time_and_memory("add_edges", add_edges_time, add_edges_memory, logfile);
-        log_time_and_memory("hopcroft_karp", hopcroft_karp_time, hopcroft_karp_memory, logfile);
-        log_time_and_memory("decompose", decompose_time, decompose_memory, logfile);
-        log_time_and_memory((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
-                            align_time, align_memory, logfile);
+        log_time("get_kmers", get_kmers_time, logfile);
+        log_time("add_edges", add_edges_time, logfile);
+        log_time("hopcroft_karp", hopcroft_karp_time, logfile);
+        log_time("decompose", decompose_time, logfile);
+        log_time((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
+                            align_time, logfile);
         logfile << string(60, '-');
         cout << string(60, '-');
-
-        size_t final_memory = get_memory_usage();
-        logfile << "\n\nFinal Memory: " << final_memory << " MB\n";
-        cout << "\nFinal Memory: " << final_memory << " MB\n";
 
         auto total_time = get_kmers_time.count() + add_edges_time.count()
                           + hopcroft_karp_time.count() + decompose_time.count()
                           + align_time.count();
-        logfile << "Total time: " << total_time << " s\n";
-        cout << "Total time: " << total_time << " s\n";
+        logfile << "\nTotal time: " << total_time << " s\n";
+        cout << "\nTotal time: " << total_time << " s\n";
+
+        size_t peak_memory_kb = get_peak_memory_kb();
+        logfile << "Peak memory: " << peak_memory_kb << " KB\n";
+        cout << "Peak memory: " << peak_memory_kb << " KB\n";
         logfile.close();
 
         return rep;
@@ -1158,15 +1146,16 @@ public:
             }
             txt += ","; ++n; progress(n, S, "Finding pseudoforest");
         }
+        cout << "\n";
+
         while (INT res = count(visited.begin(), visited.end(), 0)) {
-            cout << "\n\n#residue paths = " << res << "\n"
-                 << "Searching for a new cycle...";
+            cout << "\r#residue paths = " << res << ", searching for a new cycle..." << flush;
             for (INT i = 0; i < P; ++i) {
                 if (visited[i]) continue;
                 Vint vis(P, 0);
                 VINT pids = find_new_cycle(i, paths, visited, kmers, kmerv, vis);
                 if (!pids.empty()) {
-                    cout << "\rFound a cycle of " << pids.size() << " paths          \n";
+                    cout << "\r#residue paths = " << count(visited.begin(), visited.end(), 0) << ", found a cycle of " << pids.size() << " paths          " << flush;
                     ++ncycs;
                     VINT cycle;
                     INT p = (INT)pids.size();
@@ -1216,10 +1205,11 @@ public:
     }
 
     void write(const REP& rep) {
+        // --- Write .txt file ---
         if (rep.first.empty()) {
-            cerr << "Error: txt is empty.\n";
-            return;
+            cerr << "Note: txt is empty.\n";
         }
+    
         string txtfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
@@ -1228,41 +1218,52 @@ public:
         }
         txtfile << rep.first;
         txtfile.close();
-        cout << "\nFile created: " << path_to_filename(txtfilename, '/');
+    
         fs::path txtfilepath = txtfilename;
         auto txtfilesize = fs::file_size(txtfilepath);
-        cout << " (File Size: " << txtfilesize << " B)\n";
-
+        cout << "\nFile created: " << path_to_filename(txtfilename, '/')
+             << " (File Size: " << txtfilesize << " B)\n";
+    
+        // --- Write .pnt.txt only if rep.second is non-empty ---
+        string pntfilename;
+        size_t pntfilesize = 0;
+        bool wrote_pnt = false;
+    
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
-            return;
+        } else {
+            pntfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
+            ofstream pntfile(pntfilename);
+            if (!pntfile) {
+                cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
+                return;
+            }
+            for (const auto& p : rep.second)
+                pntfile << p << ",";
+            pntfile.close();
+    
+            fs::path pntfilepath = pntfilename;
+            pntfilesize = fs::file_size(pntfilepath);
+            cout << "File created: " << path_to_filename(pntfilename, '/')
+                 << " (File Size: " << pntfilesize << " B)\n";
+    
+            wrote_pnt = true;
         }
-        string pntfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
-        ofstream pntfile(pntfilename);
-        if (!pntfile) {
-            cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
-            return;
-        }
-        for (const auto& p: rep.second)
-            pntfile << p << ",";
-        pntfile.close();
-        cout << "File created: " << path_to_filename(pntfilename, '/');
-        fs::path pntfilepath = pntfilename;
-        auto pntfilesize = fs::file_size(pntfilepath);
-        cout << " (File Size: " << pntfilesize << " B)\n";
-
-        // record output size on logfile
+    
+        // --- Log file ---
         ofstream logfile(logfilename, ios::app);
         if (!logfile) {
             cerr << "Error: Could not open file " << logfilename << " for writing.\n";
             return;
         }
         logfile << "\nFile created: " << path_to_filename(txtfilename, '/')
-                << " (File Size: " << txtfilesize << " B)\n"
-                << "File created: " << path_to_filename(pntfilename, '/')
-                << " (File Size: " << pntfilesize << " B)\n";
+                << " (File Size: " << txtfilesize << " B)\n";
+        if (wrote_pnt) {
+            logfile << "File created: " << path_to_filename(pntfilename, '/')
+                    << " (File Size: " << pntfilesize << " B)\n";
+        }
         logfile.close();
-    }
+    }    
 };
 
 void print_usage(string cmdname) {
