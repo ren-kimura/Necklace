@@ -105,17 +105,17 @@ void log_time(const string& task_name, const chrono::duration<double>& elapsed_t
 void print_table_header(ofstream& logfile) {
     const int col_width = 20;
 
-    logfile << string(col_width * 3, '-') << "\n";
+    logfile << string(30, '-') << "\n";
     logfile << left << setw(col_width) << "Task name"
             << setw(col_width) << "Time (s)"
             << endl;
-    logfile << string(col_width * 3, '-') << "\n"; 
+    logfile << string(30, '-') << "\n"; 
 
-    cout << string(col_width * 3, '-') << "\n";
+    cout << string(30, '-') << "\n";
     cout << left << setw(col_width) << "Task name"
          << setw(col_width) << "Time (s)"
          << endl;
-    cout << string(col_width * 3, '-') << "\n"; 
+    cout << string(30, '-') << "\n"; 
 }
 
 void to_uppercase(VSTR& strs) {
@@ -339,7 +339,7 @@ public:
             cerr << "\nInvalid option value\n";
             exit(1);
         }
-        logfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".log";
+        logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
         kmers.reserve(reserve_size);
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
@@ -426,8 +426,8 @@ public:
         log_time("decompose", decompose_time, logfile);
         log_time((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
                             align_time, logfile);
-        logfile << string(60, '-');
-        cout << string(60, '-');
+        logfile << string(30, '-');
+        cout << string(30, '-');
 
         auto total_time = get_kmers_time.count() + add_edges_time.count()
                           + hopcroft_karp_time.count() + decompose_time.count()
@@ -1210,7 +1210,7 @@ public:
             cerr << "Note: txt is empty.\n";
         }
     
-        string txtfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -1232,7 +1232,7 @@ public:
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
         } else {
-            pntfilename = remove_extension(filename, ".fa") + ".ours.k" + to_string(K) + ".opt" + to_string(option) + ".pnt.txt";
+            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + "p.txt";
             ofstream pntfile(pntfilename);
             if (!pntfile) {
                 cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
