@@ -1,7 +1,7 @@
-all: rep.out
+all: rep
 
-rep.out: rep.cpp
-	g++ -std=c++23 -o rep.out rep.cpp -g -Wall -Wextra -fsanitize=undefined -Wno-deprecated -O3
+rep: rep.cpp
+	g++ -std=c++23 -o rep rep.cpp -g -Wall -Wextra -fsanitize=undefined -Wno-deprecated -O3
 
-memcheck: rep.out
-	valgrind --leak-check=full --show-leak-kinds=all ./rep.out
+memcheck: rep
+	valgrind --leak-check=full --show-leak-kinds=all ./rep
