@@ -1196,6 +1196,11 @@ public:
                     break;
                 }
             }
+            // debug
+            if ((INT)count(visited.begin(), visited.end(), 0) == res) {
+                cerr << "ERROR: no new cycle found in remaining paths\n";
+                exit(1);
+            }
         }
         finished("Finding pseudoforest");
         cout << "\n";
@@ -1281,7 +1286,19 @@ int main(int argc, char *argv[]) {
         print_usage(argv[0]);
         return 1;
     }
+    
     string _filename = argv[2];
+    filesystem::path filepath(_filename);
+    string ext = filepath.extension().string();
+    if (ext.empty()) {
+        _filename += ".fa";
+        cout << "No extension detected. Appending '.fa': " << _filename << "\n";
+    } else if (ext != ".fa" && ext != ".fna" && ext != ".fasta") {
+        cerr << "Invalid extension (must be \".fa\", \".fna\" or \".fasta\")\n\n";
+        print_usage(argv[0]);
+        return 1;
+    }
+
     INT _K = atoi(argv[3]);
 
     // calc size of undirected eulertigs
