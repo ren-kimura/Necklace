@@ -357,35 +357,27 @@ public:
 
         VINT kmerv; 
         
-        auto start_time = chrono::high_resolution_clock::now();
-        INT N = get_kmers(kmers, kmerv);
+        auto start_time = chrono::high_resolution_clock::now();        
+        get_kmers(kmers, kmerv);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
-
-        VVINT adj(N), inv_adj(N);
-
-        start_time = chrono::high_resolution_clock::now();
-        INT E = add_edges(kmers, kmerv, N, adj, inv_adj);
-        end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> add_edges_time = end_time - start_time;
 
         VINT match_u, match_v;
 
         start_time = chrono::high_resolution_clock::now();
-        INT M = hopcroft_karp(N, adj, match_u, match_v);
+        INT M = hopcroft_karp(kmers, kmerv, match_u, match_v);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> hopcroft_karp_time = end_time - start_time;
 
         VVINT cycles, paths;
 
         start_time = chrono::high_resolution_clock::now();
-        PINT CnP = decompose(N, match_u, match_v, cycles, paths);
+        decompose(match_u, match_v, cycles, paths);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> decompose_time = end_time - start_time;
 
-        cout << "\n(#k-mers, #edges, #matching, #cycles, #paths)\n= (" 
-            << N << ", " << E << ", " << M << ", "
-            << CnP.first << ", " << CnP.second << ")\n";
+        cout << "\n# of (k-mers, matching, cycles, paths)\n= (" 
+            << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
 
         REP rep;
         chrono::duration<double> align_time;
@@ -398,19 +390,19 @@ public:
         } else if (option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
-            rep = unsorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
+            rep = unsorted(kmers, kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else if (option == 2) {
             // sorted
             start_time = chrono::high_resolution_clock::now();
-            rep = sorted(kmers, N, kmerv, inv_adj, cycles, paths, CnP);
+            rep = sorted(kmers, kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else if (option == 3) {
             // tree (BP)
             start_time = chrono::high_resolution_clock::now();
-            rep = forest(kmers, kmerv, inv_adj, cycles, paths, CnP);
+            rep = forest(kmers, kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else {
@@ -421,7 +413,6 @@ public:
         // display benchmarks
         print_table_header(logfile);
         log_time("get_kmers", get_kmers_time, logfile);
-        log_time("add_edges", add_edges_time, logfile);
         log_time("hopcroft_karp", hopcroft_karp_time, logfile);
         log_time("decompose", decompose_time, logfile);
         log_time((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
@@ -429,7 +420,7 @@ public:
         logfile << string(30, '-');
         cout << string(30, '-');
 
-        auto total_time = get_kmers_time.count() + add_edges_time.count()
+        auto total_time = get_kmers_time.count() + 
                           + hopcroft_karp_time.count() + decompose_time.count()
                           + align_time.count();
         logfile << "\nTotal time: " << total_time << " s\n";
@@ -443,7 +434,7 @@ public:
         return rep;
     }
 
-    INT get_kmers(UMAP& kmers, VINT& kmerv) {
+    void get_kmers(UMAP& kmers, VINT& kmerv) {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
@@ -529,61 +520,41 @@ public:
                         exit(1);
                     }
                 }
-
                 progress(footing + j, tlen, "Detecting k-mers");
             }
             footing += len;
         }
         finished("Detecting k-mers");
-
-        INT N = kmers.size();
-        cout << "\nTotal number of k-mers: " << N << "\n\n";
-        return N;
     }
 
-    INT forward(UMAP& kmers, const VINT& kmerv, INT id, char c) {
+    INT step(const UMAP& kmers, const VINT& kmerv, INT id, char c, bool is_forward) {
         INT hash = kmerv[id]; 
         if (hash == INF) return INF;
 
-        INT mask = (1ULL << (2 * (K - 1))) - 1;
-        hash = (hash & mask) << 2;
+        if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
 
-        if (c == 'A')       hash |= 0;
-        else if (c == 'C')  hash |= 1;
-        else if (c == 'G')  hash |= 2;
-        else if (c == 'T')  hash |= 3;
-        else return INF; // invalid for non-ACGT c
+        if (is_forward) {
+            INT mask = (1ULL << (2 * (K - 1))) - 1;
+            hash = (hash & mask) << 2;
+            if (c == 'C')       hash |= 1;
+            else if (c == 'G')  hash |= 2;
+            else if (c == 'T')  hash |= 3;
+        } else {
+            hash >>= 2;
+            if (c == 'C')       hash |= (1ULL << (2 * (K - 1)));
+            else if (c == 'G')  hash |= (2ULL << (2 * (K - 1)));
+            else if (c == 'T')  hash |= (3ULL << (2 * (K - 1)));
+        }
 
-        if (kmers.find(hash) != kmers.end() && kmers[hash] != id)
-            return kmers[hash];
+        auto it = kmers.find(hash);
+        if (it != kmers.end() && it->second != id)
+            return it->second;
         
         return INF; // no branch to c
     }
 
-    INT add_edges(UMAP& kmers, const VINT& kmerv, const INT& N, VVINT& adj, VVINT& inv_adj) {
-        INT cnt = 0, E = 0;
-        adj.resize(N);
-        inv_adj.resize(N);
-        for (const auto& entry : kmers) {
-            auto id = entry.second;
-            for (auto const c : base) {
-                auto next_id = forward(kmers, kmerv, id, c);
-                if (next_id != INF && next_id != id) {
-                    adj[id].emplace_back(next_id);
-                    inv_adj[next_id].emplace_back(id);
-                    ++E;
-                }
-            }
-            progress(++cnt, N, "Constructing de Bruijn graph");
-        }
-        finished("Constructing de Bruijn graph");
-
-        cout << "\nTotal number of edges: " << E << "\n\n";
-        return E;
-    }
-
-    bool bfs (const INT& N, const VVINT& adj, 
-            const VINT& match_u, const VINT& match_v, VINT& dist) {
+    bool bfs (const UMAP& kmers, const VINT& kmerv, const VINT& match_u, const VINT& match_v, VINT& dist) {
+        INT N = (INT)kmers.size();
         queue<INT> q;
         bool found_augpath = false;
         for (INT u = 0; u < N; ++u) {
@@ -595,7 +566,10 @@ public:
         while (!q.empty()) {
             INT u = q.front();
             q.pop();
-            for (auto v : adj[u]) {
+            for (auto c: base) {
+                auto v = step(kmers, kmerv, u, c, true);
+                if (v == INF) continue;
+
                 if (match_v[v] == INF) {
                     found_augpath = true;
                 } else if (dist[match_v[v]] == INF) {
@@ -607,10 +581,13 @@ public:
         return found_augpath;
     }
 
-    bool dfs (const VVINT& adj, VINT& match_u, VINT& match_v, 
+    bool dfs (const UMAP& kmers, const VINT& kmerv, VINT& match_u, VINT& match_v, 
             VINT& dist, INT u) {
-        for (auto v : adj[u]) {
-            if (match_v[v] == INF || (dist[match_v[v]] == dist[u] + 1 && dfs(adj, match_u, match_v, dist, match_v[v]))) {
+        for (auto c: base) {
+            auto v = step(kmers, kmerv, u, c, true);
+            if (v == INF) continue;
+
+            if (match_v[v] == INF || (dist[match_v[v]] == dist[u] + 1 && dfs(kmers, kmerv, match_u, match_v, dist, match_v[v]))) {
                 match_u[u] = v;
                 match_v[v] = u;
                 return true;
@@ -620,15 +597,15 @@ public:
         return false;
     }
 
-    INT hopcroft_karp(const INT& N, const VVINT& adj, VINT& match_u,
-                VINT& match_v) {
+    INT hopcroft_karp(const UMAP& kmers, const VINT& kmerv, VINT& match_u, VINT& match_v) {
+        INT N = (INT)kmers.size();
         VINT dist(N); // distance of bfs
         INT M = 0;
         match_u.assign(N, INF);
         match_v.assign(N, INF);
-        while (bfs(N, adj, match_u, match_v, dist)) {
+        while (bfs(kmers, kmerv, match_u, match_v, dist)) {
             for (INT u = 0; u < N; ++u) {
-                if (match_u[u] == INF && dfs(adj, match_u, match_v, dist, u))
+                if (match_u[u] == INF && dfs(kmers, kmerv, match_u, match_v, dist, u))
                     M++; // found an augpath
             }
             progress(M, N, "Maximum matching");
@@ -674,8 +651,8 @@ public:
         return lrt;
     }
 
-    PINT decompose(const INT& N, const VINT& match_u, const VINT& match_v,
-                VVINT& cycles, VVINT& paths) {
+    PINT decompose(const VINT& match_u, const VINT& match_v, VVINT& cycles, VVINT& paths) {
+        INT N = (INT)kmers.size();
         Vint seen_u(N, 0);
         Vint seen_v(N, 0);
 
@@ -755,21 +732,31 @@ public:
         return {txt, {}};
     }
 
-    REP unsorted(UMAP& kmers, const INT& N, const VINT& kmerv,
-                const VVINT& inv_adj, const VVINT& cycles, const VVINT& paths, const PINT& CnP) {
-        INT P = CnP.second;  
-        INT S = CnP.first + P + N;
-        USET self_paths;
-        for (INT i = 0; i < P; ++i)
-            if (inv_adj[paths[i][0]].empty())
-                self_paths.insert(i);
-            else heads[paths[i][0]] = i; // record paths' heads
+    REP unsorted(const UMAP& kmers, const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
+        INT N = (INT)kmers.size();
+        INT C = (INT)cycles.size();
+        INT P = (INT)paths.size(); 
+        INT S = N + C + P;
+
+        USET root_paths;
+        for (INT i = 0; i < P; ++i){
+            bool is_root_path = true;
+            INT head = paths[i][0];
+            for (auto c: base) {
+                if (!is_root_path) continue;
+                if (step(kmers, kmerv, head, c, false) != INF)
+                    is_root_path = false;
+            }
+            if (is_root_path) root_paths.insert(i);
+            else heads[paths[i][0]] = i;
+        }
+
         INT pos = 0;
         VINT pnt(P, -1);
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
+                    auto next = step(kmers, kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -783,7 +770,7 @@ public:
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
+                    auto next = step(kmers, kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -794,15 +781,28 @@ public:
                 progress(pos, S, "Pointing");
             } pos++;
         }
-        for (const auto& pid: self_paths) {
+        for (const auto& pid: root_paths) {
             pnt[pid] = pos;
-            pos += paths[pid].size() + 1;
+            auto path = paths[pid];
+            for (const auto& node: path) {
+                for (const auto& c: base) {
+                    auto next = step(kmers, kmerv, node, c, true);
+                    if (next == INF) continue;
+                    auto it = heads.find(next);
+                    if (it == heads.end()) continue;
+                    pnt[heads[next]] = pos;
+                    heads.erase(it);
+                    if (heads.empty()) goto end;
+                } pos++;
+                progress(pos, S, "Pointing");
+            } pos++;
         }
         finished("Pointing");
         end:
         if (heads.empty()) 
             cout << "\nAll paths are pointed.\n";
         else cout << "\n" << heads.size() << " paths are not pointed.\n";
+
         // generate representation
         string txt;
         for (const auto& cycle: cycles) {
@@ -812,7 +812,7 @@ public:
             } txt += "$";
         } for (INT i = 0; i < P; ++i) {
             auto path = paths[i];
-            if (self_paths.find(i) != self_paths.end())
+            if (root_paths.find(i) != root_paths.end())
                 txt += "$" + decode_kmer(kmerv[path[0]], K).substr(0, K - 1);
             for (const auto& node: path) {
                 auto c = decode_base(kmerv[node] % 4);
@@ -823,7 +823,7 @@ public:
         return {txt, pnt};
     }
 
-    VINT find_new_cycle(INT start, VVINT& paths, Vint& in_pord, UMAP& kmers, const VINT& kmerv, Vint& visited) {
+    VINT find_new_cycle(INT start, const VVINT& paths, Vint& in_pord, const UMAP& kmers, const VINT& kmerv, Vint& visited) {
         struct Frame {
             INT current;
             INT idx;
@@ -855,7 +855,7 @@ public:
                 ++top.b_idx;
                 
                 INT cur_node = cur_path[top.idx];
-                INT next_node = forward(kmers, kmerv, cur_node, c);
+                INT next_node = step(kmers, kmerv, cur_node, c, true);
                 if (next_node == INF) continue;
                 auto it = heads.find(next_node);
                 if (it == heads.end()) continue;
@@ -876,15 +876,25 @@ public:
         return {};
     }
 
-    REP sorted(UMAP& kmers, const INT& N, const VINT& kmerv,
-                VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
-        INT C = CnP.first, P = CnP.second, S = C + P + N, ncycs = 0;
+    REP sorted(const UMAP& kmers, const VINT& kmerv, VVINT& cycles, VVINT& paths) {
+        INT N = (INT)kmers.size();
+        INT C = (INT)cycles.size();
+        INT P = (INT)paths.size();
+        INT S = N + C + P, ncycs = 0;
+
         USET roots;
         for (INT i = 0; i < P; ++i) {
-            if (inv_adj[paths[i][0]].empty()) roots.insert(i);
+            bool is_root_path = true;
+            INT head = paths[i][0];
+            for (auto c: base) {
+                if (!is_root_path) continue;
+                if (step(kmers, kmerv, head, c, false) != INF)
+                    is_root_path = false;
+            }            
+            if (is_root_path) roots.insert(i);
             else heads[paths[i][0]] = i;
         }
-        cout << "\n(#non-root paths, #root paths) = (" << heads.size() << ", "
+        cout << "\n# of (non-root paths, root paths) = (" << heads.size() << ", "
              << roots.size() << ")\n";
 
         queue<INT> q;
@@ -905,7 +915,7 @@ public:
                 q.pop();
                 for (const auto& node: paths[cpid]) {
                     for (const auto& c: base) {
-                        auto next = forward(kmers, kmerv, node, c);
+                        auto next = step(kmers, kmerv, node, c, true);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -929,7 +939,7 @@ public:
             ++pos; // need flag "*" for a cycle
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
+                    auto next = step(kmers, kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -949,7 +959,7 @@ public:
                 q.pop();
                 for (const auto& node: paths[cpid]) {
                     for (const auto& c: base) {
-                        auto next = forward(kmers, kmerv, node, c);
+                        auto next = step(kmers, kmerv, node, c, true);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -987,7 +997,7 @@ public:
                             auto node = path[k];
                             cycle.emplace_back(node);
                             for (auto& c: base) {
-                                auto next = forward(kmers, kmerv, node, c);
+                                auto next = step(kmers, kmerv, node, c, true);
                                 if (next == INF) continue;
                                 if (next == paths[pids[(j + 1) % p]][0]) {
                                     // trim cycle portion from path, and renew heads
@@ -1005,7 +1015,7 @@ public:
                     ++pos; // need flag "*" for a cycle
                     for (const auto& node: cycle) {
                         for (const auto& c: base) {
-                            auto next = forward(kmers, kmerv, node, c);
+                            auto next = step(kmers, kmerv, node, c, true);
                             if (next == INF) continue;
                             auto it = heads.find(next);
                             if (it == heads.end()) continue;
@@ -1025,7 +1035,7 @@ public:
                         q.pop();
                         for (const auto& node: paths[cpid]) {
                             for (const auto& c: base) {
-                                auto next = forward(kmers, kmerv, node, c);
+                                auto next = step(kmers, kmerv, node, c, true);
                                 if (next == INF) continue;
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
@@ -1087,8 +1097,8 @@ public:
         return {txt, pnt};
     }
 
-    string write_subtree(INT pid, VVINT& paths, UMAP& kmers, const VINT& kmerv, 
-                         UMAP& heads, Vint& visited) {
+    string write_subtree(INT pid, const VVINT& paths, const UMAP& kmers, const VINT& kmerv, 
+                        const UMAP& heads, Vint& visited) {
         if (visited[pid]) return "";
         visited[pid] = 1;
         auto path = paths[pid];
@@ -1097,7 +1107,7 @@ public:
         for (const auto& node: path) {
             s += decode_base(kmerv[node] % 4);
             for (const auto& c: base) {
-                auto next = forward(kmers, kmerv, node, c);
+                auto next = step(kmers, kmerv, node, c, true);
                 if (next == INF) continue;
                 auto it = heads.find(next);
                 if (it == heads.end()) continue;
@@ -1109,13 +1119,22 @@ public:
         return s;
     }
 
-    REP forest(UMAP& kmers, const VINT& kmerv,
-        VVINT& inv_adj, VVINT& cycles, VVINT& paths, const PINT& CnP) {
+    REP forest(const UMAP& kmers, const VINT& kmerv, VVINT& cycles, VVINT& paths) {
         string txt;
-        INT P = CnP.second, S = CnP.first + P, n = 0, ncycs = 0;
+        INT C = (INT)cycles.size();
+        INT P = (INT)paths.size();
+        INT S = C + P, n = 0, ncycs = 0;
+
         USET roots;        
         for (INT i = 0; i < P; ++i) {
-            if (inv_adj[paths[i][0]].empty()) roots.insert(i);
+            bool is_root_path = true;
+            INT head = paths[i][0];
+            for (auto c: base) {
+                if (!is_root_path) continue;
+                if (step(kmers, kmerv, head, c, false) != INF)
+                    is_root_path = false;
+            }
+            if (is_root_path) roots.insert(i);
             else heads[paths[i][0]] = i;
         }
         cout << "\n(#non-root paths, #root paths) = (" << heads.size() << ", "
@@ -1135,7 +1154,7 @@ public:
             for (const auto& node: cycle) {
                 txt += decode_base(kmerv[node] % 4);
                 for (const auto& c: base) {
-                    auto next = forward(kmers, kmerv, node, c);
+                    auto next = step(kmers, kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -1166,7 +1185,7 @@ public:
                             auto node = path[k];
                             cycle.emplace_back(node);
                             for (auto& c: base) {
-                                auto next = forward(kmers, kmerv, node, c);
+                                auto next = step(kmers, kmerv, node, c, true);
                                 if (next == INF) continue;
                                 if (next == paths[pids[(j + 1) % p]][0]) {
                                     // trim cycle portion from path, and renew heads
@@ -1183,7 +1202,7 @@ public:
                     txt += "*";
                     for (const auto& node: cycle) {
                         for (const auto& c: base) {
-                            auto next = forward(kmers, kmerv, node, c);
+                            auto next = step(kmers, kmerv, node, c, true);
                             if (next == INF) continue;
                             auto it = heads.find(next);
                             if (it == heads.end()) continue;
@@ -1196,7 +1215,6 @@ public:
                     break;
                 }
             }
-            // debug
             if ((INT)count(visited.begin(), visited.end(), 0) == res) {
                 cerr << "ERROR: no new cycle found in remaining paths\n";
                 exit(1);
@@ -1271,14 +1289,15 @@ public:
     }    
 };
 
-void print_usage(string cmdname) {
-    cerr << "Usage: " << cmdname << "[0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2 / 3])\n"
+void print_usage(const string& cmdname) {
+    cerr << "Usage: " << cmdname << " [0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2 / 3])\n"
         << "Output options(node-centric) are...\n"
         << "0: explicit representation without pointers (SPSS)\n"
         << "1: representation with unsorted pointers\n"
         << "2: representation with sorted pointers\n"
         << "3: tree representation (BP)\n"
-        << "\nFor edge-centric, set 1st arg = 0\n";
+        << "fna or fasta files are also ok as an input\n"
+        << "if no extension, \".fa\" is automatically added\n";
 }
 
 int main(int argc, char *argv[]) {
