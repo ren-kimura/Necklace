@@ -170,7 +170,7 @@ INT rolling_valid_kmer_start(const string& read, INT start, INT K) {
 
 class EDBG{
 public:
-    string filename;
+    string filename, logfilename;
     INT K;
 
     size_t total_memory = get_available_memory();
@@ -181,28 +181,86 @@ public:
                           (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
                                                                          10'000'000;
     
+    struct pair_hash {
+        size_t operator()(const PINT& p) const {
+            return hash<INT>()(p.first) ^ (hash<INT>()(p.second) << 1);
+        }
+    };
+        
     pmr::monotonic_buffer_resource pool{pool_size};
-    using UMAP = pmr::unordered_map<INT, INT>;
-    pmr::unordered_map<INT, int64_t> k_minus_1mers;
-    USET kmers;
+    pmr::unordered_set<INT> kmers;
+    pmr::unordered_map<INT, short> adj; // (k-1)-mer ID -> 8bit adj info
+    pmr::unordered_map<INT, int> outcnt; // (k-1)-mer ID -> remaining outedges
+    pmr::unordered_set<PINT, pair_hash> dummy_edges; // (from, to)
 
     EDBG(string _filename, INT _K)
-        : filename(_filename), K(_K), k_minus_1mers(&pool)
+        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_edges(&pool)
     {
-        k_minus_1mers.reserve(reserve_size);
+        logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
+        kmers.reserve(reserve_size);
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
-    INT process() {
+    string process() {
+        ofstream logfile(logfilename, ios::trunc);
+        if (!logfile) {
+            cerr << "Error: Could not open " << logfilename << " for writing\n";
+            exit(1);
+        }
         string timestamp = get_current_timestamp();
+        logfile << "Timestamp: " << timestamp << "\n";
         cout << "Timestamp: " << timestamp << "\n";
         
-        INT S = get_kmers(k_minus_1mers, kmers);
-        return S;
+        auto start_time = chrono::high_resolution_clock::now();
+        get_kmers();
+        auto end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> get_kmers_time = end_time - start_time;
+        cout << "\nCollected " << kmers.size() << " unique k-mers\n";
+
+        start_time = chrono::high_resolution_clock::now();
+        build_adj();
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> build_adj_time = end_time - start_time;
+
+        start_time = chrono::high_resolution_clock::now();
+        balance_graph();
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> balance_graph_time = end_time - start_time;
+
+        start_time = chrono::high_resolution_clock::now();
+        VINT tour = find_eulerian_cycle();
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> find_eulerian_cycle_time = end_time - start_time;
+
+        start_time = chrono::high_resolution_clock::now();
+        string txt = spell_out(tour);
+        end_time = chrono::high_resolution_clock::now();
+        chrono::duration<double> spell_out_time = end_time - start_time;
+
+        print_table_header(logfile);
+        log_time("get_kmers", get_kmers_time, logfile);
+        log_time("build_adj", build_adj_time, logfile);
+        log_time("balance_graph", balance_graph_time, logfile);
+        log_time("find_eulerian_cycle", find_eulerian_cycle_time, logfile);
+        log_time("spell_out", spell_out_time, logfile);
+        logfile << string(30, '-');
+        cout << string(30, '-');
+        auto total_time = get_kmers_time.count() + build_adj_time.count()
+                        + balance_graph_time.count() + find_eulerian_cycle_time.count()
+                        + spell_out_time.count();
+        logfile << "\nTotal time: " << total_time << " s\n";
+        cout << "\nTotal time: " << total_time << " s\n";
+
+        size_t peak_memory_kb = get_peak_memory_kb();
+        logfile << "Peak memory: " << peak_memory_kb << " KB\n";
+        cout << "Peak memory: " << peak_memory_kb << " KB\n";
+        logfile.close();
+
+        return txt;
     }
 
-    INT get_kmers(pmr::unordered_map<INT, int64_t>& k_minus_1mers, USET& kmers) {
+    void get_kmers() {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
@@ -255,8 +313,6 @@ public:
             auto it = kmers.find(hash);
             if (it == kmers.end()) {
                 kmers.insert(hash);
-                --k_minus_1mers[hash / 4];
-                ++k_minus_1mers[hash & mask];
                 ++id;
                 if (id == INF) {
                     cerr << "Too much k-mers!!\n\n";
@@ -282,8 +338,6 @@ public:
                 auto it = kmers.find(hash);
                 if (it == kmers.end()) {
                     kmers.insert(hash);
-                    --k_minus_1mers[hash / 4];
-                    ++k_minus_1mers[hash & mask];
                     ++id;
                     if (id == INF) {
                         cerr << "Too much k-mers!!\n\n";
@@ -296,20 +350,161 @@ public:
             footing += len;
         }
         finished("Detecting k-mers");
+    }
 
-        INT N = k_minus_1mers.size();
-        INT M = kmers.size();
-        cout << "\nTotal number of (k-1)-mers: " << N << "\n"
-            << "Total number of k-mers: " << M << "\n";
+    void build_adj() {
+        INT mask = (1ULL << (2 * (K - 1))) - 1;
 
-        // calc number of breaking edges
-        INT S = 0;
-        for (const auto& entry: k_minus_1mers) {
-            int64_t val = entry.second;
-            if (val > 0) S += val;
+        for (const auto& kmer: kmers) {
+            INT pre = kmer / 4;     // prefix
+            INT suf = kmer & mask;  // suffix
+            int c = kmer & 3;
+
+            adj[pre] |= (1 << (c + 4)); // out: ms4-bits
+            adj[suf] |= (1 << c);       // in:  ls4-bits
+            ++outcnt[pre];
         }
-        cout << "Number of breaking edges: " << S << "\n\n";
-        return S * (K - 1) + M + (S - 1); // prefix + non-prefix + delim
+    }
+
+    void balance_graph() {
+        VINT sources, sinks;
+
+        for (const auto& [node, bits]: adj) {
+            int odeg = 0, ideg = 0;
+            for (int i = 0; i < 4; ++i) {
+                if (bits & (1 << (i + 4)))  ++odeg;
+                if (bits & (1 << i))        ++ideg;
+            }
+            if (odeg > ideg) {
+                int diff = odeg - ideg;
+                for (int j = 0; j < diff; ++j) sources.emplace_back(node);
+            } else if (ideg > odeg) {
+                int diff = ideg - odeg;
+                for (int j = 0; j < diff; ++j) sinks.emplace_back(node);
+            }
+        }
+        if (sources.size() != sinks.size()) {
+            cerr << "ERROR: mismatch between sources and sinks!\n";
+            exit(1);
+        }
+        for (size_t i = 0; i < sources.size(); ++i) {
+            INT u = sources[i];
+            INT v = sinks[i];
+            adj[u] |= (1 << (0 + 4));   // dummy edge to A
+            adj[v] |= (1 << (0));       // dummy edge from A
+            ++outcnt[u];
+            dummy_edges.insert({u, v});
+        }
+
+        cout << "Added " << sources.size() << " dummy edges to balance the graph\n";
+    }
+
+    VINT find_eulerian_cycle() {
+        VINT tour;
+        stack<INT> stk;
+
+        INT start = INF;
+        for (const auto& [node, cnt]: outcnt) {
+            if (cnt > 0) {
+                start = node;
+                break;
+            }
+        }
+        if (start == INF) {
+            cerr << "ERROR: no start node found\n";
+            exit(1);
+        }
+        stk.push(start);
+        
+        while(!stk.empty()) {
+            INT u = stk.top();
+            if (outcnt[u] > 0) {
+                bool moved = false;
+                for (int b = 0; b < 4; ++b) {
+                    if (adj[u] & (1 << (b + 4))) {
+                        INT v = (u << 2) | b; // next (k-1)-mer
+                        v &= (1ULL << (2 * (K - 1))) - 1;
+                        stk.push(v);
+                        --outcnt[u]; // used one oedge
+                        moved = true;
+                        break;
+                    }
+                }
+                if (!moved) {
+                    cerr << "ERROR: no move found despite positive odeg\n";
+                    exit(1);
+                }
+            } else {
+                stk.pop();
+                tour.emplace_back(u);
+            }
+        }
+
+        reverse(tour.begin(), tour.end());
+        cout << "Eulerian cycle found: " << tour.size() << " nodes\n";
+        return tour;
+    }
+
+    string spell_out(const VINT& tour) {
+        string txt;
+        size_t n = tour.size();
+
+        if (n < 2) {
+            cerr << "Tour too short\n";
+            exit(1);
+        }
+        txt += ",";
+        txt += decode_kmer(tour[0], K - 1);
+
+        for (size_t i = 1; i + 1 < n; ++i) {
+            INT u = tour[i];
+            INT v = tour[i + 1];
+            bool is_dummy = dummy_edges.count({u, v}) > 0;
+
+            if(is_dummy) {
+                txt += ",";
+                txt += decode_kmer(v, K - 1);
+            } else {
+                int base = v & 3;
+                txt += decode_base(base);
+            }
+        }
+        if (!txt.empty() && txt.back() == ',') {
+            txt.pop_back();
+        }
+
+        return txt;
+    }
+
+    void write(const string& rep) {
+        // --- Write .txt file ---
+        if (rep.empty()) {
+            cerr << "Note: txt is empty.\n";
+        }
+    
+        string txtfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".txt";
+        ofstream txtfile(txtfilename);
+        if (!txtfile) {
+            cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
+            return;
+        }
+        txtfile << rep;
+        txtfile.close();
+    
+        fs::path txtfilepath = txtfilename;
+        auto txtfilesize = fs::file_size(txtfilepath);
+        cout << "\nFile created: " << path_to_filename(txtfilename, '/')
+             << " (File Size: " << txtfilesize << " B)\n";
+    
+        // --- Log file ---
+        ofstream logfile(logfilename, ios::app);
+        if (!logfile) {
+            cerr << "Error: Could not open file " << logfilename << " for writing.\n";
+            return;
+        }
+        logfile << "\nFile created: " << path_to_filename(txtfilename, '/')
+                << " (File Size: " << txtfilesize << " B)\n";
+        logfile.close();
     }
 };
 
@@ -1336,8 +1531,8 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         EDBG edbg = EDBG(_filename, _K);
-        INT S = edbg.process();
-        cout << "Total base count: " << S << "\n";
+        string rep = edbg.process();
+        edbg.write(rep);
     }
     // ours
     else if (atoi(argv[1]) == 0) {
