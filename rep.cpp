@@ -525,6 +525,7 @@ public:
             footing += len;
         }
         finished("Detecting k-mers");
+        cout << "\n\n";
     }
 
     INT step(const UMAP& kmers, const VINT& kmerv, INT id, char c, bool is_forward) {
@@ -823,7 +824,7 @@ public:
         return {txt, pnt};
     }
 
-    VINT find_new_cycle(INT start, const VVINT& paths, Vint& in_pord, const UMAP& kmers, const VINT& kmerv, Vint& visited) {
+    VINT find_new_cycle(const UMAP& kmers, const VINT& kmerv, const VVINT& paths, Vint& in_pord,  Vint& is_leaf, Vint& visited, INT start) {
         struct Frame {
             INT current;
             INT idx;
@@ -841,6 +842,7 @@ public:
 
             // rm from stack if explored all the nodes in cur_path
             if (top.idx >= (INT)cur_path.size()) {
+                is_leaf[top.current] = 1; // memo as a leaf
                 stack.pop_back();
                 if (!cycle.empty()) cycle.pop_back();
                 continue;
@@ -864,6 +866,7 @@ public:
                 if (next_pid == start) return cycle;
                 // skip visited path
                 if (visited[next_pid]) continue;
+                if (is_leaf[next_pid]) continue; // skip leaves
 
                 visited[next_pid] = 1;
                 stack.push_back({next_pid, 0, 0});
@@ -977,14 +980,17 @@ public:
             }
         }
 
+        Vint is_leaf(P, 0);
+
         // find a new cycle and bfs from it
         while (INT res = count(in_ord.begin(), in_ord.end(), 0)) {
             cout << "\n\n#residue paths = " << res << "\n"
                  << "Searching for a new cycle...";
             for (INT i = 0; i < P; ++i) {
                 if (in_ord[i]) continue;
+                if (is_leaf[i]) continue; // skip leaves
                 Vint vis(P, 0);
-                VINT pids = find_new_cycle(i, paths, in_ord, kmers, kmerv, vis);
+                VINT pids = find_new_cycle(kmers, kmerv, paths, in_ord, is_leaf, vis, i);
                 if (!pids.empty()) {
                     cout << "\rFound a cycle of " << pids.size() << " paths          \n";
                     ++ncycs;
@@ -1098,9 +1104,9 @@ public:
     }
 
     string write_subtree(INT pid, const VVINT& paths, const UMAP& kmers, const VINT& kmerv, 
-                        const UMAP& heads, Vint& visited) {
-        if (visited[pid]) return "";
-        visited[pid] = 1;
+                        const UMAP& heads, Vint& added) {
+        if (added[pid]) return "";
+        added[pid] = 1;
         auto path = paths[pid];
 
         string s;        
@@ -1112,8 +1118,8 @@ public:
                 auto it = heads.find(next);
                 if (it == heads.end()) continue;
                 auto npid = it->second;
-                if (visited[npid]) continue;
-                s += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
+                if (added[npid]) continue;
+                s += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
             }
         }
         return s;
@@ -1140,11 +1146,11 @@ public:
         cout << "\n(#non-root paths, #root paths) = (" << heads.size() << ", "
              << roots.size() << ")\n";
 
-        Vint visited(P, 0); // 1 iff path already embedded
+        Vint added(P, 0); // 1 iff path already embedded
 
         for (const auto& pid: roots) {
             txt += decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1)
-                   + write_subtree(pid, paths, kmers, kmerv, heads, visited)
+                   + write_subtree(pid, paths, kmers, kmerv, heads, added)
                    + ",";
             ++n; progress(n, S, "Finding pseudoforest");
         }
@@ -1159,22 +1165,25 @@ public:
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     auto npid = it->second;
-                    if (visited[npid]) continue;
-                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
+                    if (added[npid]) continue;
+                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
                 }
             }
             txt += ","; ++n; progress(n, S, "Finding pseudoforest");
         }
         cout << "\n";
 
-        while (INT res = count(visited.begin(), visited.end(), 0)) {
+        Vint is_leaf(P, 0);
+
+        while (INT res = count(added.begin(), added.end(), 0)) {
             cout << "\r#residue paths = " << res << ", searching for a new cycle..." << flush;
             for (INT i = 0; i < P; ++i) {
-                if (visited[i]) continue;
+                if (added[i]) continue;
+                if (is_leaf[i]) continue;
                 Vint vis(P, 0);
-                VINT pids = find_new_cycle(i, paths, visited, kmers, kmerv, vis);
+                VINT pids = find_new_cycle(kmers, kmerv, paths, added, is_leaf, vis, i);
                 if (!pids.empty()) {
-                    cout << "\r#residue paths = " << count(visited.begin(), visited.end(), 0) << ", found a cycle of " << pids.size() << " paths          " << flush;
+                    cout << "\r#residue paths = " << count(added.begin(), added.end(), 0) << ", found a cycle of " << pids.size() << " paths          " << flush;
                     ++ncycs;
                     VINT cycle;
                     INT p = (INT)pids.size();
@@ -1207,15 +1216,15 @@ public:
                             auto it = heads.find(next);
                             if (it == heads.end()) continue;
                             auto npid = it->second;
-                            if (visited[npid]) continue;
-                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, visited) + ")";
+                            if (added[npid]) continue;
+                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
                         }
                     }
                     txt += ","; ++n; progress(n, S, "Finding pseudoforest");
                     break;
                 }
             }
-            if ((INT)count(visited.begin(), visited.end(), 0) == res) {
+            if ((INT)count(added.begin(), added.end(), 0) == res) {
                 cerr << "ERROR: no new cycle found in remaining paths\n";
                 exit(1);
             }
