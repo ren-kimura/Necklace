@@ -66,7 +66,7 @@ void finished(const string& task) {
     cout << "\r" << task << " [";
     for (int i = 0; i < width - 1; ++i)
         cout << "=";
-    cout << ">] 100%";
+    cout << ">] 100%\n";
 }
 
 string remove_extension(string str, const string& ex) {
@@ -180,21 +180,15 @@ public:
     size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
                           (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
                                                                          10'000'000;
-    
-    struct pair_hash {
-        size_t operator()(const PINT& p) const {
-            return hash<INT>()(p.first) ^ (hash<INT>()(p.second) << 1);
-        }
-    };
         
     pmr::monotonic_buffer_resource pool{pool_size};
     pmr::unordered_set<INT> kmers;
     pmr::unordered_map<INT, short> adj; // (k-1)-mer ID -> 8bit adj info
     pmr::unordered_map<INT, int> outcnt; // (k-1)-mer ID -> remaining outedges
-    pmr::unordered_set<PINT, pair_hash> dummy_edges; // (from, to)
+    pmr::unordered_map<INT, VINT> dummy_map; // (from, [to,to,...])
 
     EDBG(string _filename, INT _K)
-        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_edges(&pool)
+        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_map(&pool)
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
         kmers.reserve(reserve_size);
@@ -216,12 +210,17 @@ public:
         get_kmers();
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
-        cout << "\nCollected " << kmers.size() << " unique k-mers\n";
+        cout << "Collected " << kmers.size() << " unique k-mers\n\n";
+
+        adj.reserve(kmers.size());
+        outcnt.reserve(kmers.size());
 
         start_time = chrono::high_resolution_clock::now();
         build_adj();
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> build_adj_time = end_time - start_time;
+
+        dummy_map.reserve(kmers.size());
 
         start_time = chrono::high_resolution_clock::now();
         balance_graph();
@@ -354,20 +353,26 @@ public:
 
     void build_adj() {
         INT mask = (1ULL << (2 * (K - 1))) - 1;
+        INT i = 0, N = kmers.size();
 
         for (const auto& kmer: kmers) {
-            INT pre = kmer / 4;     // prefix
-            INT suf = kmer & mask;  // suffix
-            int c = kmer & 3;
+            INT pre = kmer >> 2;        // prefix
+            INT suf = kmer & mask;      // suffix
+            int last = kmer & 3;
+            int first = (kmer >> (2 * (K - 1))) & 3;
 
-            adj[pre] |= (1 << (c + 4)); // out: ms4-bits
-            adj[suf] |= (1 << c);       // in:  ls4-bits
+            adj[pre] |= (1 << (last + 4));  // out: ms4-bits
+            adj[suf] |= (1 << first);       // in:  ls4-bits
             ++outcnt[pre];
+
+            progress(++i, N, "Building EDBG");
         }
+        finished("Building EDBG"); cout << "\n";
     }
 
     void balance_graph() {
         VINT sources, sinks;
+        INT i = 0, N = adj.size();
 
         for (const auto& [node, bits]: adj) {
             int odeg = 0, ideg = 0;
@@ -382,66 +387,97 @@ public:
                 int diff = ideg - odeg;
                 for (int j = 0; j < diff; ++j) sinks.emplace_back(node);
             }
+            progress(++i, N, "Counting imbalances");
         }
+        finished("Counting imbalances"); cout << "\n";
+
         if (sources.size() != sinks.size()) {
             cerr << "ERROR: mismatch between sources and sinks!\n";
             exit(1);
         }
-        for (size_t i = 0; i < sources.size(); ++i) {
-            INT u = sources[i];
-            INT v = sinks[i];
-            adj[u] |= (1 << (0 + 4));   // dummy edge to A
-            adj[v] |= (1 << (0));       // dummy edge from A
+        auto I = sources.size();
+        for (size_t i = 0; i < I; ++i) {
+            INT u = sinks[i];
+            INT v = sources[i];
             ++outcnt[u];
-            dummy_edges.insert({u, v});
+            dummy_map[u].push_back(v);
+            progress(i, I, "Adding dummy edges");
         }
-
-        cout << "Added " << sources.size() << " dummy edges to balance the graph\n";
+        finished("Adding dummy edges");
+        cout << "Added " << sources.size() << " dummy edges to balance the graph\n\n";
     }
 
     VINT find_eulerian_cycle() {
-        VINT tour;
-        stack<INT> stk;
+        size_t m = 0, M = 0; // M: total moves
+        for (auto& [node, cnt]: outcnt) M += cnt;
+
+        auto dmap = dummy_map;
 
         INT start = INF;
-        for (const auto& [node, cnt]: outcnt) {
-            if (cnt > 0) {
-                start = node;
-                break;
+        if (!dmap.empty()) {
+            start = dmap.begin()->first;
+        } else {
+            for (const auto& [node, cnt]: outcnt) {
+                if (cnt > 0) { start = node; break; }
             }
-        }
+        }        
         if (start == INF) {
             cerr << "ERROR: no start node found\n";
             exit(1);
         }
-        stk.push(start);
+        VINT tour, curpath;
+        curpath.push_back(start);
         
-        while(!stk.empty()) {
-            INT u = stk.top();
+        while(!curpath.empty()) {
+            INT u = curpath.back();
             if (outcnt[u] > 0) {
                 bool moved = false;
+                auto it_map = dmap.find(u);
+                if (it_map != dmap.end() && !it_map->second.empty()) {
+                    INT v = it_map->second.back();
+                    it_map->second.pop_back();
+                    curpath.push_back(v);
+                    --outcnt[u];
+                    moved = true;
+                }
+                if (moved) {
+                    progress(++m, M, "Finding Eulerian tour");
+                    continue;
+                }
+
                 for (int b = 0; b < 4; ++b) {
                     if (adj[u] & (1 << (b + 4))) {
-                        INT v = (u << 2) | b; // next (k-1)-mer
-                        v &= (1ULL << (2 * (K - 1))) - 1;
-                        stk.push(v);
+                        INT mask = (1ULL << (2 * (K - 2))) - 1;
+                        INT v = ((u & mask) << 2) | b;
+                        curpath.push_back(v);
                         --outcnt[u]; // used one oedge
+                        adj[u] &= ~(1 << (b + 4)); // erase used edge
                         moved = true;
+                        progress(++m, M, "Finding Eulerian tour");
                         break;
                     }
                 }
                 if (!moved) {
-                    cerr << "ERROR: no move found despite positive odeg\n";
+                    cerr << "ERROR: stuck at "
+                         << decode_kmer(u, K-1)
+                         << " outcnt=" << outcnt[u]
+                         << " remaining dummies_for_u=";
+                    auto it = dmap.find(u);
+                    if (it != dmap.end())   cerr << it->second.size();
+                    else                    cerr << 0;
+                    cerr << "\n";
                     exit(1);
                 }
             } else {
-                stk.pop();
-                tour.emplace_back(u);
+                tour.push_back(u);
+                curpath.pop_back();
             }
         }
+        finished("Finding Eulerian tour");
 
         reverse(tour.begin(), tour.end());
-        cout << "Eulerian cycle found: " << tour.size() << " nodes\n";
+        cout << "Eulerian cycle found: " << tour.size() << " nodes\n\n";
+
         return tour;
     }
 
@@ -453,16 +489,18 @@ public:
             cerr << "Tour too short\n";
             exit(1);
         }
-        txt += ",";
-        txt += decode_kmer(tour[0], K - 1);
 
-        for (size_t i = 1; i + 1 < n; ++i) {
-            INT u = tour[i];
-            INT v = tour[i + 1];
-            bool is_dummy = dummy_edges.count({u, v}) > 0;
+        for (size_t i = 0; i < n - 1; ++i) {
+            INT u = tour[i], v = tour[i + 1];
+            bool is_dummy = false;
+            auto it = dummy_map.find(u);
+            if (it != dummy_map.end()) {
+                for (auto to: it->second)
+                    if (to == v) { is_dummy = true; break; }
+            }
 
             if(is_dummy) {
-                txt += ",";
+                if (i > 0) txt += ",";
                 txt += decode_kmer(v, K - 1);
             } else {
                 int base = v & 3;
@@ -720,7 +758,7 @@ public:
             footing += len;
         }
         finished("Detecting k-mers");
-        cout << "\n\n";
+        cout << "\n";
     }
 
     INT step(const UMAP& kmers, const VINT& kmerv, INT id, char c, bool is_forward) {
@@ -807,7 +845,7 @@ public:
             progress(M, N, "Maximum matching");
         }
         finished("Maximum matching");
-        cout << "\nFound maximum matching of size " << M << "\n\n";
+        cout << "Found maximum matching of size " << M << "\n\n";
 
         return M;
     }
@@ -875,7 +913,7 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 if (seen[node]) {
-                    cerr << "\nNODE" << node << " IS DUPLICATED\n";
+                    cerr << "NODE" << node << " IS DUPLICATED\n";
                     exit(1);
                 }
                 seen[node] = 1;
@@ -885,7 +923,7 @@ public:
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 if (seen[node]) {
-                    cerr << "\nNODE" << node << " IS DUPLICATED\n";
+                    cerr << "NODE" << node << " IS DUPLICATED\n";
                     exit(1);
                 }
                 seen[node] = 1;
@@ -893,10 +931,10 @@ public:
             }
         }
         if (base_count != N) {
-            cerr << "\nWRONG NUMBER OF BASES IN CYCLES AND PATHS\n";
+            cerr << "WRONG NUMBER OF BASES IN CYCLES AND PATHS\n";
             exit(1);
         }
-        cout << "\nNo duplicates found. Total number of bases is correct.\n";
+        cout << "No duplicates found. Total number of bases is correct.\n";
 
         INT C = cycles.size(), P = paths.size();
         cout << "Found " << C << " cycles and " << P << " paths.\n";
@@ -996,8 +1034,8 @@ public:
         finished("Pointing");
         end:
         if (heads.empty()) 
-            cout << "\nAll paths are pointed.\n";
-        else cout << "\n" << heads.size() << " paths are not pointed.\n";
+            cout << "All paths are pointed.\n";
+        else cout << heads.size() << " paths are not pointed.\n";
 
         // generate representation
         string txt;
@@ -1260,12 +1298,11 @@ public:
         
         // for check
         INT res = count(in_ord.begin(), in_ord.end(), 0);
-        if (res == 0) cout << "\n\nAll paths are pointed.\n\n";
+        if (res == 0) cout << "All paths are pointed.\n\n";
         else {
-            cout << "\n\n" << res << " paths are not pointed.\n";
+            cout << res << " paths are not pointed.\n";
             for (INT i = 0; i < P; ++i) if (!in_ord[i])
                 cout << "path" << i << " not added\n";
-            cout << "\n\n";
         }
         cout << "#new cycles = " << ncycs << "\n";
 
@@ -1425,7 +1462,6 @@ public:
             }
         }
         finished("Finding pseudoforest");
-        cout << "\n";
 
         if (!txt.empty()) txt.pop_back();
         return {txt, {}};
