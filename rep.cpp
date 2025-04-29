@@ -26,8 +26,6 @@ using INT = uint64_t;
 using VSTR = vector<string>;
 using Vint = vector<uint8_t>;
 using VINT = vector<INT>;
-using PINT = pair<INT, INT>;
-using VTINT = vector<tuple<INT, INT, INT, INT>>;
 using VVINT = vector<VINT>;
 using REP = pair<string, VINT>;
 using USET = unordered_set<INT>;
@@ -186,9 +184,14 @@ public:
     pmr::unordered_map<INT, short> adj; // (k-1)-mer ID -> 8bit adj info
     pmr::unordered_map<INT, int> outcnt; // (k-1)-mer ID -> remaining outedges
     pmr::unordered_map<INT, VINT> dummy_map; // (from, [to,to,...])
+    struct pair_hash {
+        size_t operator()(pair<INT, INT> const &p) const 
+        { return hash<INT>()(p.first) ^ (hash<INT>()(p.second)<<1); }
+    };
+    pmr::unordered_multiset<pair<INT, INT>, pair_hash> used_dummy_set;
 
     EDBG(string _filename, INT _K)
-        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_map(&pool)
+        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_map(&pool), used_dummy_set(&pool)
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
         kmers.reserve(reserve_size);
@@ -410,7 +413,6 @@ public:
     VINT find_eulerian_cycle() {
         size_t m = 0, M = 0; // M: total moves
         for (auto& [node, cnt]: outcnt) M += cnt;
-
         auto dmap = dummy_map;
 
         INT start = INF;
@@ -438,6 +440,7 @@ public:
                     it_map->second.pop_back();
                     curpath.push_back(v);
                     --outcnt[u];
+                    used_dummy_set.insert({u, v});
                     moved = true;
                 }
                 if (moved) {
@@ -484,33 +487,23 @@ public:
     string spell_out(const VINT& tour) {
         string txt;
         size_t n = tour.size();
-
-        if (n < 2) {
-            cerr << "Tour too short\n";
-            exit(1);
-        }
+        if (n < 2) { cerr << "Tour too short\n"; exit(1); }
 
         for (size_t i = 0; i < n - 1; ++i) {
-            INT u = tour[i], v = tour[i + 1];
-            bool is_dummy = false;
-            auto it = dummy_map.find(u);
-            if (it != dummy_map.end()) {
-                for (auto to: it->second)
-                    if (to == v) { is_dummy = true; break; }
-            }
-
+            pair<INT, INT> edge{tour[i], tour[i + 1]};
+            auto it = used_dummy_set.find(edge);
+            bool is_dummy = (it != used_dummy_set.end());
             if(is_dummy) {
+                used_dummy_set.erase(it);
                 if (i > 0) txt += ",";
-                txt += decode_kmer(v, K - 1);
+                txt += decode_kmer(edge.second, K - 1);
             } else {
-                int base = v & 3;
-                txt += decode_base(base);
+                txt += decode_base(edge.second & 3);
             }
         }
         if (!txt.empty() && txt.back() == ',') {
             txt.pop_back();
         }
-
         return txt;
     }
 
@@ -885,7 +878,7 @@ public:
         return lrt;
     }
 
-    PINT decompose(const VINT& match_u, const VINT& match_v, VVINT& cycles, VVINT& paths) {
+    void decompose(const VINT& match_u, const VINT& match_v, VVINT& cycles, VVINT& paths) {
         INT N = (INT)kmers.size();
         Vint seen_u(N, 0);
         Vint seen_v(N, 0);
@@ -935,11 +928,8 @@ public:
             exit(1);
         }
         cout << "No duplicates found. Total number of bases is correct.\n";
-
-        INT C = cycles.size(), P = paths.size();
-        cout << "Found " << C << " cycles and " << P << " paths.\n";
-
-        return {C, P};
+        cout << "Found " << cycles.size() << " cycles and " 
+                         << paths.size() << " paths.\n";
     }
 
     REP plain(const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
