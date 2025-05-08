@@ -1347,6 +1347,67 @@ public:
         return s;
     }
 
+    string write_subtree_iterative(INT root_pid,
+                                const VVINT& paths,
+                                const UMAP& kmers,
+                                const VINT& kmerv,
+                                const UMAP& heads,
+                                Vint& added) {
+        struct Frame {
+            INT pid;
+            size_t node_idx    = 0;
+            size_t base_idx    = 0;
+            bool   printed    = false;
+        };
+
+        std::ostringstream oss;
+        std::stack<Frame> st;
+
+        added[root_pid] = 1;
+        st.push({root_pid, 0, 0, false});
+
+        while (!st.empty()) {
+            Frame &fr = st.top();
+            const auto &path = paths[fr.pid];
+
+            if (fr.node_idx >= path.size()) {
+                st.pop();
+                if (!st.empty()) oss << ')';
+                continue;
+            }
+
+            INT node = path[fr.node_idx];
+            if (!fr.printed) {
+                oss << decode_base(kmerv[node] % 4);
+                fr.printed = true;
+                fr.base_idx = 0;
+            }
+
+            bool pushed = false;
+            for (; fr.base_idx < 4; ++fr.base_idx) {
+                char c = base[fr.base_idx];
+                INT nxt = step(kmers, kmerv, node, c, true);
+                if (nxt == INF) continue;
+                auto it = heads.find(nxt);
+                if (it == heads.end()) continue;
+                INT child_pid = it->second;
+                if (added[child_pid]) continue;
+                added[child_pid] = 1;
+                ++fr.base_idx;
+                oss << '(';
+                st.push({child_pid, 0, 0, false});
+                pushed = true;
+                break;
+            }
+
+            if (!pushed) {
+                fr.node_idx++;
+                fr.printed = false;
+            }
+        }
+        return oss.str();
+    }
+
     REP forest(const UMAP& kmers, const VINT& kmerv, VVINT& cycles, VVINT& paths) {
         string txt;
         INT C = (INT)cycles.size();
@@ -1372,7 +1433,7 @@ public:
 
         for (const auto& pid: roots) {
             txt += decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1)
-                   + write_subtree(pid, paths, kmers, kmerv, heads, added)
+                   + write_subtree_iterative(pid, paths, kmers, kmerv, heads, added)
                    + ",";
             ++n; progress(n, S, "Finding pseudoforest");
         }
@@ -1388,7 +1449,7 @@ public:
                     if (it == heads.end()) continue;
                     auto npid = it->second;
                     if (added[npid]) continue;
-                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
+                    txt += "(" + write_subtree_iterative(npid, paths, kmers, kmerv, heads, added) + ")";
                 }
             }
             txt += ","; ++n; progress(n, S, "Finding pseudoforest");
@@ -1439,7 +1500,7 @@ public:
                             if (it == heads.end()) continue;
                             auto npid = it->second;
                             if (added[npid]) continue;
-                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
+                            txt += "(" + write_subtree_iterative(npid, paths, kmers, kmerv, heads, added) + ")";
                         }
                     }
                     txt += ","; ++n; progress(n, S, "Finding pseudoforest");
