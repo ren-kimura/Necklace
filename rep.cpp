@@ -1325,29 +1325,7 @@ public:
         return {txt, pnt};
     }
 
-    string write_subtree(INT pid, const VVINT& paths, const UMAP& kmers, const VINT& kmerv, 
-                        const UMAP& heads, Vint& added) {
-        if (added[pid]) return "";
-        added[pid] = 1;
-        auto path = paths[pid];
-
-        string s;        
-        for (const auto& node: path) {
-            s += decode_base(kmerv[node] % 4);
-            for (const auto& c: base) {
-                auto next = step(kmers, kmerv, node, c, true);
-                if (next == INF) continue;
-                auto it = heads.find(next);
-                if (it == heads.end()) continue;
-                auto npid = it->second;
-                if (added[npid]) continue;
-                s += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
-            }
-        }
-        return s;
-    }
-
-    string write_subtree_iterative(INT root_pid,
+    string write_subtree(INT root_pid,
                                 const VVINT& paths,
                                 const UMAP& kmers,
                                 const VINT& kmerv,
@@ -1433,7 +1411,7 @@ public:
 
         for (const auto& pid: roots) {
             txt += decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1)
-                   + write_subtree_iterative(pid, paths, kmers, kmerv, heads, added)
+                   + write_subtree(pid, paths, kmers, kmerv, heads, added)
                    + ",";
             ++n; progress(n, S, "Finding pseudoforest");
         }
@@ -1449,7 +1427,7 @@ public:
                     if (it == heads.end()) continue;
                     auto npid = it->second;
                     if (added[npid]) continue;
-                    txt += "(" + write_subtree_iterative(npid, paths, kmers, kmerv, heads, added) + ")";
+                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
                 }
             }
             txt += ","; ++n; progress(n, S, "Finding pseudoforest");
@@ -1500,7 +1478,7 @@ public:
                             if (it == heads.end()) continue;
                             auto npid = it->second;
                             if (added[npid]) continue;
-                            txt += "(" + write_subtree_iterative(npid, paths, kmers, kmerv, heads, added) + ")";
+                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
                         }
                     }
                     txt += ","; ++n; progress(n, S, "Finding pseudoforest");
