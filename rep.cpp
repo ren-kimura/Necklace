@@ -12,8 +12,6 @@
 #include <vector>
 #include <stack>
 #include <queue>
-#include <array> // sada
-#include <tuple> // sada
 #include <unordered_map>
 #include <unordered_set>
 #include <algorithm>
@@ -34,7 +32,18 @@ vector<char> base = {'A', 'C', 'G', 'T'};
 const INT INF = UINT64_MAX;
 
 size_t get_available_memory() {
-    return sysconf(_SC_PHYS_PAGES) * sysconf(_SC_PAGE_SIZE);
+    std::ifstream meminfo("/proc/meminfo");
+    std::string line;
+    size_t available_kb = 0;
+    while (std::getline(meminfo, line)) {
+        if (line.find("MemAvailable:") == 0) {
+            std::istringstream iss(line);
+            std::string key, unit;
+            iss >> key >> available_kb >> unit;
+            break;
+        }
+    }
+    return available_kb * 1024; // Bytes
 }
 
 size_t get_peak_memory_kb() {
@@ -171,13 +180,10 @@ public:
     string filename, logfilename;
     INT K;
 
-    size_t total_memory = get_available_memory();
-    size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
-                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
-                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
-    size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
-                          (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
-                                                                         10'000'000;
+    size_t avail_memory = get_available_memory();
+    const size_t MAX_POOL = 128L * 1024 * 1024 * 1024; // max 128GB
+    size_t pool_size = min(avail_memory / 2, MAX_POOL);
+    size_t reserve_size = pool_size / 32;
         
     pmr::monotonic_buffer_resource pool{pool_size};
     pmr::unordered_set<INT> kmers;
@@ -195,7 +201,8 @@ public:
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
         kmers.reserve(reserve_size);
-        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "\nAvailable memory: " << avail_memory / (1024 * 1024) << " MB\n";
+        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
@@ -545,13 +552,10 @@ public:
     INT K;
     INT option;
 
-    size_t total_memory = get_available_memory();
-    size_t pool_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? (16L * 1024 * 1024 * 1024) : // 16GB if more than 64GB
-                       (total_memory > (16L * 1024 * 1024 * 1024)) ? (4L * 1024 * 1024 * 1024) :  // 4GB if more than 16GB
-                                                                      (1L * 1024 * 1024 * 1024);  // else 1GB
-    size_t reserve_size = (total_memory > (64L * 1024 * 1024 * 1024)) ? 500'000'000 :
-                          (total_memory > (16L * 1024 * 1024 * 1024)) ? 100'000'000 :
-                                                                         10'000'000;
+    size_t avail_memory = get_available_memory();
+    const size_t MAX_POOL = 128L * 1024 * 1024 * 1024; // max 128GB
+    size_t pool_size = min(avail_memory / 2, MAX_POOL);
+    size_t reserve_size = pool_size / 32;
     
     pmr::monotonic_buffer_resource pool{pool_size};
     using UMAP = pmr::unordered_map<INT, INT>;
@@ -567,7 +571,8 @@ public:
         }
         logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
         kmers.reserve(reserve_size);
-        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "\nAvailable memory: " << avail_memory / (1024 * 1024) << " MB\n";
+        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
