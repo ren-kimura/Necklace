@@ -35,6 +35,7 @@ size_t get_available_memory() {
     std::ifstream meminfo("/proc/meminfo");
     std::string line;
     size_t available_kb = 0;
+
     while (std::getline(meminfo, line)) {
         if (line.find("MemAvailable:") == 0) {
             std::istringstream iss(line);
@@ -43,7 +44,61 @@ size_t get_available_memory() {
             break;
         }
     }
-    return available_kb * 1024; // Bytes
+
+    return available_kb * 1024; // bytes
+}
+
+size_t estimate_pool_size_from_file(const string& filename, INT K) {
+    std::ifstream file(filename, std::ios::in | std::ios::binary);
+    if (!file) {
+        cerr << "Error: Cannot open file " << filename << "\n";
+        exit(1);
+    }
+
+    const size_t BUF_SIZE = 64 * 1024 * 1024;
+    vector<char> buffer(BUF_SIZE);
+    file.rdbuf()->pubsetbuf(buffer.data(), BUF_SIZE);
+
+    string line, read;
+    size_t base_count = 0;
+    bool is_new_read = true;
+
+    while (getline(file, line)) {
+        if (line.empty()) continue;
+
+        if (line[0] == '>') {
+            if (!read.empty()) {
+                base_count += read.size();
+                read.clear();
+            }
+            is_new_read = true;
+        } else {
+            if (is_new_read) {
+                read = line;
+                is_new_read = false;
+            } else {
+                read += line;
+            }
+        }
+    }
+    if (!read.empty()) base_count += read.size();
+    file.close();
+
+    size_t kmer_upper_bound = static_cast<size_t>(1ULL << (2 * K)); // 4^K
+    base_count = std::min(base_count, kmer_upper_bound);
+
+    const double RECORD_SIZE = 48.0;
+    const double SAFETY_MARGIN = 2.0;
+    const size_t MIN_POOL = 64L * 1024 * 1024;
+
+    size_t estimate = static_cast<size_t>(base_count * RECORD_SIZE * SAFETY_MARGIN);
+
+    size_t available_memory = get_available_memory();
+    size_t dynamic_max_pool = static_cast<size_t>(available_memory * 0.7);
+
+    estimate = std::clamp(estimate, MIN_POOL, dynamic_max_pool);
+
+    return estimate;
 }
 
 size_t get_peak_memory_kb() {
@@ -178,31 +233,34 @@ INT rolling_valid_kmer_start(const string& read, INT start, INT K) {
 class EDBG{
 public:
     string filename, logfilename;
-    INT K;
-
-    size_t avail_memory = get_available_memory();
-    const size_t MAX_POOL = 128L * 1024 * 1024 * 1024; // max 128GB
-    size_t pool_size = min(avail_memory / 2, MAX_POOL);
-    size_t reserve_size = pool_size / 32;
-        
-    pmr::monotonic_buffer_resource pool{pool_size};
+    INT K;    
+    size_t pool_size;
+    size_t reserve_size;
+    
+    pmr::monotonic_buffer_resource pool;
     pmr::unordered_set<INT> kmers;
-    pmr::unordered_map<INT, short> adj; // (k-1)-mer ID -> 8bit adj info
-    pmr::unordered_map<INT, int> outcnt; // (k-1)-mer ID -> remaining outedges
-    pmr::unordered_map<INT, VINT> dummy_map; // (from, [to,to,...])
+    pmr::unordered_map<INT, short> adj;
+    pmr::unordered_map<INT, int> outcnt;
+    pmr::unordered_map<INT, VINT> dummy_map;
+
     struct pair_hash {
-        size_t operator()(pair<INT, INT> const &p) const 
-        { return hash<INT>()(p.first) ^ (hash<INT>()(p.second)<<1); }
+        size_t operator()(pair<INT, INT> const &p) const {
+            return hash<INT>()(p.first) ^ (hash<INT>()(p.second) << 1);
+        }
     };
     pmr::unordered_multiset<pair<INT, INT>, pair_hash> used_dummy_set;
 
     EDBG(string _filename, INT _K)
-        : filename(_filename), K(_K), adj(&pool), outcnt(&pool), dummy_map(&pool), used_dummy_set(&pool)
+        : filename(_filename), K(_K),
+          pool_size(estimate_pool_size_from_file(_filename, _K)),
+          reserve_size(pool_size / 32),
+          pool(pool_size),
+          adj(&pool), outcnt(&pool), dummy_map(&pool), used_dummy_set(&pool)
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
+        kmers = pmr::unordered_set<INT>(&pool);
         kmers.reserve(reserve_size);
-        cout << "\nAvailable memory: " << avail_memory / (1024 * 1024) << " MB\n";
-        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
@@ -551,19 +609,19 @@ public:
     string filename, logfilename;
     INT K;
     INT option;
-
-    size_t avail_memory = get_available_memory();
-    const size_t MAX_POOL = 128L * 1024 * 1024 * 1024; // max 128GB
-    size_t pool_size = min(avail_memory / 2, MAX_POOL);
-    size_t reserve_size = pool_size / 32;
+    size_t pool_size, reserve_size;
     
-    pmr::monotonic_buffer_resource pool{pool_size};
+    pmr::monotonic_buffer_resource pool;
     using UMAP = pmr::unordered_map<INT, INT>;
     UMAP kmers;
     UMAP heads;
 
     NDBG(string _filename, INT _K, INT _option)
-        : filename(_filename), K(_K), option(_option), kmers(&pool), heads(&pool)
+    : filename(_filename), K(_K), option(_option),
+      pool_size(estimate_pool_size_from_file(_filename, _K)),
+      reserve_size(pool_size / 32),
+      pool(pool_size),
+      kmers(&pool), heads(&pool)
     {
         if (option != 0 && option != 1 && option != 2 && option != 3) {
             cerr << "\nInvalid option value\n";
@@ -571,8 +629,7 @@ public:
         }
         logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
         kmers.reserve(reserve_size);
-        cout << "\nAvailable memory: " << avail_memory / (1024 * 1024) << " MB\n";
-        cout << "Using pool size: " << pool_size / (1024 * 1024) << " MB\n";
+        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
