@@ -254,11 +254,10 @@ public:
         : filename(_filename), K(_K),
           pool_size(estimate_pool_size_from_file(_filename, _K)),
           reserve_size(pool_size / 32),
-          pool(pool_size),
+          pool(pool_size), kmers(&pool),
           adj(&pool), outcnt(&pool), dummy_map(&pool), used_dummy_set(&pool)
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
-        kmers = pmr::unordered_set<INT>(&pool);
         kmers.reserve(reserve_size);
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
@@ -646,14 +645,14 @@ public:
         VINT kmerv; 
         
         auto start_time = chrono::high_resolution_clock::now();        
-        get_kmers(kmers, kmerv);
+        get_kmers(kmerv);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
 
         VINT match_u, match_v;
 
         start_time = chrono::high_resolution_clock::now();
-        INT M = hopcroft_karp(kmers, kmerv, match_u, match_v);
+        INT M = hopcroft_karp(kmerv, match_u, match_v);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> hopcroft_karp_time = end_time - start_time;
 
@@ -678,19 +677,19 @@ public:
         } else if (option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
-            rep = unsorted(kmers, kmerv, cycles, paths);
+            rep = unsorted(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else if (option == 2) {
             // sorted
             start_time = chrono::high_resolution_clock::now();
-            rep = sorted(kmers, kmerv, cycles, paths);
+            rep = sorted(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else if (option == 3) {
             // tree (BP)
             start_time = chrono::high_resolution_clock::now();
-            rep = forest(kmers, kmerv, cycles, paths);
+            rep = forest(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
         } else {
@@ -722,7 +721,7 @@ public:
         return rep;
     }
 
-    void get_kmers(UMAP& kmers, VINT& kmerv) {
+    void get_kmers(VINT& kmerv) {
         ifstream inputFile(filename, ios::in | ios::binary);
         if (!inputFile) {
             cerr << "Error opening input file." << "\n";
@@ -816,7 +815,7 @@ public:
         cout << "\n";
     }
 
-    INT step(const UMAP& kmers, const VINT& kmerv, INT id, char c, bool is_forward) {
+    INT step(const VINT& kmerv, INT id, char c, bool is_forward) {
         INT hash = kmerv[id]; 
         if (hash == INF) return INF;
 
@@ -842,7 +841,7 @@ public:
         return INF; // no branch to c
     }
 
-    bool bfs (const UMAP& kmers, const VINT& kmerv, const VINT& match_u, const VINT& match_v, VINT& dist) {
+    bool bfs (const VINT& kmerv, const VINT& match_u, const VINT& match_v, VINT& dist) {
         INT N = (INT)kmers.size();
         queue<INT> q;
         bool found_augpath = false;
@@ -856,7 +855,7 @@ public:
             INT u = q.front();
             q.pop();
             for (auto c: base) {
-                auto v = step(kmers, kmerv, u, c, true);
+                auto v = step(kmerv, u, c, true);
                 if (v == INF) continue;
 
                 if (match_v[v] == INF) {
@@ -870,13 +869,13 @@ public:
         return found_augpath;
     }
 
-    bool dfs (const UMAP& kmers, const VINT& kmerv, VINT& match_u, VINT& match_v, 
+    bool dfs (const VINT& kmerv, VINT& match_u, VINT& match_v, 
             VINT& dist, INT u) {
         for (auto c: base) {
-            auto v = step(kmers, kmerv, u, c, true);
+            auto v = step(kmerv, u, c, true);
             if (v == INF) continue;
 
-            if (match_v[v] == INF || (dist[match_v[v]] == dist[u] + 1 && dfs(kmers, kmerv, match_u, match_v, dist, match_v[v]))) {
+            if (match_v[v] == INF || (dist[match_v[v]] == dist[u] + 1 && dfs(kmerv, match_u, match_v, dist, match_v[v]))) {
                 match_u[u] = v;
                 match_v[v] = u;
                 return true;
@@ -886,15 +885,15 @@ public:
         return false;
     }
 
-    INT hopcroft_karp(const UMAP& kmers, const VINT& kmerv, VINT& match_u, VINT& match_v) {
+    INT hopcroft_karp(const VINT& kmerv, VINT& match_u, VINT& match_v) {
         INT N = (INT)kmers.size();
         VINT dist(N); // distance of bfs
         INT M = 0;
         match_u.assign(N, INF);
         match_v.assign(N, INF);
-        while (bfs(kmers, kmerv, match_u, match_v, dist)) {
+        while (bfs(kmerv, match_u, match_v, dist)) {
             for (INT u = 0; u < N; ++u) {
-                if (match_u[u] == INF && dfs(kmers, kmerv, match_u, match_v, dist, u))
+                if (match_u[u] == INF && dfs(kmerv, match_u, match_v, dist, u))
                     M++; // found an augpath
             }
             progress(M, N, "Maximum matching");
@@ -1018,7 +1017,7 @@ public:
         return {txt, {}};
     }
 
-    REP unsorted(const UMAP& kmers, const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
+    REP unsorted(const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
         INT N = (INT)kmers.size();
         INT C = (INT)cycles.size();
         INT P = (INT)paths.size(); 
@@ -1030,7 +1029,7 @@ public:
             INT head = paths[i][0];
             for (auto c: base) {
                 if (!is_root_path) continue;
-                if (step(kmers, kmerv, head, c, false) != INF)
+                if (step(kmerv, head, c, false) != INF)
                     is_root_path = false;
             }
             if (is_root_path) root_paths.insert(i);
@@ -1042,7 +1041,7 @@ public:
         for (const auto& cycle: cycles) {
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = step(kmers, kmerv, node, c, true);
+                    auto next = step(kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -1056,7 +1055,7 @@ public:
         for (const auto& path: paths) {
             for (const auto& node: path) {
                 for (const auto& c: base) {
-                    auto next = step(kmers, kmerv, node, c, true);
+                    auto next = step(kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -1072,7 +1071,7 @@ public:
             auto path = paths[pid];
             for (const auto& node: path) {
                 for (const auto& c: base) {
-                    auto next = step(kmers, kmerv, node, c, true);
+                    auto next = step(kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -1109,7 +1108,7 @@ public:
         return {txt, pnt};
     }
 
-    VINT find_new_cycle(const UMAP& kmers, const VINT& kmerv, const VVINT& paths, Vint& in_pord,  Vint& is_leaf, Vint& visited, INT start) {
+    VINT find_new_cycle(const VINT& kmerv, const VVINT& paths, Vint& in_pord,  Vint& is_leaf, Vint& visited, INT start) {
         struct Frame {
             INT current;
             INT idx;
@@ -1142,7 +1141,7 @@ public:
                 ++top.b_idx;
                 
                 INT cur_node = cur_path[top.idx];
-                INT next_node = step(kmers, kmerv, cur_node, c, true);
+                INT next_node = step(kmerv, cur_node, c, true);
                 if (next_node == INF) continue;
                 auto it = heads.find(next_node);
                 if (it == heads.end()) continue;
@@ -1164,7 +1163,7 @@ public:
         return {};
     }
 
-    REP sorted(const UMAP& kmers, const VINT& kmerv, VVINT& cycles, VVINT& paths) {
+    REP sorted(const VINT& kmerv, VVINT& cycles, VVINT& paths) {
         INT N = (INT)kmers.size();
         INT C = (INT)cycles.size();
         INT P = (INT)paths.size();
@@ -1176,7 +1175,7 @@ public:
             INT head = paths[i][0];
             for (auto c: base) {
                 if (!is_root_path) continue;
-                if (step(kmers, kmerv, head, c, false) != INF)
+                if (step(kmerv, head, c, false) != INF)
                     is_root_path = false;
             }            
             if (is_root_path) roots.insert(i);
@@ -1203,7 +1202,7 @@ public:
                 q.pop();
                 for (const auto& node: paths[cpid]) {
                     for (const auto& c: base) {
-                        auto next = step(kmers, kmerv, node, c, true);
+                        auto next = step(kmerv, node, c, true);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -1227,7 +1226,7 @@ public:
             ++pos; // need flag "*" for a cycle
             for (const auto& node: cycle) {
                 for (const auto& c: base) {
-                    auto next = step(kmers, kmerv, node, c, true);
+                    auto next = step(kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
@@ -1247,7 +1246,7 @@ public:
                 q.pop();
                 for (const auto& node: paths[cpid]) {
                     for (const auto& c: base) {
-                        auto next = step(kmers, kmerv, node, c, true);
+                        auto next = step(kmerv, node, c, true);
                         if (next == INF) continue;
                         auto it = heads.find(next);
                         if (it == heads.end()) continue;
@@ -1275,7 +1274,7 @@ public:
                 if (in_ord[i]) continue;
                 if (is_leaf[i]) continue; // skip leaves
                 Vint vis(P, 0);
-                VINT pids = find_new_cycle(kmers, kmerv, paths, in_ord, is_leaf, vis, i);
+                VINT pids = find_new_cycle(kmerv, paths, in_ord, is_leaf, vis, i);
                 if (!pids.empty()) {
                     cout << "\rFound a cycle of " << pids.size() << " paths          \n";
                     ++ncycs;
@@ -1288,7 +1287,7 @@ public:
                             auto node = path[k];
                             cycle.emplace_back(node);
                             for (auto& c: base) {
-                                auto next = step(kmers, kmerv, node, c, true);
+                                auto next = step(kmerv, node, c, true);
                                 if (next == INF) continue;
                                 if (next == paths[pids[(j + 1) % p]][0]) {
                                     // trim cycle portion from path, and renew heads
@@ -1306,7 +1305,7 @@ public:
                     ++pos; // need flag "*" for a cycle
                     for (const auto& node: cycle) {
                         for (const auto& c: base) {
-                            auto next = step(kmers, kmerv, node, c, true);
+                            auto next = step(kmerv, node, c, true);
                             if (next == INF) continue;
                             auto it = heads.find(next);
                             if (it == heads.end()) continue;
@@ -1326,7 +1325,7 @@ public:
                         q.pop();
                         for (const auto& node: paths[cpid]) {
                             for (const auto& c: base) {
-                                auto next = step(kmers, kmerv, node, c, true);
+                                auto next = step(kmerv, node, c, true);
                                 if (next == INF) continue;
                                 auto it = heads.find(next);
                                 if (it == heads.end()) continue;
@@ -1389,7 +1388,6 @@ public:
 
     string write_subtree(INT root_pid,
                                 const VVINT& paths,
-                                const UMAP& kmers,
                                 const VINT& kmerv,
                                 const UMAP& heads,
                                 Vint& added) {
@@ -1426,7 +1424,7 @@ public:
             bool pushed = false;
             for (; fr.base_idx < 4; ++fr.base_idx) {
                 char c = base[fr.base_idx];
-                INT nxt = step(kmers, kmerv, node, c, true);
+                INT nxt = step(kmerv, node, c, true);
                 if (nxt == INF) continue;
                 auto it = heads.find(nxt);
                 if (it == heads.end()) continue;
@@ -1448,7 +1446,7 @@ public:
         return oss.str();
     }
 
-    REP forest(const UMAP& kmers, const VINT& kmerv, VVINT& cycles, VVINT& paths) {
+    REP forest(const VINT& kmerv, VVINT& cycles, VVINT& paths) {
         string txt;
         INT C = (INT)cycles.size();
         INT P = (INT)paths.size();
@@ -1460,7 +1458,7 @@ public:
             INT head = paths[i][0];
             for (auto c: base) {
                 if (!is_root_path) continue;
-                if (step(kmers, kmerv, head, c, false) != INF)
+                if (step(kmerv, head, c, false) != INF)
                     is_root_path = false;
             }
             if (is_root_path) roots.insert(i);
@@ -1473,7 +1471,7 @@ public:
 
         for (const auto& pid: roots) {
             txt += decode_kmer(kmerv[paths[pid][0]], K).substr(0, K - 1)
-                   + write_subtree(pid, paths, kmers, kmerv, heads, added)
+                   + write_subtree(pid, paths, kmerv, heads, added)
                    + ",";
             ++n; progress(n, S, "Finding pseudoforest");
         }
@@ -1483,13 +1481,13 @@ public:
             for (const auto& node: cycle) {
                 txt += decode_base(kmerv[node] % 4);
                 for (const auto& c: base) {
-                    auto next = step(kmers, kmerv, node, c, true);
+                    auto next = step(kmerv, node, c, true);
                     if (next == INF) continue;
                     auto it = heads.find(next);
                     if (it == heads.end()) continue;
                     auto npid = it->second;
                     if (added[npid]) continue;
-                    txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
+                    txt += "(" + write_subtree(npid, paths, kmerv, heads, added) + ")";
                 }
             }
             txt += ","; ++n; progress(n, S, "Finding pseudoforest");
@@ -1504,7 +1502,7 @@ public:
                 if (added[i]) continue;
                 if (is_leaf[i]) continue;
                 Vint vis(P, 0);
-                VINT pids = find_new_cycle(kmers, kmerv, paths, added, is_leaf, vis, i);
+                VINT pids = find_new_cycle(kmerv, paths, added, is_leaf, vis, i);
                 if (!pids.empty()) {
                     cout << "\r#residue paths = " << count(added.begin(), added.end(), 0) << ", found a cycle of " << pids.size() << " paths          " << flush;
                     ++ncycs;
@@ -1517,7 +1515,7 @@ public:
                             auto node = path[k];
                             cycle.emplace_back(node);
                             for (auto& c: base) {
-                                auto next = step(kmers, kmerv, node, c, true);
+                                auto next = step(kmerv, node, c, true);
                                 if (next == INF) continue;
                                 if (next == paths[pids[(j + 1) % p]][0]) {
                                     // trim cycle portion from path, and renew heads
@@ -1534,13 +1532,13 @@ public:
                     txt += "*";
                     for (const auto& node: cycle) {
                         for (const auto& c: base) {
-                            auto next = step(kmers, kmerv, node, c, true);
+                            auto next = step(kmerv, node, c, true);
                             if (next == INF) continue;
                             auto it = heads.find(next);
                             if (it == heads.end()) continue;
                             auto npid = it->second;
                             if (added[npid]) continue;
-                            txt += "(" + write_subtree(npid, paths, kmers, kmerv, heads, added) + ")";
+                            txt += "(" + write_subtree(npid, paths, kmerv, heads, added) + ")";
                         }
                     }
                     txt += ","; ++n; progress(n, S, "Finding pseudoforest");
