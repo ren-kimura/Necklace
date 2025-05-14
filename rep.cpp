@@ -627,16 +627,17 @@ public:
             exit(1);
         }
         logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
-        size_t N = size_t(1) << (2 * K);
-        B = bit_vector(N, 0);
+        size_t U = size_t(1) << (2 * K);
+        B = bit_vector(U, 0);
     };
 
     inline size_t h2i(size_t hash) const {
-        return rank1(hash) - 1;
+        return rank1(hash); // rank1(i)=\sum_{k=0}^{k<i}B[i] (NOT INCLUDING B[i])
+        // see https://simongog.github.io/assets/data/sdsl-cheatsheet.pdf
     }
 
     inline size_t i2h(size_t id) const {
-        return select1(id + 1);
+        return select1(id + 1); // select1(i) = min{j|rank1(j+1)=i}
     }
 
     REP process() {
@@ -653,9 +654,24 @@ public:
         get_kmers();
         util::init_support(rank1, &B);
         util::init_support(select1, &B);
-        N = rank1(B.size() - 1);
+        N = rank1(B.size());
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
+
+        // // debug
+        // cout << "-----------------\n";
+        // for (size_t i = 0; i < N; ++i)
+        //     cout << i << " : " << decode_kmer(i2h(i), K) << "\n";
+        // cout << "-----------------\n";
+        // for (size_t i = 0; i < N; ++i) {
+        //     cout << i << " : ";
+        //     for (const auto& c: base) {
+        //         auto j = step(i, c, true);
+        //         if (j != INF) cout << j << " ";
+        //     }
+        //     cout << "\n";
+        // }
+        // cout << "-----------------\n";
 
         VT match_u, match_v;
 
@@ -816,6 +832,7 @@ public:
             else if (c == 'G')  hash |= (2ULL << (2 * (K - 1)));
             else if (c == 'T')  hash |= (3ULL << (2 * (K - 1)));
         }
+        if (hash == i2h(id)) return INF;
         auto b = B[hash];
         if (b) return h2i(hash);
         else return INF;
@@ -836,7 +853,6 @@ public:
             for (auto c: base) {
                 auto v = step(u, c, true);
                 if (v == INF) continue;
-
                 if (match_v[v] == INF) {
                     aug = true;
                 } else if (dist[match_v[v]] == INF) {
@@ -960,6 +976,23 @@ public:
         cout << "No duplicates found. Total number of bases is correct.\n";
         cout << "Found " << cycles.size() << " cycles and " 
                          << paths.size() << " paths.\n";
+
+        // // debug
+        // cout << "-------------------------------\n";
+        // for (size_t i = 0; i < cycles.size(); ++i) {
+        //     cout << "C" << i << ": ";
+        //     auto c = cycles[i];
+        //     for (const auto& node: c) cout << decode_kmer(i2h(node), K) << "(" << node << ") ";
+        //     cout << "\n";
+        // }
+        // cout << "-------------------------------\n";
+        // for (size_t i = 0; i < paths.size(); ++i) {
+        //     cout << "P" << i << ": ";
+        //     auto p = paths[i];
+        //     for (const auto& node: p) cout << decode_kmer(i2h(node), K) << "(" << node << ") ";
+        //     cout << "\n";
+        // }
+        // cout << "-------------------------------\n";
     }
 
     REP plain(const VVT& cycles, const VVT& paths) {

@@ -45,4 +45,5 @@ This command processes the input file `input.fa` with k-mer length 11 and comput
 # Requirements
 - C++17 or later
 - Standard C++ libraries
+- sdsl-lite (https://github.com/simongog/sdsl-lite?search=1)
 - POSIX compliant system for memory management functions
