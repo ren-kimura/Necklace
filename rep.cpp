@@ -234,15 +234,14 @@ size_t rolling_valid_kmer_start(const string& read, size_t start, size_t K) {
 class EDBG{
 public:
     string filename, logfilename;
-    size_t K;    
-    size_t pool_size;
-    size_t reserve_size;
-    
-    pmr::monotonic_buffer_resource pool;
-    pmr::unordered_set<size_t> kmers;
-    pmr::unordered_map<size_t, short> adj;
-    pmr::unordered_map<size_t, int> outcnt;
-    pmr::unordered_map<size_t, VT> dummy_map;
+    size_t K;
+    bit_vector B;
+    rank_support_v<> rank1; // hash -> id
+    select_support_mcl<> select1; // id -> hash
+    size_t N; // total # of kmers
+    unordered_map<size_t, short> adj;
+    unordered_map<size_t, int> outcnt;
+    unordered_map<size_t, VT> dummy_map;
 
     struct pair_hash {
         size_t operator()(pair<size_t, size_t> const &p) const {
@@ -252,17 +251,20 @@ public:
     pmr::unordered_multiset<pair<size_t, size_t>, pair_hash> used_dummy_set;
 
     EDBG(string _filename, size_t _K)
-        : filename(_filename), K(_K),
-          pool_size(estimate_pool_size_from_file(_filename, _K)),
-          reserve_size(pool_size / 32),
-          pool(pool_size), kmers(&pool),
-          adj(&pool), outcnt(&pool), dummy_map(&pool), used_dummy_set(&pool)
+        : filename(_filename), K(_K)
     {
-        logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".log";
-        kmers.reserve(reserve_size);
-        cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
-        cout << "K-mers reserve size: " << reserve_size << "\n";
+        logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".bv.log";
+        size_t U = size_t(1) << (2 * K);
+        B = bit_vector(U, 0);
     };
+
+    inline size_t h2i(size_t hash) const {
+        return rank1(hash);
+    }
+
+    inline size_t i2h(size_t id) const {
+        return select1(id + 1);
+    }
 
     string process() {
         ofstream logfile(logfilename, ios::trunc);
@@ -276,19 +278,17 @@ public:
         
         auto start_time = chrono::high_resolution_clock::now();
         get_kmers();
+        util::init_support(rank1, &B);
+        util::init_support(select1, &B);
+        N = rank1(B.size());
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
-        cout << "Collected " << kmers.size() << " unique k-mers\n\n";
-
-        adj.reserve(kmers.size());
-        outcnt.reserve(kmers.size());
+        cout << "Collected " << N << " unique k-mers\n\n";
 
         start_time = chrono::high_resolution_clock::now();
         build_adj();
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> build_adj_time = end_time - start_time;
-
-        dummy_map.reserve(kmers.size());
 
         start_time = chrono::high_resolution_clock::now();
         balance_graph();
@@ -365,27 +365,17 @@ public:
         for (string& read: reads)
             tlen += read.size();
         
-        size_t id = 0, footing = 0;
+        size_t footing = 0;
         size_t mask = (1ULL << (2 * (K - 1))) - 1; // 2K-bits mask
 
         for (size_t i = 0; i < reads.size(); ++i) {
             const string& read = reads[i];
             size_t len = read.size();
             if (len < K) continue;
-            size_t hash;
-
             size_t j = rolling_valid_kmer_start(read, 0, K);
             if (j == INF) continue; // if not any valid k-mer, go to next read
-            hash = encode_kmer(read.substr(j, K));
-            auto it = kmers.find(hash);
-            if (it == kmers.end()) {
-                kmers.insert(hash);
-                ++id;
-                if (id == INF) {
-                    cerr << "Too much k-mers!!\n\n";
-                    exit(1);
-                }
-            }
+            size_t hash = encode_kmer(read.substr(j, K));
+            B[hash] = 1; // the k-mer exists
 
             // update kmer by rolling hash
             for (++j; j <= len - K; ++j) {
@@ -400,18 +390,7 @@ public:
                     if (j == INF) break;
                     hash = encode_kmer(read.substr(j, K));
                 }
-
-                // register k-mer to kmers
-                auto it = kmers.find(hash);
-                if (it == kmers.end()) {
-                    kmers.insert(hash);
-                    ++id;
-                    if (id == INF) {
-                        cerr << "Too much k-mers!!\n\n";
-                        exit(1);
-                    }
-                }
-
+                B[hash] = 1; // the k-mer exists
                 progress(footing + j, tlen, "Detecting k-mers");
             }
             footing += len;
@@ -421,26 +400,26 @@ public:
 
     void build_adj() {
         size_t mask = (1ULL << (2 * (K - 1))) - 1;
-        size_t i = 0, N = kmers.size();
 
-        for (const auto& kmer: kmers) {
-            size_t pre = kmer >> 2;        // prefix
-            size_t suf = kmer & mask;      // suffix
-            int last = kmer & 3;
-            int first = (kmer >> (2 * (K - 1))) & 3;
+        for (size_t i = 0; i < N; ++i) {
+            auto hash = i2h(i);
+            size_t pre = hash >> 2;        // prefix
+            size_t suf = hash & mask;      // suffix
+            int last = hash & 3;
+            int first = (hash >> (2 * (K - 1))) & 3;
 
             adj[pre] |= (1 << (last + 4));  // out: ms4-bits
             adj[suf] |= (1 << first);       // in:  ls4-bits
             ++outcnt[pre];
 
-            progress(++i, N, "Building EDBG");
+            progress(i, N, "Building EDBG");
         }
         finished("Building EDBG"); cout << "\n";
     }
 
     void balance_graph() {
         VT sources, sinks;
-        size_t i = 0, N = adj.size();
+        size_t i = 0, M = adj.size();
 
         for (const auto& [node, bits]: adj) {
             int odeg = 0, ideg = 0;
@@ -455,7 +434,7 @@ public:
                 int diff = ideg - odeg;
                 for (int j = 0; j < diff; ++j) sinks.emplace_back(node);
             }
-            progress(++i, N, "Counting imbalances");
+            progress(++i, M, "Counting imbalances");
         }
         finished("Counting imbalances"); cout << "\n";
 
@@ -578,7 +557,7 @@ public:
             cerr << "Note: txt is empty.\n";
         }
     
-        string txtfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".bv.txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -622,11 +601,7 @@ public:
             cerr << "\nInvalid option value\n";
             exit(1);
         }
-        if (K > 19) {
-            cerr << "\nInvalid k value. Must be less than 20.\n";
-            exit(1);
-        }
-        logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
+        logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".bv.log";
         size_t U = size_t(1) << (2 * K);
         B = bit_vector(U, 0);
     };
@@ -1559,7 +1534,7 @@ public:
             cerr << "Note: txt is empty.\n";
         }
     
-        string txtfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".bv.txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -1581,7 +1556,7 @@ public:
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
         } else {
-            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + "p.txt";
+            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + ".bv." + to_string(option) + "p.txt";
             ofstream pntfile(pntfilename);
             if (!pntfile) {
                 cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
