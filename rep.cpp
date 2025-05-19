@@ -32,76 +32,6 @@ using USET = unordered_set<size_t>;
 vector<char> base = {'A', 'C', 'G', 'T'};
 const size_t INF = SIZE_MAX;
 
-size_t get_available_memory() {
-    std::ifstream meminfo("/proc/meminfo");
-    std::string line;
-    size_t available_kb = 0;
-
-    while (std::getline(meminfo, line)) {
-        if (line.find("MemAvailable:") == 0) {
-            std::istringstream iss(line);
-            std::string key, unit;
-            iss >> key >> available_kb >> unit;
-            break;
-        }
-    }
-
-    return available_kb * 1024; // bytes
-}
-
-size_t estimate_pool_size_from_file(const string& filename, size_t K) {
-    std::ifstream file(filename, std::ios::in | std::ios::binary);
-    if (!file) {
-        cerr << "Error: Cannot open file " << filename << "\n";
-        exit(1);
-    }
-
-    const size_t BUF_SIZE = 64 * 1024 * 1024;
-    vector<char> buffer(BUF_SIZE);
-    file.rdbuf()->pubsetbuf(buffer.data(), BUF_SIZE);
-
-    string line, read;
-    size_t base_count = 0;
-    bool is_new_read = true;
-
-    while (getline(file, line)) {
-        if (line.empty()) continue;
-
-        if (line[0] == '>') {
-            if (!read.empty()) {
-                base_count += read.size();
-                read.clear();
-            }
-            is_new_read = true;
-        } else {
-            if (is_new_read) {
-                read = line;
-                is_new_read = false;
-            } else {
-                read += line;
-            }
-        }
-    }
-    if (!read.empty()) base_count += read.size();
-    file.close();
-
-    size_t kmer_upper_bound = static_cast<size_t>(1ULL << (2 * K)); // 4^K
-    base_count = std::min(base_count, kmer_upper_bound);
-
-    const double RECORD_SIZE = 48.0;
-    const double SAFETY_MARGIN = 2.0;
-    const size_t MIN_POOL = 64L * 1024 * 1024;
-
-    size_t estimate = static_cast<size_t>(base_count * RECORD_SIZE * SAFETY_MARGIN);
-
-    size_t available_memory = get_available_memory();
-    size_t dynamic_max_pool = static_cast<size_t>(available_memory * 0.7);
-
-    estimate = std::clamp(estimate, MIN_POOL, dynamic_max_pool);
-
-    return estimate;
-}
-
 size_t get_peak_memory_kb() {
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
@@ -235,11 +165,11 @@ class EDBG{
 public:
     string filename, logfilename;
     size_t K;
-    bit_vector B;
-    rank_support_v<> rank1; // hash -> id
-    select_support_mcl<> select1; // id -> hash
+    bit_vector B0;
+    bit_vector B1;
+    rank_support_v<> b1rank1; // hash -> id
+    select_support_mcl<> b1select1; // id -> hash
     size_t N; // total # of kmers
-    unordered_map<size_t, short> adj;
     unordered_map<size_t, int> outcnt;
     unordered_map<size_t, VT> dummy_map;
 
@@ -255,15 +185,12 @@ public:
     {
         logfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".bv.log";
         size_t U = size_t(1) << (2 * K);
-        B = bit_vector(U, 0);
+        B0 = bit_vector(U, 0);
+        B1 = bit_vector(U >> 2, 0);
     };
 
-    inline size_t h2i(size_t hash) const {
-        return rank1(hash);
-    }
-
     inline size_t i2h(size_t id) const {
-        return select1(id + 1);
+        return b1select1(id + 1);
     }
 
     string process() {
@@ -278,17 +205,11 @@ public:
         
         auto start_time = chrono::high_resolution_clock::now();
         get_kmers();
-        util::init_support(rank1, &B);
-        util::init_support(select1, &B);
-        N = rank1(B.size());
+        util::init_support(b1rank1, &B1);
+        util::init_support(b1select1, &B1);
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
         cout << "Collected " << N << " unique k-mers\n\n";
-
-        start_time = chrono::high_resolution_clock::now();
-        build_adj();
-        end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> build_adj_time = end_time - start_time;
 
         start_time = chrono::high_resolution_clock::now();
         balance_graph();
@@ -307,13 +228,12 @@ public:
 
         print_table_header(logfile);
         log_time("get_kmers", get_kmers_time, logfile);
-        log_time("build_adj", build_adj_time, logfile);
         log_time("balance_graph", balance_graph_time, logfile);
         log_time("find_eulerian_cycle", find_eulerian_cycle_time, logfile);
         log_time("spell_out", spell_out_time, logfile);
         logfile << string(30, '-');
         cout << string(30, '-');
-        auto total_time = get_kmers_time.count() + build_adj_time.count()
+        auto total_time = get_kmers_time.count()
                         + balance_graph_time.count() + find_eulerian_cycle_time.count()
                         + spell_out_time.count();
         logfile << "\nTotal time: " << total_time << " s\n";
@@ -375,7 +295,12 @@ public:
             size_t j = rolling_valid_kmer_start(read, 0, K);
             if (j == INF) continue; // if not any valid k-mer, go to next read
             size_t hash = encode_kmer(read.substr(j, K));
-            B[hash] = 1; // the k-mer exists
+            if (B0[hash] == 0) {
+                B0[hash] = 1; ++N; // the k-mer exists
+                B1[hash >> 2] = 1; // pre k-1-mer
+                B1[hash & mask] = 1; // suf k-1-mer
+                ++outcnt[hash >> 2];
+            }
 
             // update kmer by rolling hash
             for (++j; j <= len - K; ++j) {
@@ -389,8 +314,13 @@ public:
                     j = rolling_valid_kmer_start(read, j + 1, K);
                     if (j == INF) break;
                     hash = encode_kmer(read.substr(j, K));
+                    B1[hash >> 2] = 1; // pre k-1-mer
                 }
-                B[hash] = 1; // the k-mer exists
+                if (B0[hash] == 0) {
+                    B0[hash] = 1; ++N; // the k-mer exists
+                    B1[hash & mask] = 1; // suf k-1-mer
+                    ++outcnt[hash >> 2];
+                }
                 progress(footing + j, tlen, "Detecting k-mers");
             }
             footing += len;
@@ -398,43 +328,45 @@ public:
         finished("Detecting k-mers");
     }
 
-    void build_adj() {
-        size_t mask = (1ULL << (2 * (K - 1))) - 1;
-
-        for (size_t i = 0; i < N; ++i) {
-            auto hash = i2h(i);
-            size_t pre = hash >> 2;        // prefix
-            size_t suf = hash & mask;      // suffix
-            int last = hash & 3;
-            int first = (hash >> (2 * (K - 1))) & 3;
-
-            adj[pre] |= (1 << (last + 4));  // out: ms4-bits
-            adj[suf] |= (1 << first);       // in:  ls4-bits
-            ++outcnt[pre];
-
-            progress(i, N, "Building EDBG");
+    size_t step(size_t hash, char c, bool is_forward) {
+        if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
+        if (is_forward) {
+            hash = hash << 2;
+            if (c == 'C')       hash |= 1;
+            else if (c == 'G')  hash |= 2;
+            else if (c == 'T')  hash |= 3;
+            if (B0[hash]) {
+                size_t mask = (1ULL << (2 * (K - 1))) - 1;
+                return hash & mask;
+            }
+        } else {
+            if (c == 'C')       hash |= (1ULL << (2 * (K - 1)));
+            else if (c == 'G')  hash |= (2ULL << (2 * (K - 1)));
+            else if (c == 'T')  hash |= (3ULL << (2 * (K - 1)));
+            if (B0[hash]) return hash >> 2;
         }
-        finished("Building EDBG"); cout << "\n";
+        return INF;
     }
 
     void balance_graph() {
         VT sources, sinks;
-        size_t i = 0, M = adj.size();
+        size_t M = b1rank1(B1.size());
 
-        for (const auto& [node, bits]: adj) {
+        for (size_t i = 0; i < M; ++i) {
+            auto hash = i2h(i);
             int odeg = 0, ideg = 0;
-            for (int i = 0; i < 4; ++i) {
-                if (bits & (1 << (i + 4)))  ++odeg;
-                if (bits & (1 << i))        ++ideg;
+            for (const auto c: base) {
+                if (step(hash, c, true) != INF) ++odeg;
+                if (step(hash, c, false) != INF) ++ideg;
             }
             if (odeg > ideg) {
                 int diff = odeg - ideg;
-                for (int j = 0; j < diff; ++j) sources.emplace_back(node);
+                for (int j = 0; j < diff; ++j) sources.emplace_back(hash);
             } else if (ideg > odeg) {
                 int diff = ideg - odeg;
-                for (int j = 0; j < diff; ++j) sinks.emplace_back(node);
+                for (int j = 0; j < diff; ++j) sinks.emplace_back(hash);
             }
-            progress(++i, M, "Counting imbalances");
+            progress(i, M, "Counting imbalances");
         }
         finished("Counting imbalances"); cout << "\n";
 
@@ -491,18 +423,19 @@ public:
                     progress(++m, M, "Finding Eulerian tour");
                     continue;
                 }
-
-                for (int b = 0; b < 4; ++b) {
-                    if (adj[u] & (1 << (b + 4))) {
-                        size_t mask = (1ULL << (2 * (K - 2))) - 1;
-                        size_t v = ((u & mask) << 2) | b;
-                        curpath.push_back(v);
-                        --outcnt[u]; // used one oedge
-                        adj[u] &= ~(1 << (b + 4)); // erase used edge
-                        moved = true;
-                        progress(++m, M, "Finding Eulerian tour");
-                        break;
-                    }
+                for (const auto c: base) {
+                    auto v = step(u, c, true);
+                    if (v == INF) continue;
+                    curpath.push_back(v);
+                    --outcnt[u]; // used one edge
+                    auto mhash = c == 'A' ? u << 2 :
+                                 c == 'C' ? u << 2 | 1 :
+                                 c == 'G' ? u << 2 | 2 :
+                                            u << 2 | 3 ;
+                    B0[mhash] = 0; // erase used edge
+                    moved = true;
+                    progress(++m, M, "Finding Eulerian tour");
+                    break;
                 }
                 if (!moved) {
                     cerr << "ERROR: stuck at "
@@ -807,7 +740,7 @@ public:
             else if (c == 'G')  hash |= (2ULL << (2 * (K - 1)));
             else if (c == 'T')  hash |= (3ULL << (2 * (K - 1)));
         }
-        if (hash == i2h(id)) return INF;
+        if (hash == i2h(id)) return INF; // rule out self loops
         auto b = B[hash];
         if (b) return h2i(hash);
         else return INF;
