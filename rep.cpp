@@ -210,6 +210,7 @@ public:
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
         cout << "Collected " << N << " unique k-mers\n\n";
+        logfile << "k-mers count: " << N << "\n";
 
         start_time = chrono::high_resolution_clock::now();
         balance_graph();
@@ -566,21 +567,6 @@ public:
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
 
-        // // debug
-        // cout << "-----------------\n";
-        // for (size_t i = 0; i < N; ++i)
-        //     cout << i << " : " << decode_kmer(i2h(i), K) << "\n";
-        // cout << "-----------------\n";
-        // for (size_t i = 0; i < N; ++i) {
-        //     cout << i << " : ";
-        //     for (const auto& c: base) {
-        //         auto j = step(i, c, true);
-        //         if (j != INF) cout << j << " ";
-        //     }
-        //     cout << "\n";
-        // }
-        // cout << "-----------------\n";
-
         VT match_u, match_v;
 
         start_time = chrono::high_resolution_clock::now();
@@ -596,6 +582,8 @@ public:
         chrono::duration<double> decompose_time = end_time - start_time;
 
         cout << "\n# of (k-mers, matching, cycles, paths)\n= (" 
+            << N << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
+        logfile << "\n# of (k-mers, matching, cycles, paths)\n= (" 
             << N << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
 
         REP rep;
