@@ -278,6 +278,7 @@ public:
         auto end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> get_kmers_time = end_time - start_time;
         cout << "Collected " << kmers.size() << " unique k-mers\n\n";
+        logfile << "k-mers count: " << kmers.size() << "\n\n";
 
         adj.reserve(kmers.size());
         outcnt.reserve(kmers.size());
@@ -664,6 +665,8 @@ public:
         chrono::duration<double> decompose_time = end_time - start_time;
 
         cout << "\n# of (k-mers, matching, cycles, paths)\n= (" 
+            << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
+        logfile << "\n# of (k-mers, matching, cycles, paths)\n= (" 
             << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
 
         REP rep;
