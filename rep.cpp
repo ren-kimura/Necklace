@@ -439,7 +439,7 @@ public:
     }
 
     void balance_graph() {
-        VINT sources, sinks;
+        VINT sources, sinks;                        
         INT i = 0, N = adj.size();
 
         for (const auto& [node, bits]: adj) {
@@ -1069,7 +1069,7 @@ public:
                 progress(pos, S, "Pointing");
             } pos++;
         }
-        for (const auto& pid: root_paths) {
+        for (const auto& pid: root_paths) { // Is this necessary??
             pnt[pid] = pos;
             auto path = paths[pid];
             for (const auto& node: path) {
