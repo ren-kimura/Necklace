@@ -554,7 +554,27 @@ Rep unsorted(map_t *kmap, uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64
         } pos++;
     }
     end:
-    r.str = "\0";
+    r.str[0] = '\0';
+    for (size_t i = 0; i < cc->size; i++) {
+       Vec *curr_vec = &cc->vecs[i];
+       for (size_t j = 0; j < curr_vec->size; j++) {
+           strcat(r.str, dec_base(karr[curr_vec->data[j]] % 4));
+       }
+       strcat(r.str, ",");
+    }
+    strcat(r.str, ",");
+    for (size_t i = 0; i < pp->size; i++) {
+        Vec *curr_vec = &pp->vecs[i];
+        char s[k + 1]; s[k] = '\0';
+        dec(karr[curr_vec->data[0]], k, s);
+        strcat(r.str, s);
+        for (size_t j = 1; j < curr_vec->size; j++) {
+            strcat(r.str, dec_base(karr[curr_vec->data[j]] % 4));
+        }
+        strcat(r.str, ",");
+    }
+    if (strlen(r.str)) r.str[strlen(r.str) - 1] = '\0';
+    if (pp->size == 0) r.str[strlen(r.str) - 1] = '\0';
     return r; 
 }
 
@@ -675,26 +695,6 @@ int main(int argc, char *argv[]) {
         karr[s->val] = s->key;
     }
 
-    /* display karr and adjacency list(not explicitly stored) */
-    /*
-    for (uint64_t i = 0; i < N; i++) {
-        char t[k + 1];
-        dec(karr[i], k, t);
-        t[k] = '\0';
-        printf("karr[%lu] = %lu(%s) --> ", i, karr[i], t);
-        for (int j = 0; j < 4; j++) {
-          char c = B[j];
-          uint64_t ii = step(kmap, karr, k, i, c, 1); // edge to c?
-          if (ii != INF) {
-              dec(karr[ii], k, t);
-              printf("%lu(%s) ", ii, t);
-          }
-        }
-        printf("\n");
-    }
-    printf("\n");
-    */
-
     free(line);
 	fclose(fp);
     printf("%s file closed\n", infile);
@@ -742,5 +742,6 @@ int main(int argc, char *argv[]) {
     free(mv);
     free_map(&kmap);
     free_vvec(&cc); free_vvec(&pp);
+    
 	return 0;
 }
