@@ -505,6 +505,16 @@ Rep plain(uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64_t N) {
 
 Rep unsorted(map_t *kmap, uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64_t N) {
     Rep r;
+    r.str[0] = '\0';
+    uint64_t pred[pp->size];
+    for (uint64_t i = 0; i < pp->size; i++) { pred[i] = INF; }
+    for (uint64_t i = 0; i < pp->size; i++) {
+        for (int c_idx = 0; c_idx < 4; c_idx++) {
+            if (step(kmap, karr, k, pp->vecs[i].data[0], B[c_idx], 0) != INF) {
+                break;
+            }
+        }
+    }
     map_t *hd = NULL;
     set_t *rp = NULL;
     for (uint64_t i = 0; i < pp->size; i++) {
