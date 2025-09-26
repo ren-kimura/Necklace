@@ -475,104 +475,123 @@ public:
         cout << "Added " << sources.size() << " dummy edges to balance the graph\n\n";
     }
 
-    VVINT find_eulerian_cycle() {
-        VVINT tours;
-        size_t m = 0, M = 0; // M: total moves
-        for (auto& [node, cnt]: outcnt) M += cnt;
+VVINT find_eulerian_cycle() {
+    VVINT all_tours;
+    size_t m = 0;
+    size_t M = 0;
+    for (const auto& [node, cnt] : outcnt) {
+        M += cnt;
+    }
 
-        while (m < M) {
-            size_t m_tmp = m; // to check if m has increased by the end of this loop
-            INT start = INF;
-            if (!dummy_map.empty()) {
-                start = dummy_map.begin()->first;
-            } else {
-                for (const auto& [node, cnt]: outcnt) {
-                    if (cnt > 0) { start = node; break; }
-                }
-            }        
-            if (start == INF) {
-                cerr << "ERROR: no start node found\n";
-                exit(1);
+    while (m < M) {
+        INT start_node = INF;
+        for (const auto& [node, cnt] : outcnt) {
+            if (cnt > 0) {
+                start_node = node;
+                break;
             }
-            VINT tour, curpath;
-            curpath.push_back(start);
-            
-            while(!curpath.empty()) {
-                INT u = curpath.back();
-                if (outcnt[u] > 0) {
-                    auto it_map = dummy_map.find(u);
-                    if (it_map != dummy_map.end() && !it_map->second.empty()) {
-                        INT v = it_map->second.back();
-                        it_map->second.pop_back();
-                        curpath.push_back(v);
-                        --outcnt[u];
-                        used_dummy_set.insert({u, v});
-                        progress(++m, M, "Finding Eulerian tour");
-                        continue;
-                    }
-                    bool moved_normal = false;
+        }
+
+        if (start_node == INF) {
+            if (m < M) {
+                cerr << "\nError: Could not find a start node, but " << M - m << " edges remain.\n";
+            }
+            break;
+        }
+
+        VINT current_tour, curpath;
+        curpath.push_back(start_node);
+
+        // Hierholzer algorithm
+        while (!curpath.empty()) {
+            INT u = curpath.back();
+            if (outcnt[u] > 0) {
+                bool moved = false;
+                // try dummy edges first
+                auto it_map = dummy_map.find(u);
+                if (it_map != dummy_map.end() && !it_map->second.empty()) {
+                    INT v = it_map->second.back();
+                    it_map->second.pop_back();
+                    curpath.push_back(v);
+                    --outcnt[u];
+                    used_dummy_set.insert({u, v});
+                    moved = true;
+                }                
+                // try normal edges next
+                if (!moved) {
                     for (int b = 0; b < 4; ++b) {
                         if (adj[u] & (1 << (b + 4))) {
                             INT mask = (1ULL << (2 * (K - 2))) - 1;
                             INT v = ((u & mask) << 2) | b;
                             curpath.push_back(v);
-                            --outcnt[u]; // used one outgoing edge
-                            adj[u] &= ~(1 << (b + 4)); // erase the used edge
-                            moved_normal = true;
-                            progress(++m, M, "Finding Eulerian tour");
+                            --outcnt[u];
+                            adj[u] &= ~(1 << (b + 4));
+                            moved = true;
                             break;
                         }
                     }
-                    if (!moved_normal) { // Error hadling
-                        cerr << "ERROR: stuck at "
-                            << decode_kmer(u, K-1)
-                            << " outcnt=" << outcnt[u]
-                            << " remaining dummies_for_u=";
-                        auto it = dummy_map.find(u);
-                        if (it != dummy_map.end())   cerr << it->second.size();
-                        else                    cerr << 0;
-                        cerr << "\n";
-                        exit(1);
-                    }
-                } else {
-                    tour.push_back(u);
-                    curpath.pop_back();
                 }
-            }
-            reverse(tour.begin(), tour.end());
-            tours.push_back(tour);
-            if (m == m_tmp) { cerr << "Error: m has not increased throughout this loop\n"; break; }
-        }
-        cout << "Found: " << tours.size() << " tours\n"
-             << "Total moves: " << m << "\n";
 
-        return tours;
-    }
-
-    string spell_out(const VVINT& tours) {
-        string txt;
-        for (const auto& tour: tours) {
-            size_t n = tour.size();
-            if (n < 1) { cerr << "Tour too short\n"; exit(1); }
-
-            for (size_t i = 0; i < n - 1; ++i) {
-                pair<INT, INT> edge{tour[i], tour[i + 1]};
-                auto it = used_dummy_set.find(edge);
-                bool is_dummy = (it != used_dummy_set.end());
-                if(is_dummy) {
-                    used_dummy_set.erase(it);
-                    if (i > 0) txt += ",";
-                    txt += decode_kmer(edge.second, K - 1);
+                if (moved) {
+                    progress(++m, M, "Finding Eulerian tours");
                 } else {
-                    txt += decode_base(edge.second & 3);
+                    cerr << "\nERROR: stuck at " << decode_kmer(u, K - 1)
+                         << " outcnt=" << outcnt[u]
+                         << " remaining dummies_for_u=";
+                    auto it = dummy_map.find(u);
+                    if (it != dummy_map.end()) cerr << it->second.size();
+                    else cerr << 0;
+                    cerr << "\n";
+                    exit(1);
                 }
+            } else { // add dead end node to current tour
+                current_tour.push_back(u);
+                curpath.pop_back();
             }
         }
-        if (!txt.empty() && txt.back() == ',') {
-            txt.pop_back();
-        }
-        return txt;
+
+        // reverse current tour and add it to all_tours
+        reverse(current_tour.begin(), current_tour.end());
+        all_tours.push_back(current_tour);
     }
+
+    finished("Finding Eulerian tours");
+    cout << "Found " << all_tours.size() << " tour(s) covering all components.\n\n";
+
+    return all_tours;
+}
+
+string spell_out(const VVINT& tours) {
+    string txt;
+
+    for (size_t tour_idx = 0; tour_idx < tours.size(); ++tour_idx) {
+        const auto& tour = tours[tour_idx];
+        if (tour.size() < 2) continue;
+
+        string contig = decode_kmer(tour[0], K - 1);
+
+        for (size_t i = 0; i < tour.size() - 1; ++i) {
+            pair<INT, INT> edge{tour[i], tour[i + 1]};
+            
+            auto it = used_dummy_set.find(edge);
+            bool is_dummy = (it != used_dummy_set.end());
+
+            if (is_dummy) {
+                break;
+            } else {
+                contig += decode_base(tour[i + 1] & 3);
+            }
+        }
+
+        txt += contig;
+
+        if (tour_idx < tours.size() - 1) {
+            txt += ",";
+        }
+    }
+
+    return txt;
+}
 
     void write(const string& rep) {
         // --- Write .txt file ---
