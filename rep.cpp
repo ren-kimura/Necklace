@@ -263,7 +263,7 @@ public:
         cout << "K-mers reserve size: " << reserve_size << "\n";
     };
 
-    string process() {
+    VSTR process() {
         ofstream logfile(logfilename, ios::trunc);
         if (!logfile) {
             cerr << "Error: Could not open " << logfilename << " for writing\n";
@@ -301,7 +301,7 @@ public:
         chrono::duration<double> find_eulerian_cycle_time = end_time - start_time;
 
         start_time = chrono::high_resolution_clock::now();
-        string txt = spell_out(tours);
+        VSTR contigs = spell_out(tours);
         end_time = chrono::high_resolution_clock::now();
         chrono::duration<double> spell_out_time = end_time - start_time;
 
@@ -324,7 +324,7 @@ public:
         cout << "Peak memory: " << peak_memory_kb << " KB\n";
         logfile.close();
 
-        return txt;
+        return contigs;
     }
 
     void get_kmers() {
@@ -561,15 +561,14 @@ public:
         return all_tours;
     }
 
-    string spell_out(const VVINT& tours) {
-        string txt;
+    VSTR spell_out(const VVINT& tours) {
+        VSTR contigs;
 
-        for (size_t tour_idx = 0; tour_idx < tours.size(); ++tour_idx) {
-            const auto& tour = tours[tour_idx];
+        for (const auto& tour : tours) {
             if (tour.size() < 2) continue;
-            txt += ">" + to_string(tour_idx) + "\n";
 
-            string contig = decode_kmer(tour[0], K - 1);
+            string current_contig = decode_kmer(tour[0], K - 1);
+            bool contig_is_new = true;
 
             for (size_t i = 0; i < tour.size() - 1; ++i) {
                 pair<INT, INT> edge{tour[i], tour[i + 1]};
@@ -578,21 +577,26 @@ public:
                 bool is_dummy = (it != used_dummy_set.end());
 
                 if (is_dummy) {
-                    break;
+                    used_dummy_set.erase(it);
+                    contigs.push_back(current_contig);
+                    current_contig = decode_kmer(tour[i + 1], K - 1);
+                    contig_is_new = true;
+
                 } else {
-                    contig += decode_base(tour[i + 1] & 3);
+                    current_contig += decode_base(tour[i + 1] & 3);
+                    contig_is_new = false;
                 }
             }
-
-            txt += contig + "\n";
+            if (!contig_is_new) {
+                contigs.push_back(current_contig);
+            }
         }
-
-        return txt;
+        return contigs;
     }
 
-    void write(const string& rep) {
+    void write(const VSTR& contigs) {
         // --- Write .txt file ---
-        if (rep.empty()) {
+        if (contigs.empty()) {
             cerr << "Note: txt is empty.\n";
         }
     
@@ -602,7 +606,9 @@ public:
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
             return;
         }
-        txtfile << rep;
+        for (size_t i = 0; i < contigs.size(); ++i) {
+            txtfile << ">" << i+1 << "\n" << contigs[i] << "\n";
+        }
         txtfile.close();
     
         fs::path txtfilepath = txtfilename;
@@ -1677,8 +1683,8 @@ int main(int argc, char *argv[]) {
             return 1;
         }
         EDBG edbg = EDBG(_filename, _K);
-        string rep = edbg.process();
-        edbg.write(rep);
+        VSTR contigs = edbg.process();
+        edbg.write(contigs);
     }
     // ours
     else if (atoi(argv[1]) == 0) {
