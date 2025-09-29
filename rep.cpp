@@ -475,123 +475,120 @@ public:
         cout << "Added " << sources.size() << " dummy edges to balance the graph\n\n";
     }
 
-VVINT find_eulerian_cycle() {
-    VVINT all_tours;
-    size_t m = 0;
-    size_t M = 0;
-    for (const auto& [node, cnt] : outcnt) {
-        M += cnt;
-    }
-
-    while (m < M) {
-        INT start_node = INF;
+    VVINT find_eulerian_cycle() {
+        VVINT all_tours;
+        size_t m = 0;
+        size_t M = 0;
         for (const auto& [node, cnt] : outcnt) {
-            if (cnt > 0) {
-                start_node = node;
+            M += cnt;
+        }
+
+        while (m < M) {
+            INT start_node = INF;
+            for (const auto& [node, cnt] : outcnt) {
+                if (cnt > 0) {
+                    start_node = node;
+                    break;
+                }
+            }
+
+            if (start_node == INF) {
+                if (m < M) {
+                    cerr << "\nError: Could not find a start node, but " << M - m << " edges remain.\n";
+                }
                 break;
             }
-        }
 
-        if (start_node == INF) {
-            if (m < M) {
-                cerr << "\nError: Could not find a start node, but " << M - m << " edges remain.\n";
-            }
-            break;
-        }
+            VINT current_tour, curpath;
+            curpath.push_back(start_node);
 
-        VINT current_tour, curpath;
-        curpath.push_back(start_node);
-
-        // Hierholzer algorithm
-        while (!curpath.empty()) {
-            INT u = curpath.back();
-            if (outcnt[u] > 0) {
-                bool moved = false;
-                // try dummy edges first
-                auto it_map = dummy_map.find(u);
-                if (it_map != dummy_map.end() && !it_map->second.empty()) {
-                    INT v = it_map->second.back();
-                    it_map->second.pop_back();
-                    curpath.push_back(v);
-                    --outcnt[u];
-                    used_dummy_set.insert({u, v});
-                    moved = true;
-                }                
-                // try normal edges next
-                if (!moved) {
-                    for (int b = 0; b < 4; ++b) {
-                        if (adj[u] & (1 << (b + 4))) {
-                            INT mask = (1ULL << (2 * (K - 2))) - 1;
-                            INT v = ((u & mask) << 2) | b;
-                            curpath.push_back(v);
-                            --outcnt[u];
-                            adj[u] &= ~(1 << (b + 4));
-                            moved = true;
-                            break;
+            // Hierholzer algorithm
+            while (!curpath.empty()) {
+                INT u = curpath.back();
+                if (outcnt[u] > 0) {
+                    bool moved = false;
+                    // try dummy edges first
+                    auto it_map = dummy_map.find(u);
+                    if (it_map != dummy_map.end() && !it_map->second.empty()) {
+                        INT v = it_map->second.back();
+                        it_map->second.pop_back();
+                        curpath.push_back(v);
+                        --outcnt[u];
+                        used_dummy_set.insert({u, v});
+                        moved = true;
+                    }                
+                    // try normal edges next
+                    if (!moved) {
+                        for (int b = 0; b < 4; ++b) {
+                            if (adj[u] & (1 << (b + 4))) {
+                                INT mask = (1ULL << (2 * (K - 2))) - 1;
+                                INT v = ((u & mask) << 2) | b;
+                                curpath.push_back(v);
+                                --outcnt[u];
+                                adj[u] &= ~(1 << (b + 4));
+                                moved = true;
+                                break;
+                            }
                         }
                     }
-                }
 
-                if (moved) {
-                    progress(++m, M, "Finding Eulerian tours");
+                    if (moved) {
+                        progress(++m, M, "Finding Eulerian tours");
+                    } else {
+                        cerr << "\nERROR: stuck at " << decode_kmer(u, K - 1)
+                            << " outcnt=" << outcnt[u]
+                            << " remaining dummies_for_u=";
+                        auto it = dummy_map.find(u);
+                        if (it != dummy_map.end()) cerr << it->second.size();
+                        else cerr << 0;
+                        cerr << "\n";
+                        exit(1);
+                    }
+                } else { // add dead end node to current tour
+                    current_tour.push_back(u);
+                    curpath.pop_back();
+                }
+            }
+
+            // reverse current tour and add it to all_tours
+            reverse(current_tour.begin(), current_tour.end());
+            all_tours.push_back(current_tour);
+        }
+
+        finished("Finding Eulerian tours");
+        cout << "Found " << all_tours.size() << " tour(s) covering all components.\n\n";
+
+        return all_tours;
+    }
+
+    string spell_out(const VVINT& tours) {
+        string txt;
+
+        for (size_t tour_idx = 0; tour_idx < tours.size(); ++tour_idx) {
+            const auto& tour = tours[tour_idx];
+            if (tour.size() < 2) continue;
+            txt += ">" + to_string(tour_idx) + "\n";
+
+            string contig = decode_kmer(tour[0], K - 1);
+
+            for (size_t i = 0; i < tour.size() - 1; ++i) {
+                pair<INT, INT> edge{tour[i], tour[i + 1]};
+                
+                auto it = used_dummy_set.find(edge);
+                bool is_dummy = (it != used_dummy_set.end());
+
+                if (is_dummy) {
+                    break;
                 } else {
-                    cerr << "\nERROR: stuck at " << decode_kmer(u, K - 1)
-                         << " outcnt=" << outcnt[u]
-                         << " remaining dummies_for_u=";
-                    auto it = dummy_map.find(u);
-                    if (it != dummy_map.end()) cerr << it->second.size();
-                    else cerr << 0;
-                    cerr << "\n";
-                    exit(1);
+                    contig += decode_base(tour[i + 1] & 3);
                 }
-            } else { // add dead end node to current tour
-                current_tour.push_back(u);
-                curpath.pop_back();
             }
+
+            txt += contig + "\n";
         }
 
-        // reverse current tour and add it to all_tours
-        reverse(current_tour.begin(), current_tour.end());
-        all_tours.push_back(current_tour);
+        return txt;
     }
-
-    finished("Finding Eulerian tours");
-    cout << "Found " << all_tours.size() << " tour(s) covering all components.\n\n";
-
-    return all_tours;
-}
-
-string spell_out(const VVINT& tours) {
-    string txt;
-
-    for (size_t tour_idx = 0; tour_idx < tours.size(); ++tour_idx) {
-        const auto& tour = tours[tour_idx];
-        if (tour.size() < 2) continue;
-
-        string contig = decode_kmer(tour[0], K - 1);
-
-        for (size_t i = 0; i < tour.size() - 1; ++i) {
-            pair<INT, INT> edge{tour[i], tour[i + 1]};
-            
-            auto it = used_dummy_set.find(edge);
-            bool is_dummy = (it != used_dummy_set.end());
-
-            if (is_dummy) {
-                break;
-            } else {
-                contig += decode_base(tour[i + 1] & 3);
-            }
-        }
-
-        txt += contig;
-
-        if (tour_idx < tours.size() - 1) {
-            txt += ",";
-        }
-    }
-
-    return txt;
-}
 
     void write(const string& rep) {
         // --- Write .txt file ---
@@ -599,7 +596,7 @@ string spell_out(const VVINT& tours) {
             cerr << "Note: txt is empty.\n";
         }
     
-        string txtfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".ue" + to_string(K) + ".fa";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
