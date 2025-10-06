@@ -632,7 +632,8 @@ class NDBG{
 public:
     string filename, logfilename;
     INT K;
-    INT option;
+    int cover_option;
+    int out_option;
     size_t pool_size, reserve_size;
     
     pmr::monotonic_buffer_resource pool;
@@ -640,18 +641,22 @@ public:
     UMAP kmers;
     UMAP heads;
 
-    NDBG(string _filename, INT _K, INT _option)
-    : filename(_filename), K(_K), option(_option),
+    NDBG(string _filename, INT _K, int _cover_option , int _out_option)
+    : filename(_filename), K(_K), cover_option(_cover_option), out_option(_out_option),
       pool_size(estimate_pool_size_from_file(_filename, _K)),
       reserve_size(pool_size / 32),
       pool(pool_size),
       kmers(&pool), heads(&pool)
     {
-        if (option != 0 && option != 1 && option != 2 && option != 3) {
-            cerr << "\nInvalid option value\n";
+        if (cover_option != 0 && cover_option != 1) {
+            cerr << "\nInvalid cover_option value\n";
             exit(1);
         }
-        logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".log";
+        if (out_option != 0 && out_option != 1 && out_option != 2 && out_option != 3) {
+            cerr << "\nInvalid out_option value\n";
+            exit(1);
+        }
+        logfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(cover_option) + "." + to_string(out_option) + ".log";
         kmers.reserve(reserve_size);
         cout << "\nUsing pool size: " << pool_size / (1024 * 1024) << " MB\n";
         cout << "K-mers reserve size: " << reserve_size << "\n";
@@ -668,52 +673,76 @@ public:
         cout << "Timestamp: " << timestamp << "\n";
 
         VINT kmerv; 
-        
-        auto start_time = chrono::high_resolution_clock::now();        
-        get_kmers(kmerv);
-        auto end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> get_kmers_time = end_time - start_time;
-
-        VINT match_u, match_v;
-
-        start_time = chrono::high_resolution_clock::now();
-        INT M = hopcroft_karp(kmerv, match_u, match_v);
-        end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> hopcroft_karp_time = end_time - start_time;
-
         VVINT cycles, paths;
 
-        start_time = chrono::high_resolution_clock::now();
-        decompose(match_u, match_v, cycles, paths);
-        end_time = chrono::high_resolution_clock::now();
-        chrono::duration<double> decompose_time = end_time - start_time;
+        auto start_time = chrono::high_resolution_clock::now();
+        auto end_time = chrono::high_resolution_clock::now();
 
-        cout << "\n# of (k-mers, matching, cycles, paths)\n= (" 
-            << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
-        logfile << "\n# of (k-mers, matching, cycles, paths)\n= (" 
-            << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
+        // display benchmarks
+        print_table_header(logfile);
+
+        chrono::duration<double> cover_time;
+        if (cover_option == 0) { // find a path cover with max matching
+            start_time = chrono::high_resolution_clock::now();        
+            get_kmers(kmerv);
+            end_time = chrono::high_resolution_clock::now();
+            chrono::duration<double> get_kmers_time = end_time - start_time;
+            log_time("enumerate_kmers", get_kmers_time, logfile);
+
+            VINT match_u, match_v;
+
+            start_time = chrono::high_resolution_clock::now();
+            INT M = hopcroft_karp(kmerv, match_u, match_v);
+            end_time = chrono::high_resolution_clock::now();
+            chrono::duration<double> matching_time = end_time - start_time;
+            log_time("matching", matching_time, logfile);
+
+            start_time = chrono::high_resolution_clock::now();
+            decompose(match_u, match_v, cycles, paths);
+            end_time = chrono::high_resolution_clock::now();
+            chrono::duration<double> decompose_time = end_time - start_time;
+            log_time("decomposing", decompose_time, logfile);
+
+            cout << "\n# of (k-mers, matching, cycles, paths)\n= (" 
+                 << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
+            logfile << "\n# of (k-mers, matching, cycles, paths)\n= (" 
+                    << kmers.size() << ", " <<  M << ", " << cycles.size() << ", " << paths.size() << ")\n";
+
+            cover_time = get_kmers_time + matching_time + decompose_time;
+        } else { // greedily find a path cover directly from an input fasta file
+            start_time = chrono::high_resolution_clock::now();
+            fasta_to_paths(kmerv, cycles, paths);
+            end_time = chrono::high_resolution_clock::now();
+            cover_time = end_time - start_time;
+            log_time("enumerate_kmers besides building paths", cover_time, logfile);
+
+            cout << "\n# of (k-mers, cycles, paths)\n= (" 
+                 << kmers.size() << ", " << cycles.size() << ", " << paths.size() << ")\n";
+            logfile << "\n# of (k-mers, cycles, paths)\n= (" 
+                    << kmers.size() << ", " << cycles.size() << ", " << paths.size() << ")\n";
+        }
 
         REP rep;
         chrono::duration<double> align_time;
-        if (option == 0) {
+        if (out_option == 0) {
             // plain
             start_time = chrono::high_resolution_clock::now();
             rep = plain(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-        } else if (option == 1) {
+        } else if (out_option == 1) {
             // unsorted
             start_time = chrono::high_resolution_clock::now();
             rep = unsorted(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-        } else if (option == 2) {
+        } else if (out_option == 2) {
             // sorted
             start_time = chrono::high_resolution_clock::now();
             rep = sorted(kmerv, cycles, paths);
             end_time = chrono::high_resolution_clock::now();
             align_time = end_time - start_time;
-        } else if (option == 3) {
+        } else if (out_option == 3) {
             // tree (BP)
             start_time = chrono::high_resolution_clock::now();
             rep = forest(kmerv, cycles, paths);
@@ -724,19 +753,12 @@ public:
             exit(1);
         }
 
-        // display benchmarks
-        print_table_header(logfile);
-        log_time("get_kmers", get_kmers_time, logfile);
-        log_time("hopcroft_karp", hopcroft_karp_time, logfile);
-        log_time("decompose", decompose_time, logfile);
-        log_time((option == 0 ? "plain" : option == 1 ? "unsorted" : option == 2 ? "sorted" : "tree (BP)"),
+        log_time((out_option == 0 ? "plain" : out_option == 1 ? "unsorted" : out_option == 2 ? "sorted" : "tree (BP)"),
                             align_time, logfile);
         logfile << string(30, '-');
         cout << string(30, '-');
 
-        auto total_time = get_kmers_time.count() + 
-                          + hopcroft_karp_time.count() + decompose_time.count()
-                          + align_time.count();
+        auto total_time = cover_time.count() + align_time.count();
         logfile << "\nTotal time: " << total_time << " s\n";
         cout << "\nTotal time: " << total_time << " s\n";
 
@@ -1018,6 +1040,124 @@ public:
         cout << "No duplicates found. Total number of bases is correct.\n";
         cout << "Found " << cycles.size() << " cycles and " 
                          << paths.size() << " paths.\n";
+    }
+
+    void fasta_to_paths(VINT& kmerv, VVINT& cycles, VVINT& paths){
+        ifstream inputFile(filename, ios::in | ios::binary);
+        if (!inputFile) {
+            cerr << "Error opening input file." << "\n";
+            exit(1);
+        }
+
+        const size_t BUF_SIZE = 64 * 1024 * 1024; // 64MB
+        char *buffer = new char[BUF_SIZE];
+        inputFile.rdbuf()->pubsetbuf(buffer, BUF_SIZE);
+
+        VSTR reads;
+        string line, read;
+        bool is_new_read = true;
+        while (getline(inputFile, line)) {
+            if (line.empty()) continue;
+            if (line[0] == '>') {
+                if (!read.empty()) {
+                    reads.emplace_back(read);
+                    read.clear();
+                }
+                is_new_read = true;
+                continue;
+            }
+            if (is_new_read) {
+                read = line;
+                is_new_read = false;
+            } else read += line;
+        }
+        if (!read.empty()) reads.emplace_back(read);
+        inputFile.close();
+        delete[] buffer;
+
+        INT tlen = 0;
+        to_uppercase(reads);
+        for (string& read: reads)
+            tlen += read.size();
+        
+        INT id = 0, footing = 0;
+        uint64_t mask = (1ULL << (2 * (K - 1))) - 1; // 2K-bits mask
+
+        VINT path = {};
+
+        for (INT i = 0; i < (INT)(reads.size()); ++i) {
+            const string& read = reads[i];
+            INT len = read.size();
+            if (len < K) continue;
+            uint64_t hash;
+
+            INT j = rolling_valid_kmer_start(read, 0, K);
+            if (j == INF) continue; // if not any valid k-mer, go to next read
+            hash = encode_kmer(read.substr(j, K));
+            auto it = kmers.find(hash);
+            if (it == kmers.end()) {
+                kmers[hash] = id;
+                kmerv.emplace_back(hash);
+                path.emplace_back(id);
+                ++id;
+                if (id == INF) {
+                    cerr << "Too much k-mers!!\n\n";
+                    exit(1);
+                }
+            } else {
+                if (!path.empty()) {
+                    INT existing_id = it->second;
+                    if (existing_id == path.front()) {
+                        cycles.emplace_back(path);
+                    } else {
+                        paths.emplace_back(path);
+                    }
+                }
+                path.clear();
+            }
+
+            // update kmer by rolling hash
+            for (++j; j <= len - K; ++j) {
+                char c_in = read[j + K - 1];
+
+                if (c_in == 'A')        hash = ((hash & mask) << 2) | 0;
+                else if (c_in == 'C')   hash = ((hash & mask) << 2) | 1;
+                else if (c_in == 'G')   hash = ((hash & mask) << 2) | 2;
+                else if (c_in == 'T')   hash = ((hash & mask) << 2) | 3;
+                else {
+                    j = rolling_valid_kmer_start(read, j + 1, K);
+                    if (j == INF) break;
+                    hash = encode_kmer(read.substr(j, K));
+                }
+
+                // register k-mer to kmers
+                auto it = kmers.find(hash);
+                if (it == kmers.end()) {
+                    kmers[hash] = id;
+                    kmerv.emplace_back(hash);
+                    path.emplace_back(id);
+                    ++id;
+                    if (id == INF) {
+                        cerr << "Too much k-mers!!\n\n";
+                        exit(1);
+                    }
+                } else {
+                    if (!path.empty()) {
+                        INT existing_id = it->second;
+                        if (existing_id == path.front()) {
+                            cycles.emplace_back(path);
+                        } else {
+                            paths.emplace_back(path);
+                        }
+                    }
+                    path.clear();
+                }
+                progress(footing + j, tlen, "enumerate_kmers besides building paths");
+            }
+            footing += len;
+        }
+        finished("enumerate_kmers besides building paths");
+        cout << "\n";
     }
 
     REP plain(const VINT& kmerv, const VVINT& cycles, const VVINT& paths) {
@@ -1413,11 +1553,7 @@ public:
         return {txt, pnt};
     }
 
-    string write_subtree(INT root_pid,
-                                const VVINT& paths,
-                                const VINT& kmerv,
-                                const UMAP& heads,
-                                Vint& added) {
+    string write_subtree(INT root_pid, const VVINT& paths, const VINT& kmerv, const UMAP& heads, Vint& added) {
         struct Frame {
             INT pid;
             size_t node_idx    = 0;
@@ -1589,7 +1725,7 @@ public:
             cerr << "Note: txt is empty.\n";
         }
     
-        string txtfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + ".txt";
+        string txtfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(cover_option) + "." + to_string(out_option) + ".txt";
         ofstream txtfile(txtfilename);
         if (!txtfile) {
             cerr << "Error: Could not open file " << txtfilename << " for writing.\n";
@@ -1611,7 +1747,7 @@ public:
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
         } else {
-            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(option) + "p.txt";
+            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + "." + to_string(cover_option) + to_string(out_option) + "p.txt";
             ofstream pntfile(pntfilename);
             if (!pntfile) {
                 cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
@@ -1646,7 +1782,10 @@ public:
 };
 
 void print_usage(const string& cmdname) {
-    cerr << "Usage: " << cmdname << " [0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1 / 2 / 3])\n"
+    cerr << "Usage: " << cmdname << " [0(node-centric) / 1(edge-centric)] [****.fa] [k] ([0 / 1]) ([0 / 1 / 2 / 3])\n"
+        << "Find a path cover by...\n" 
+        << "0: Maximum Matching\n"
+        << "1: linear scan of input reads (greedy)\n\n"
         << "Output options(node-centric) are...\n"
         << "0: explicit representation without pointers (SPSS)\n"
         << "1: representation with unsorted pointers\n"
@@ -1657,7 +1796,7 @@ void print_usage(const string& cmdname) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 4 || 5 < argc) {
+    if (argc < 4 || 6 < argc) {
         print_usage(argv[0]);
         return 1;
     }
@@ -1688,13 +1827,14 @@ int main(int argc, char *argv[]) {
     }
     // ours
     else if (atoi(argv[1]) == 0) {
-        if (argc != 5) {
+        if (argc != 6) {
             print_usage(argv[0]);
             return 1;
         }
-        INT _option = atoi(argv[4]);
+        int _cover_option = atoi(argv[4]);
+        INT _out_option = atoi(argv[5]);
 
-        NDBG ndbg = NDBG(_filename, _K, _option);
+        NDBG ndbg = NDBG(_filename, _K, _cover_option, _out_option);
         REP rep = ndbg.process();
         ndbg.write(rep);
     }
