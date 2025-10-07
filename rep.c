@@ -410,9 +410,9 @@ uint64_t extract_kmers(const char* infile, int k, map_t **kmap, uint64_t **karr)
     return N;
 }
 
-uint64_t step(map_t *p, const uint64_t *a, const int k,
+uint64_t step(map_t *kmap, const uint64_t *karr, const int k,
               uint64_t id, int c, int is_forward) {
-    uint64_t h = a[id];
+    uint64_t h = karr[id];
     if (h == INF) return INF;
     if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
     if (is_forward) {
@@ -428,7 +428,7 @@ uint64_t step(map_t *p, const uint64_t *a, const int k,
         else if (c == 'T')  h |= (3ULL << (2 * (k - 1)));
     }
 
-    uint64_t h_new = map_get(p, h);
+    uint64_t h_new = map_get(kmap, h);
     if (h_new == INF || h_new == h) return INF; // no branch to c
     
     return h_new;
@@ -672,6 +672,74 @@ Rep unsorted(map_t *kmap, uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64
     if (strlen(r.str)) r.str[strlen(r.str) - 1] = '\0';
     if (pp->size == 0) r.str[strlen(r.str) - 1] = '\0';
     return r; 
+}
+
+typedef struct Frame {
+    uint64_t current;
+    uint64_t index;
+    int b_index;
+    struct Frame *next;
+} Frame;
+
+typedef struct {
+    Frame *top;
+} Fstack;
+
+void init_fstack(Fstack *s) {
+    s->top = NULL;
+}
+
+int is_empty_fstack(Fstack *s) {
+    return (s->top == NULL);
+}
+
+void push_frame(Fstack *s, uint64_t current, uint64_t index, int b_index) {
+    Frame *new_frame = (Frame*)malloc(sizeof(Frame));
+    if (new_frame == NULL) {
+        fprintf(stderr, "Memory allocation failed for new_frame\n");
+        exit(EXIT_FAILURE);
+    }
+    new_frame->current = current;
+    new_frame->index = index;
+    new_frame->b_index = b_index;
+    new_frame->next = s->top;
+    s->top = new_frame;
+    printf("pushed a frame {%ld, %ld, %d}\n", current, index, b_index);
+}
+
+void pop_frame(Fstack *s) {
+    if (is_empty_fstack(s)) {
+        printf("Error: stack is empty\n");
+        return;
+    }
+    Frame *tmp = s->top;
+    s->top = s->top->next;
+    free(tmp);
+}
+
+Vec* find_new_cycle(map_t *kmap, uint64_t *karr, Vvec *pp, uint64_t *in_pord, uint64_t *is_leaf, uint64_t *visited, uint64_t start) {
+    Vec* cycle = malloc(sizeof(Vec));
+    if (cycle == NULL) {
+        return NULL;
+    }
+    cycle->data = NULL;
+    cycle->size = cycle->cap = 0;
+
+    /* implement the process here */
+    Fstack s;
+    init_fstack(&s);
+
+    visited[start] = 1;
+    push_frame(&s, start, 0, 0);
+
+    while (!is_empty_fstack(&s)) {
+        if (s.top->index >= (uint64_t)pp[s.top->current].size) {
+            is_leaf[s.top->current] = 1; // memo as a leaf
+            pop_frame(&s);
+            if (cycle->size != 0) ; // implement pop_back to struct Vec
+        }
+    }
+    return cycle;
 }
 
 int main(int argc, char *argv[]) {
