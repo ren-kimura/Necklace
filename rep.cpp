@@ -1747,7 +1747,7 @@ public:
         if (rep.second.empty()) {
             cerr << "Note: pnt is empty.\n";
         } else {
-            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + "." + to_string(cover_option) + to_string(out_option) + "p.txt";
+            pntfilename = remove_extension(filename, ".fa") + ".o" + to_string(K) + "." + to_string(cover_option) + "." + to_string(out_option) + "p.txt";
             ofstream pntfile(pntfilename);
             if (!pntfile) {
                 cerr << "Error: Could not open file " << pntfilename << " for writing.\n";
