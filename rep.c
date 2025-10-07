@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -324,6 +325,91 @@ long next_valid(const char *read, long start, long k) {
     return -1; // no valid k-mer found after `start`
 }
 
+uint64_t extract_kmers(const char* infile, int k, map_t **kmap, uint64_t **karr) {
+    FILE *fp = fopen(infile, "rb");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", infile);
+        exit(EXIT_FAILURE);
+    }
+    printf("file %s opened\n", infile);
+
+        uint64_t id = 0;
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read_len;
+
+    while ((read_len = getline(&line, &len, fp)) != -1) {
+        if (read_len > 0 && line[read_len - 1] == '\n') {
+            line[read_len - 1] = '\0';
+        }
+        if (read_len > 1 && line[read_len - 2] == '\r') {
+            line[read_len - 2] = '\0';
+        }
+        if (strlen(line) == 0 || line[0] == '>') {
+            continue;
+        }
+        long line_len = strlen(line);
+        if (line_len < k) {
+            continue; // too short to contain a k-mer
+        }
+        uint64_t h;
+        char s[k + 1]; // buffer for k-mer string
+        long j = next_valid(line, 0, k);
+        if (j != -1) {
+            strncpy(s, line + j, k);
+            s[k] = '\0';
+            h = enc(s, k);
+            if (map_add(&kmap, h, id)) id++;
+            uint64_t m = (1ULL << (2 * (k - 1))) - 1; // clear two MSBs
+            for (++j; j <= line_len - k; ++j) {
+                char c = toupper(line[j + k - 1]);
+                if (c == 'A')       h = ((h & m) << 2) | 0;
+                else if (c == 'C')  h = ((h & m) << 2) | 1;
+                else if (c == 'G')  h = ((h & m) << 2) | 2;
+                else if (c == 'T')  h = ((h & m) << 2) | 3;
+                else {
+                    j = next_valid(line, j + 1, k);
+                    if (j == -1) break; // no more k-mer on this line
+                    strncpy(s, line + j, k);
+                    s[k] = '\0';
+                    h = enc(s, k);
+                }
+                if (map_add(&kmap, h, id)) id++;
+            }
+        }
+    }
+    const uint64_t N = (uint64_t)HASH_COUNT(*kmap); // number of k-mers
+
+    printf("total unique k-mers = %ld\n", N);
+    /* display kmap */
+    // /*
+    printf("key\t\tdec(key)\tvalue\n");
+    printf("-------------------------------------------\n");
+    for (map_t *s = kmap; s != NULL; s = (map_t*)(s->hh.next)) {
+        char t[k + 1];
+        dec(s->key, k, t);
+        t[k] = '\0';
+        printf("%lu\t\t%s\t\t%lu\n", s->key, t, s->val);
+    }
+    printf("-------------------------------------------\n");
+    // */
+
+    *karr = malloc(N * sizeof(uint64_t));
+    if (karr == NULL) {
+        fprintf(stderr, "Memory allocation failed for karr\n");
+        exit(EXIT_FAILURE);
+    }
+    for (map_t *s = *kmap; s != NULL; s = (map_t*)(s->hh.next)) {
+        (*karr)[s->val] = s->key;
+    }
+
+    free(line);
+    fclose(fp);
+    printf("file %s closed\n", infile);
+
+    return N;
+}
+
 uint64_t step(map_t *p, const uint64_t *a, const int k,
               uint64_t id, int c, int is_forward) {
     uint64_t h = a[id];
@@ -590,10 +676,10 @@ Rep unsorted(map_t *kmap, uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64
 
 int main(int argc, char *argv[]) {
     const char *infile = NULL;
-	int k = -1;
-	int mode = -1;
-	int opt;
-	while ((opt = getopt(argc, argv, "i:k:o:")) != -1) {
+    int k, di, cover, mode, opt;
+    k = di = cover = mode = -1;
+
+	while ((opt = getopt(argc, argv, "i:k:d:c:o:")) != -1) {
 	    switch (opt) {
 		    case 'i':
 			    if (infile) usage(argv[0]);
@@ -603,6 +689,16 @@ int main(int argc, char *argv[]) {
                 if (k != -1) usage(argv[0]);
                 k = parse_int(optarg);
                 if (k < 1 || k > 31) usage(argv[0]);
+                break;
+            case 'd':
+                if (di != -1) usage(argv[0]);
+                di = parse_int(optarg);
+                if (di != 0 && di != 1) usage(argv[0]);
+                break;
+            case 'c':
+                if (cover != -1) usage(argv[0]);
+                cover = parse_int(optarg);
+                if (cover != 0 && cover != 1) usage(argv[0]);
                 break;
             case 'o':
                 if (mode != -1) usage(argv[0]);
@@ -615,113 +711,33 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-    if (!infile || k == -1 || mode == -1)
+    if (!infile || k == -1 || di == -1 || cover == -1 || mode == -1) {
         usage(argv[0]);
+    }
 
     printf("input = %s\n", infile);
     printf("k = %d\n", k);
+    printf("di = %d\n", di);
+    printf("cover = %d\n", cover);
     printf("mode = %d\n", mode);
 
-    FILE *fp;
-    fp = fopen(infile, "rb");
-	if (fp == NULL) {
-		printf("%s file not open\n", infile);
-		return -1;
-	} else {
-		printf("%s file opened\n", infile);
-	}
-
     map_t *kmap = NULL;
-    uint64_t id = 0;
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read_len;
-
-    while ((read_len = getline(&line, &len, fp)) != -1) {
-        if (read_len > 0 && line[read_len - 1] == '\n') {
-            line[read_len - 1] = '\0';
-        }
-        if (read_len > 1 && line[read_len - 2] == '\r') {
-            line[read_len - 2] = '\0';
-        }
-        if (strlen(line) == 0 || line[0] == '>') {
-            continue;
-        }
-        long line_len = strlen(line);
-        if (line_len < k) {
-            continue; // too short to contain a k-mer
-        }
-        uint64_t h;
-        char s[k + 1]; // buffer for k-mer string
-        long j = next_valid(line, 0, k);
-        if (j != -1) {
-            strncpy(s, line + j, k);
-            s[k] = '\0';
-            h = enc(s, k);
-            if (map_add(&kmap, h, id)) id++;
-            uint64_t m = (1ULL << (2 * (k - 1))) - 1; // clear two MSBs
-            for (++j; j <= line_len - k; ++j) {
-                char c = toupper(line[j + k - 1]);
-                if (c == 'A')       h = ((h & m) << 2) | 0;
-                else if (c == 'C')  h = ((h & m) << 2) | 1;
-                else if (c == 'G')  h = ((h & m) << 2) | 2;
-                else if (c == 'T')  h = ((h & m) << 2) | 3;
-                else {
-                    j = next_valid(line, j + 1, k);
-                    if (j == -1) break; // no more k-mer on this line
-                    strncpy(s, line + j, k);
-                    s[k] = '\0';
-                    h = enc(s, k);
-                }
-                if (map_add(&kmap, h, id)) id++;
-            }
-        }
-    }
-    const uint64_t N = (uint64_t)HASH_COUNT(kmap); // number of k-mers
-
-    printf("total unique k-mers = %ld\n", N);
-    /* display kmap */
-    // /*
-    printf("key\t\tdec(key)\tvalue\n");
-    printf("-------------------------------------------\n");
-    for (map_t *s = kmap; s != NULL; s = (map_t*)(s->hh.next)) {
-        char t[k + 1];
-        dec(s->key, k, t);
-        t[k] = '\0';
-        printf("%lu\t\t%s\t\t%lu\n", s->key, t, s->val);
-    }
-    printf("-------------------------------------------\n");
-    // */
-    
-    uint64_t *karr = malloc(N * sizeof(uint64_t));
-    if (karr == NULL) {
-        printf("Memory allocation failed for arrays karr\n");
-        free(karr);
-        free_map(&kmap);
-        return -1;
-    }
-
-    for (map_t *s = kmap; s != NULL; s = (map_t*)(s->hh.next)) {
-        karr[s->val] = s->key;
-    }
-
-    free(line);
-	fclose(fp);
-    printf("%s file closed\n", infile);
+    map_t *karr = NULL;
+    uint64_t N = extract_kmers(infile, k, &kmap, &karr);
     
     uint64_t *mu = malloc(N * sizeof(uint64_t));
     uint64_t *mv = malloc(N * sizeof(uint64_t));
     if (mu == NULL || mv == NULL) {
         printf("Memory allocation failed for array mu or mv\n");
-        free(karr);
-        free(mu);
-        free(mv);
+        free(karr); free(mu); free(mv);
         free_map(&kmap);
         return -1;
     }
     uint64_t M = hopcroft_karp(kmap, karr, mu, mv, k, N);
     if (M == INF) {
         printf("Exiting due to bad memory allocation\n");
+        free(karr); free(mu); free(mv);
+        free_map(&kmap);
         return -1;
     }
     Vvec cc, pp;
@@ -747,9 +763,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    free(karr);
-    free(mu);
-    free(mv);
+    free(karr); free(mu); free(mv);
     free_map(&kmap);
     free_vvec(&cc); free_vvec(&pp);
     
