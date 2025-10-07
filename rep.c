@@ -34,9 +34,14 @@ void init_vvec(Vvec *vv) {
     vv->cap = 0;
 }
 
+void free_vec(Vec *v) {
+    free(v->data);
+    init_vec(v);
+}
+
 void free_vvec(Vvec *vv) {
     for (size_t i = 0; i < vv->size; i++) {
-        free(vv->vecs[i].data);
+        free_vec(&vv->vecs[i]);
     }
     free(vv->vecs);
     init_vvec(vv);
@@ -90,6 +95,15 @@ void push_back(Vec *v, uint64_t val) {
         v->cap = new_cap;
     }
     v->data[v->size++] = val;
+}
+
+uint64_t pop_back(Vec *v) {
+    if (v->size == 0) {
+        fprintf(stderr, "Error: pop_back called on an empty vector");
+        return INF;
+    }
+    v->size--;
+    return v->data[v->size];
 }
 
 // for stack and queue
@@ -717,7 +731,7 @@ void pop_frame(Fstack *s) {
     free(tmp);
 }
 
-Vec* find_new_cycle(map_t *kmap, uint64_t *karr, Vvec *pp, uint64_t *in_pord, uint64_t *is_leaf, uint64_t *visited, uint64_t start) {
+Vec* find_new_cycle(map_t *kmap, uint64_t *karr, map_t *hd, int k, Vvec *pp, uint64_t *in_pord, uint64_t *is_leaf, uint64_t *visited, uint64_t start) {
     Vec* cycle = malloc(sizeof(Vec));
     if (cycle == NULL) {
         return NULL;
@@ -733,12 +747,36 @@ Vec* find_new_cycle(map_t *kmap, uint64_t *karr, Vvec *pp, uint64_t *in_pord, ui
     push_frame(&s, start, 0, 0);
 
     while (!is_empty_fstack(&s)) {
-        if (s.top->index >= (uint64_t)pp[s.top->current].size) {
+        // rm from stack if explored all the nodes in the current path
+        if (s.top->index >= (uint64_t)pp->vecs[s.top->current].size) {
             is_leaf[s.top->current] = 1; // memo as a leaf
             pop_frame(&s);
-            if (cycle->size != 0) ; // implement pop_back to struct Vec
+            if (cycle->size != 0) pop_back(&cycle);
+            continue;
+        }
+        // when entering a new node (on start of this frame)
+        if (s.top->index == 0 && s.top->b_index == 0) push_back(&cycle, s.top->current);
+        // try next base
+        if (s.top->b_index < 4) {
+            char c = B[s.top->b_index];
+            s.top->b_index++;
+            uint64_t current_node = pp->vecs[s.top->current].data[s.top->index];
+            uint64_t next_node = step(kmap, karr, k, current_node, c, 1);
+            if (next_node == INF) continue;
+            uint64_t next_pid = map_get(hd, next_node);
+            if (next_pid == INF) continue;
+            if (in_pord[next_pid]) continue;
+            if (next_pid == start) return cycle;
+            if (visited[next_pid]) continue; // skip visited paths
+            if (is_leaf[next_pid]) continue; // skip leaves  
+            visited[next_pid] = 1;
+            push_frame(&s, next_pid, 0, 0);          
+        } else {
+            s.top->index++;
+            s.top->b_index = 0;
         }
     }
+    init_vec(cycle);
     return cycle;
 }
 
