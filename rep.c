@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
@@ -11,16 +12,50 @@
 char B[4] = {'A', 'C', 'G', 'T'};
 
 typedef struct {
+    bool *data;
+    size_t size;
+    size_t cap;
+} VecBool;
+
+void init_vec_bool(VecBool *v) {
+    v->data = NULL;
+    v->size = 0;
+    v->cap = 0;
+}
+
+void push_back_bool(VecBool *v, uint8_t val) {
+    if (v->size >= v->cap) {
+        size_t new_cap = (v->cap == 0) ? 8 : v->cap * 2;
+        bool *new_data = realloc(v->data, new_cap * sizeof(uint8_t));
+        if (new_data == NULL) {
+            fprintf(stderr, "Memory reallocation failed for data\n");
+            exit(EXIT_FAILURE);
+        }
+        v->data = new_data;
+        v->cap = new_cap;
+    }
+    v->data[v->size++] = val;
+}
+
+bool pop_back_bool(VecBool *v) {
+    if (v->size == 0) {
+        fprintf(stderr, "Error: pop_back called on an empty vector");
+        return false;
+    }
+    v->size--;
+    return v->data[v->size];
+}
+
+void free_vec_bool(VecBool *v) {
+    free(v->data);
+    init_vec_bool(v);
+}
+
+typedef struct {
     uint64_t *data;
     size_t size;
     size_t cap;
 } Vec;
-
-typedef struct {
-    Vec *vecs;
-    size_t size;
-    size_t cap;
-} Vvec;
 
 void init_vec(Vec *v) {
     v->data = NULL;
@@ -28,15 +63,62 @@ void init_vec(Vec *v) {
     v->cap = 0;
 }
 
+void push_back(Vec *v, uint64_t val) {
+    if (v->size >= v->cap) {
+        size_t new_cap = (v->cap == 0) ? 8 : v->cap * 2;
+        uint64_t *new_data = realloc(v->data, new_cap * sizeof(uint64_t));
+        if (new_data == NULL) {
+            fprintf(stderr, "Memory reallocation failed for data\n");
+            exit(EXIT_FAILURE);
+        }
+        v->data = new_data;
+        v->cap = new_cap;
+    }
+    v->data[v->size++] = val;
+}
+
+uint64_t pop_back(Vec *v) {
+    if (v->size == 0) {
+        fprintf(stderr, "Error: pop_back called on an empty vector");
+        return INF;
+    }
+    v->size--;
+    return v->data[v->size];
+}
+
+void free_vec(Vec *v) {
+    free(v->data);
+    init_vec(v);
+}
+
+typedef struct {
+    Vec *vecs;
+    size_t size;
+    size_t cap;
+} Vvec;
+
 void init_vvec(Vvec *vv) {
     vv->vecs = NULL;
     vv->size = 0;
     vv->cap = 0;
 }
 
-void free_vec(Vec *v) {
-    free(v->data);
-    init_vec(v);
+void add_vec(Vvec *vv) {
+    if (vv->size >= vv->cap) {
+        size_t new_cap = (vv->cap == 0) ? 8 : vv->cap * 2;
+        Vec *new_vecs = realloc(vv->vecs, new_cap * sizeof(Vec));
+        if (new_vecs == NULL) {
+            perror("Failed to reallocate memory for vectors\n");
+            exit(EXIT_FAILURE);
+        }
+        vv->vecs = new_vecs;
+        vv->cap = new_cap;
+    }
+    Vec *new_vec = &vv->vecs[vv->size];
+    new_vec->data = NULL;
+    new_vec->size = 0;
+    new_vec->cap = 0;
+    vv->size++;
 }
 
 void free_vvec(Vvec *vv) {
@@ -63,47 +145,6 @@ void print_vvec(const char *title, Vvec *vv) {
         printf("\n");
     }
     printf("--------------------------------\n");
-}
-
-void add_vec(Vvec *vv) {
-    if (vv->size >= vv->cap) {
-        size_t new_cap = (vv->cap == 0) ? 8 : vv->cap * 2;
-        Vec *new_vecs = realloc(vv->vecs, new_cap * sizeof(Vec));
-        if (new_vecs == NULL) {
-            perror("Failed to reallocate memory for vectors\n");
-            exit(EXIT_FAILURE);
-        }
-        vv->vecs = new_vecs;
-        vv->cap = new_cap;
-    }
-    Vec *new_vec = &vv->vecs[vv->size];
-    new_vec->data = NULL;
-    new_vec->size = 0;
-    new_vec->cap = 0;
-    vv->size++;
-}
-
-void push_back(Vec *v, uint64_t val) {
-    if (v->size >= v->cap) {
-        size_t new_cap = (v->cap == 0) ? 8 : v->cap * 2;
-        uint64_t *new_data = realloc(v->data, new_cap * sizeof(uint64_t));
-        if (new_data == NULL) {
-            perror("Failed to reallocate memory for data\n");
-            exit(EXIT_FAILURE);
-        }
-        v->data = new_data;
-        v->cap = new_cap;
-    }
-    v->data[v->size++] = val;
-}
-
-uint64_t pop_back(Vec *v) {
-    if (v->size == 0) {
-        fprintf(stderr, "Error: pop_back called on an empty vector");
-        return INF;
-    }
-    v->size--;
-    return v->data[v->size];
 }
 
 // for stack and queue
@@ -373,7 +414,7 @@ uint64_t extract_kmers(const char* infile, int k, map_t **kmap, uint64_t **karr)
             strncpy(s, line + j, k);
             s[k] = '\0';
             h = enc(s, k);
-            if (map_add(&kmap, h, id)) id++;
+            if (map_add(kmap, h, id)) id++;
             uint64_t m = (1ULL << (2 * (k - 1))) - 1; // clear two MSBs
             for (++j; j <= line_len - k; ++j) {
                 char c = toupper(line[j + k - 1]);
@@ -388,7 +429,7 @@ uint64_t extract_kmers(const char* infile, int k, map_t **kmap, uint64_t **karr)
                     s[k] = '\0';
                     h = enc(s, k);
                 }
-                if (map_add(&kmap, h, id)) id++;
+                if (map_add(kmap, h, id)) id++;
             }
         }
     }
@@ -399,7 +440,7 @@ uint64_t extract_kmers(const char* infile, int k, map_t **kmap, uint64_t **karr)
     // /*
     printf("key\t\tdec(key)\tvalue\n");
     printf("-------------------------------------------\n");
-    for (map_t *s = kmap; s != NULL; s = (map_t*)(s->hh.next)) {
+    for (map_t *s = *kmap; s != NULL; s = (map_t*)(s->hh.next)) {
         char t[k + 1];
         dec(s->key, k, t);
         t[k] = '\0';
@@ -751,11 +792,11 @@ Vec* find_new_cycle(map_t *kmap, uint64_t *karr, map_t *hd, int k, Vvec *pp, uin
         if (s.top->index >= (uint64_t)pp->vecs[s.top->current].size) {
             is_leaf[s.top->current] = 1; // memo as a leaf
             pop_frame(&s);
-            if (cycle->size != 0) pop_back(&cycle);
+            if (cycle->size != 0) pop_back(cycle);
             continue;
         }
         // when entering a new node (on start of this frame)
-        if (s.top->index == 0 && s.top->b_index == 0) push_back(&cycle, s.top->current);
+        if (s.top->index == 0 && s.top->b_index == 0) push_back(cycle, s.top->current);
         // try next base
         if (s.top->b_index < 4) {
             char c = B[s.top->b_index];
@@ -778,6 +819,133 @@ Vec* find_new_cycle(map_t *kmap, uint64_t *karr, map_t *hd, int k, Vvec *pp, uin
     }
     init_vec(cycle);
     return cycle;
+}
+
+uint64_t count_trues(bool *v, uint64_t size) {
+    uint64_t count = 0;
+    for (uint64_t i = 0; i < size; i++) {
+        if (!v[i]) continue;
+        count++;
+    }
+    return count;
+}
+
+Rep sorted(map_t *kmap, uint64_t *karr, Vvec *cc, Vvec *pp, uint64_t k, uint64_t N) {
+    Rep r;
+    r.str[0] = '\0';
+        map_t *hd = NULL;
+    set_t *rp = NULL;
+    for (uint64_t i = 0; i < pp->size; i++) {
+        int is_rp = 1;
+        uint64_t hid = pp->vecs[i].data[0];
+        for (int c_idx = 0; c_idx < 4; c_idx++) {
+            if (step(kmap, karr, k, hid, B[c_idx], 0) != INF) {
+                is_rp = 0;
+                break;
+            }
+        }
+        if (is_rp) {
+            set_add(&rp, i);
+        } else {
+            map_add(&hd, hid, i);
+        }
+    }
+    r.arr = (uint64_t*)malloc(sizeof(uint64_t) * pp->size);
+    for (uint64_t i = 0; i < pp->size; i++) { r.arr[i] = -1; }
+    printf("# of (non-root paths, root paths) = (%d, %d)\n", HASH_COUNT(hd), HASH_COUNT(rp));
+
+    Queue q;
+    init_queue(&q);
+
+    VecBool ord; // i-th item is false if i-th one is a cycle in a sorted order, true if a path
+    init_vec_bool(&ord);
+    Vec ord_id; // i-th item is the cycle/path index corresponding to that in ord_cp
+    init_vec(&ord_id);
+
+    bool in_ord[pp->size]; // false: path is not in ord yet, true: already in ord
+    for (size_t i = 0; i < pp->size; i++) { in_ord[i] = false; }
+
+    uint64_t pos = 0; // current position 
+    uint64_t pnt_flag = 0; // r.arr is initialized up to this index
+    // bfs from root paths
+    for (set_t *s = rp; s != NULL; s = (set_t*)(s->hh.next)) {
+        enqueue(&q, s->key);
+        push_back_bool(&ord, true); // added a path
+        push_back(&ord_id, s->key);
+        in_ord[s->key] = true;
+        pos += k; // extra '$' and k-1 chars in the front
+
+        while (!is_empty_queue(&q)) {
+            uint64_t id = dequeue(&q);
+            for (size_t i = 0; i < pp->vecs[id].size; i++) {
+                uint64_t node = pp->vecs[id].data[i];
+                for (int j = 0; j < 4; j++) {                    
+                    uint64_t next = step(kmap, karr, k, node, B[i], 1);
+                    if (next == INF) continue;
+                    uint64_t next_id = map_get(hd, next);
+                    if (next_id == INF) continue;
+                    if (in_ord[next_id]) continue;
+                    enqueue(&q, next_id);
+                    push_back_bool(&ord, true); // added a path
+                    push_back(&ord_id, next_id);
+                    in_ord[next_id] = true;
+                    r.arr[pnt_flag++] = pos;
+                }
+                pos++;
+            }
+            pos++;
+        }
+    }
+    for (size_t i = 0; i < cc->size; i++) {
+        push_back_bool(&ord, false); // added a cycle
+        push_back(&ord_id, i);
+        pos++; // need flag '*' for a cycle to tell apart from a path
+        // because a cycle is encoded into a circular string by removing the prefix of length k-1.
+        for (size_t j = 0; j < cc->vecs[i].size; j++) {
+            uint64_t node = cc->vecs[i].data[j];
+            for (int m = 0; m < 4; i++) {
+                uint64_t next = step(kmap, karr, k, node, B[m], 1);
+                if (next == INF) continue;
+                uint64_t next_id = map_get(hd, next);
+                if (next_id == INF) continue;
+                if (in_ord[next_id]) continue;
+                enqueue(&q, next_id);
+                push_back_bool(&ord, true); // added a path
+                push_back(&ord_id, next_id);
+                in_ord[next_id] = true;
+                r.arr[pnt_flag++] = pos;
+            }
+            pos++;
+        }
+        pos++;
+        while (!is_empty_queue(&q)) {
+            uint64_t id = dequeue(&q);
+            for (size_t j = 0; j < pp->vecs[id].size; j++) {
+                uint64_t node = pp->vecs[id].data[j];
+                for (int m = 0; m < 4; m++) {
+                    uint64_t next = step(kmap, karr, k, node, B[m], 1);
+                    if (next == INF) continue;
+                    uint64_t next_id = map_get(hd, next);
+                    if (next_id == INF) continue;
+                    if (in_ord[next_id]) continue;
+                    enqueue(&q, next_id);
+                    push_back_bool(&ord, true); // added a path
+                    push_back(&ord_id, next_id);
+                    in_ord[next_id] = true;
+                    r.arr[pnt_flag++] = pos;
+                }
+                pos++;
+            }
+            pos++;
+        }
+    }
+
+    bool is_leaf[pp->size]; // to make dfs run faster
+    for (size_t i = 0; i < pp->size; i++) { is_leaf[i] = false; }
+
+    while (count_trues(in_ord, pp->size)) {
+        // from here
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -828,7 +996,7 @@ int main(int argc, char *argv[]) {
     printf("mode = %d\n", mode);
 
     map_t *kmap = NULL;
-    map_t *karr = NULL;
+    uint64_t *karr = NULL;
     uint64_t N = extract_kmers(infile, k, &kmap, &karr);
     
     uint64_t *mu = malloc(N * sizeof(uint64_t));
