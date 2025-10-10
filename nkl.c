@@ -11,7 +11,7 @@
 
 static void usage(const char *s) {
     fprintf(stderr,
-	        "Usage: %s -i <file> -k <2-31> -d <0|1> -c <0|1> -o <0|1|2>\n"
+	        "Usage: %s -i [filename] -k [2-31] -d [0|1] -c [0|1|2] -o [0|1|2]\n"
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
