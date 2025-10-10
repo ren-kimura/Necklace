@@ -15,7 +15,7 @@ static void usage(const char *s) {
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching 1:linearscan 2:greedydfs"
+            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n",
 	        s);
     exit(EXIT_FAILURE);
@@ -80,7 +80,7 @@ int main(int argc, char *argv[]) {
     VV cc, pp; init_vv(&cc); init_vv(&pp);
     
     if (di == 0) {
-        if          (cov == 0) { // maximum matching
+        if (cov == 0) { // maximum matching
             N = extract(infile, k, &km, &ka, di);        
             u64 *mu = (u64*)malloc(N * sizeof(u64));
             u64 *mv = (u64*)malloc(N * sizeof(u64));
@@ -99,10 +99,10 @@ int main(int argc, char *argv[]) {
             }
             decompose(mu, mv, &cc, &pp, N);
             free(mu); free(mv);
-        } else if   (cov == 1) { // directly find cover from infile
+        } else if (cov == 1) { // directly find cover from infile
             fprintf(stderr, "under construction\n");
             exit(EXIT_FAILURE);
-        } else if   (cov == 2) { // greedy dfs cover
+        } else if (cov == 2) { // greedy dfs cover
             fprintf(stderr, "under construction\n");
             exit(EXIT_FAILURE);
         } else {
@@ -110,13 +110,13 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
         
-        if          (out == 0) { // flat
+        if (out == 0) { // flat
             Rep r = flat(ka, &cc, &pp, k);
             printf("%s\n", r.str);
-        } else if   (out == 1) { // pointer
+        } else if (out == 1) { // pointer
             Rep r = ptr(km, ka, &cc, &pp, k);
             printf("%s\n", r.str);
-        } else if   (out == 2) { // bp
+        } else if (out == 2) { // bp
             fprintf(stderr, "Error: under construction\n");
             // Rep r = bp(km, ka, &cc, &pp, k);
         } else {
@@ -124,8 +124,32 @@ int main(int argc, char *argv[]) {
             exit(EXIT_FAILURE);
         }
     } else {
-        fprintf(stderr, "under construction\n");
-        exit(EXIT_FAILURE);
+        if (cov == 0) {
+            fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
+            exit(EXIT_FAILURE);
+        } else if (cov == 1) { // directly find cover from infile
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else if (cov == 2) { // greedy dfs cover
+            N = extract(infile, k, &km, &ka, di);
+        } else {
+            fprintf(stderr, "Error: invalid cover type\n");
+            exit(EXIT_FAILURE);
+        }
+
+        if (out == 0) {
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else if (out == 1) {
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else if (out == 2) {
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else {
+            fprintf(stderr, "Error: invalid out arg\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     free(ka); free_hm(&km);
