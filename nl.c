@@ -73,8 +73,8 @@ int main(int argc, char *argv[]) {
     printf("infile = %s\n", infile);
     printf("k = %d\n", k);
     printf("di = %s\n", (di == 0) ? "uni" : "bi");
-    printf("cov = %s\n", (cov == 0) ? "matching" : ((cov == 1) ? "linearscan" : "greedydfs"));
-    printf("out = %s\n", (out == 0) ? "flat" : ((out == 1) ? "pointer" : "bp"));
+    printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
+    printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
     Hm *km = NULL; u64 *ka = NULL; u64 N;
     VV cc, pp; init_vv(&cc); init_vv(&pp);

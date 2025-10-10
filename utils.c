@@ -33,8 +33,8 @@ void dec(u64 h, int k, char *s) {
     for (int i = 0; i < k; i++) {
         s[k - i - 1] = B[h & 3];
         h >>= 2;
-        s[k] = '\0';
     }
+    s[k] = '\0';
 }
 
 char* dec_base(u64 h) {
@@ -68,34 +68,33 @@ u64 can(u64 h, int k) {
 void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
-    u64 h;
-    char s[k + 1]; // buffer for k-mer string
     
-    u64 j = next_pos(sq, 0, k);
-    if (j != INF) {
+    char s[k + 1]; // buffer for kmer
+    u64 m = (1ULL << (2 * (k - 1))) - 1; // mask that clears two MSBs
+    
+    u64 j = next_pos(sq, 0, k); // look for the first kmer
+    while (j != INF) {
         strncpy(s, sq + j, k);
         s[k] = '\0';
-        h = enc(s, k);
-        if (di) h = can(h, k); // take canonical if bidrected
+        u64 h = enc(s, k);
+        if (di) h = can(h, k);
         if (add_hm(km, h, *id)) (*id)++;
+        
         // rolling hash
-        u64 m = (1ULL << (2 * (k - 1))) - 1; // clear two MSBs
-        for (++j; j <= sq_len - k; ++j) {
+        while (++j <= sq_len - k) {
             char c = toupper(sq[j + k - 1]);
-            if      (c == 'A')  h = ((h & m) << 2) | 0;
-            else if (c == 'C')  h = ((h & m) << 2) | 1;
-            else if (c == 'G')  h = ((h & m) << 2) | 2; 
-            else if (c == 'T')  h = ((h & m) << 2) | 3;
-            else {
+            if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
+                h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
+                if (di) h = can(h, k);
+                if (add_hm(km, h, *id)) (*id)++;
+            } else {
+                // if interrupted by a non-ACGT
                 j = next_pos(sq, j, k);
-                if (j == INF) break; // no more k-mers in this sequence
-                strncpy(s, sq + j, k);
-                s[k] = '\0';
-                h = enc(s, k);
+                goto nxt;
             }
-            if (di) h = can(h, k); // take canonical if bidirected         
-            if (add_hm(km, h, *id)) (*id)++;
         }
+        j = INF; // reached the end of sq
+    nxt:;
     }
 }
 
