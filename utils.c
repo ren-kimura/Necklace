@@ -45,6 +45,21 @@ char* dec_base(u64 h) {
     
 }
 
+u64 rc(u64 h, int k)
+{
+    /* constant time calc of reverse complement */
+    /* ref-> https://www.biostars.org/p/113640/#424278 */
+    u64 nh = ~h; // take NOT
+    // 2-bit-wise left-right flip
+    nh = ((nh >> 2 & 0x3333333333333333) | (nh & 0x3333333333333333) << 2);
+    nh = ((nh >> 4 & 0x0F0F0F0F0F0F0F0F) | (nh & 0x0F0F0F0F0F0F0F0F) << 4);
+    nh = ((nh >> 8 & 0x00FF00FF00FF00FF) | (nh & 0x00FF00FF00FF00FF) << 8);
+    nh = ((nh >> 16 & 0x0000FFFF0000FFFF) | (nh & 0x0000FFFF0000FFFF) << 16);
+    nh = ((nh >> 32 & 0x00000000FFFFFFFF) | (nh & 0x00000000FFFFFFFF) << 32);
+    
+    return (nh >> (2 * (32 - k))); // extract MSBs
+}
+
 void proc_sq(const char *sq, int k, Hm **km, u64 *id) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short

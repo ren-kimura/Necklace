@@ -70,10 +70,10 @@ int main(int argc, char *argv[]) {
         usage(argv[0]);
     }
 
-    printf("input = %s\n", infile);
+    printf("infile = %s\n", infile);
     printf("k = %d\n", k);
     printf("di = %s\n", (di == 0) ? "uni" : "bi");
-    printf("cover = %s\n", (cov == 0) ? "matching" : ((cov == 1) ? "linearscan" : "greedydfs"));
+    printf("cov = %s\n", (cov == 0) ? "matching" : ((cov == 1) ? "linearscan" : "greedydfs"));
     printf("out = %s\n", (out == 0) ? "flat" : ((out == 1) ? "pointer" : "bp"));
 
     Hm *km = NULL; u64 *ka = NULL; u64 N;
