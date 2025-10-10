@@ -1,4 +1,4 @@
-#include "rep_utils.h"
+#include "out.h"
 #include <string.h>
 
 //---FSt---
@@ -89,20 +89,19 @@ Rep flat(u64 *ka, VV *cc, VV *pp, int k) {
     return r;
 }
 
-V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, u64 *in_pord, u64 *is_leaf, u64 *seen, u64 start) {
-    V* nc = malloc(sizeof(V));
+V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from) {
+    V* nc = (V*)malloc(sizeof(V));
     if (nc == NULL) return NULL;
     init_v(nc);
 
     FSt s;
     init_fst(&s);
 
-    seen[start] = 1;
-    push_fst(&s, start, 0, 0);
+    vis[from] = true;
+    push_fst(&s, from, 0, 0);
 
     while (!is_empty_fst(&s)) {
         if (s.top->idx >= (u64)pp->vs[s.top->cur].size) {
-            is_leaf[s.top->cur] = 1;
             pop_fst(&s);
             if (nc->size > 0) pop_back(nc);
             continue;
@@ -114,22 +113,18 @@ V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, u64 *in_pord, u64 *is_leaf, u64
             char c = B[s.top->b_idx];
             s.top->b_idx++;
             
-            u64 cur_node = pp->vs[s.top->cur].data[s.top->idx];
-            u64 next_node = step(km, ka, k, cur_node, c, 1);
-            if (next_node == INF) continue;
+            u64 cur = pp->vs[s.top->cur].data[s.top->idx];
+            u64 nxt = step(km, ka, k, cur, c, 1);
+            if (nxt == INF) continue;
 
-            u64 next_pid = find_hm(hd, next_node);
+            u64 ni = find_hm(hd, nxt);
 
-            if (next_pid == INF || in_pord[next_pid] || seen[next_pid] || is_leaf[next_pid]) {
-                continue;
-            }
+            if (ni == INF || ino[ni] || vis[ni]) continue;
 
-            if (next_pid == start) { // cycle found
-                return nc;
-            }
+            if (ni == from) return nc; // cycle found
             
-            seen[next_pid] = 1;
-            push_fst(&s, next_pid, 0, 0);
+            vis[ni] = true;
+            push_fst(&s, ni, 0, 0);
         } else {
             s.top->idx++;
             s.top->b_idx = 0;
@@ -140,7 +135,7 @@ V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, u64 *in_pord, u64 *is_leaf, u64
     return NULL; // no cycle found
 }
 
-u64 nt(bool *v, u64 l) {
+u64 nf(bool *v, u64 l) {
     u64 n = 0;
     for (u64 i = 0; i < l; i++) {
         if (!v[i]) continue;
@@ -252,13 +247,88 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         }
     }
 
-    while (nt(ino, pp->size)) {
-        // from here
+    u64 l;
+    while ((l = nf(ino, pp->size))) {
+        printf("%ld paths remaining\n", l);
+        for (size_t i = 0; i < pp->size; i++) {
+            if (ino[i]) continue;
+            bool vis[pp->size];
+            for (size_t i = 0; i < pp->size; i++) { vis[i] = false; }
+            V *pis = findc(km, ka, hd, k, pp, ino, vis, i);
+            if (pis->size != 0) {
+                printf("\rfound a cycle of %ld paths\n", pis->size);
+                V nc; init_v(&nc);
+                for (size_t j = 0; j < pis->size; j++) {
+                    for (size_t x = 0; x < pp->vs[pis->data[j]].size; x++) {
+                        u64 cur = pp->vs[pis->data[j]].data[x];
+                        push_back(&nc, cur);
+                        for (int c = 0; c < 4; c++) {
+                            u64 nxt = step(km, ka, k, cur, B[c], 1);
+                            if (nxt == INF) continue;
+                            if (nxt == pp->vs[pis->data[(j + 1) % (pis->size)]].data[0]) {
+                                // trim cycle from path, and renew hd
+                                del_hm(&hd, pp->vs[pis->data[j]].data[0]);
+                                for (size_t y = 0; y <= x; y++) {
+                                    pp->vs[pis->data[j]].data[y] = pp->vs[pis->data[j]].data[y + x + 1];
+                                }
+                                pp->vs[pis->data[j]].size -= x + 1;
+                                add_hm(&hd, pp->vs[pis->data[j]].data[0], pis->data[j]);
+                                goto ej;
+                            }
+                        }
+                    }
+                    ej:;
+                }
+                push_backv(cc);
+                cc[cc->size - 1].vs = &nc;
+                push_backb(&o, false);
+                push_back(&oi, cc->size - 1);
+                d++; // need '*' for cycle
+                for (size_t j = 0; j < nc.size; j++) {
+                    u64 cur = nc.data[j];
+                    for (int c = 0; c < 4; c++) {
+                        u64 nxt = step(km, ka, k, cur, B[c], 1);
+                        if (nxt == INF) continue;
+                        u64 ni = find_hm(hd, nxt);
+                        if (ni == INF) continue;
+                        if (ino[ni]) continue;
+                        enq(&q, ni);
+                        push_backb(&o, true);
+                        push_back(&oi, ni);
+                        ino[ni] = true;
+                        r.arr[f++] = d;
+                    } d++;
+                } d++;
+                while (!is_empty_q(&q)) {
+                    u64 j = deq(&q);
+                    for (size_t x = 0; x < pp->vs[j].size; x++) {
+                        u64 cur = pp->vs[j].data[x];
+                        for (int c = 0; c < 4; c++) {
+                            u64 nxt = step(km, ka, k, cur, B[c], 1);
+                            if (nxt == INF) continue;
+                            u64 ni = find_hm(hd, nxt);
+                            if (ni == INF) continue;
+                            if (ino[ni]) continue;
+                            enq(&q, ni);
+                            push_backb(&o, true);
+                            push_back(&oi, ni);
+                            ino[ni] = true;
+                            r.arr[f++] = d;
+                        } d++;
+                    } d++;
+                }
+                break;
+            }
+        }
     }
+
+    // for check
     return r;
 }
 
+/*
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     Rep r; init_rep(&r);
     return r;
 }
+    */

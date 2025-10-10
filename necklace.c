@@ -4,38 +4,20 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
-
 #include "ds.h"
 #include "utils.h"
-#include "mbm.h"
-#include "rep_utils.h"
+#include "cov.h"
+#include "out.h"
 
-void progress(size_t now, size_t total, const char* task) {
-    if (total == 0) return; // avoid division by zero
-    if (total > 100) {
-        size_t interval = total / 100;
-        if (now != 0 && now != total && (now % interval) != 0) {
-            return;
-        }
-    }
-    int percentage = (int)((now * 100) / total);
-    printf("\r%s: %d%%", task, percentage);
-    fflush(stdout);
-}
-
-void finished(const char* task) {
-    printf("\r%s: 100%%\n", task);
-    fflush(stdout);
-}
-
-static void usage(const char *prog) {
+static void usage(const char *s) {
     fprintf(stderr,
-	        "Usage: %s -i <file> -k <int> -o <0|1|2|10>\n"
+	        "Usage: %s -i <file> -k <2-31> -d <0|1> -c <0|1> -o <0|1|2>\n"
 	        "\t-i FILE\t\tinput FASTA file\n"
-	        "\t-k INT\t\tk-mer length (>=1 && <=31)\n"
-	        "\t-o OPTION\t0:naive 1:pointer 2:pseudoforest\n"
-	        "\t\t\t10:eulertigs(uni-directed)\n",
-	        prog);
+	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
+            "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
+            "\t-c COVER TYPE\t0:matching 1:linearscan 2:greedydfs"
+	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n",
+	        s);
     exit(EXIT_FAILURE);
 }
 
@@ -43,14 +25,14 @@ static int parse_int(const char *s) {
     char *end;
     errno = 0;
     int v = strtol(s, &end, 10);
-    if (errno || *end) usage("./rep");
+    if (errno || *end) usage("./necklace");
     return v;
 }
 
 int main(int argc, char *argv[]) {
     const char *infile = NULL;
-    int k, di, cover, mode, opt;
-    k = di = cover = mode = -1;
+    int k, di, cov, out, opt;
+    k = di = cov = out = -1;
 
 	while ((opt = getopt(argc, argv, "i:k:d:c:o:")) != -1) {
 	    switch (opt) {
@@ -61,7 +43,7 @@ int main(int argc, char *argv[]) {
             case 'k':
                 if (k != -1) usage(argv[0]);
                 k = parse_int(optarg);
-                if (k < 1 || k > 31) usage(argv[0]);
+                if (k < 2 || k > 31) usage(argv[0]);
                 break;
             case 'd':
                 if (di != -1) usage(argv[0]);
@@ -69,14 +51,14 @@ int main(int argc, char *argv[]) {
                 if (di != 0 && di != 1) usage(argv[0]);
                 break;
             case 'c':
-                if (cover != -1) usage(argv[0]);
-                cover = parse_int(optarg);
-                if (cover != 0 && cover != 1) usage(argv[0]);
+                if (cov != -1) usage(argv[0]);
+                cov = parse_int(optarg);
+                if (cov != 0 && cov != 1) usage(argv[0]);
                 break;
             case 'o':
-                if (mode != -1) usage(argv[0]);
-                mode = parse_int(optarg);
-                if (mode != 0 && mode != 1 && mode != 2)
+                if (out != -1) usage(argv[0]);
+                out = parse_int(optarg);
+                if (out != 0 && out != 1 && out != 2)
                     usage(argv[0]);
                 break;
             default:
@@ -84,57 +66,69 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-    if (!infile || k == -1 || di == -1 || cover == -1 || mode == -1) {
+    if (!infile || k == -1 || di == -1 || cov == -1 || out == -1) {
         usage(argv[0]);
     }
 
     printf("input = %s\n", infile);
     printf("k = %d\n", k);
-    printf("di = %d\n", di);
-    printf("cover = %d\n", cover);
-    printf("mode = %d\n", mode);
+    printf("di = %s\n", (di == 0) ? "uni" : "bi");
+    printf("cover = %s\n", (cov == 0) ? "matching" : ((cov == 1) ? "linearscan" : "greedydfs"));
+    printf("out = %s\n", (out == 0) ? "flat" : ((out == 1) ? "pointer" : "bp"));
 
-    Hm *km = NULL;
-    u64 *ka = NULL;
-    u64 N = extract(infile, k, &km, &ka);
+    Hm *km = NULL; u64 *ka = NULL; u64 N;
+    VV cc, pp; init_vv(&cc); init_vv(&pp);
     
-    u64 *mu = malloc(N * sizeof(u64));
-    u64 *mv = malloc(N * sizeof(u64));
-    if (mu == NULL || mv == NULL) {
-        fprintf(stderr, "Error: malloc failed for array mu or mv\n");
-        free(ka); free(mu); free(mv);
-        free_hm(&km);
-        return -1;
-    }
-
-    u64 M = mbm(km, ka, mu, mv, k, N);
-    if (M == INF) {
-        fprintf(stderr, "Warning: too large matching\n");
-        free(ka); free(mu); free(mv);
-        free_hm(&km);
-        return -1;
-    }
-
-    VV cc, pp;
-    init_vv(&cc); init_vv(&pp);
-    decompose(mu, mv, &cc, &pp, N);
-    
-    if (mode == 0) {
-        Rep r = flat(ka, &cc, &pp, k);
-        printf("%s\n", r.str);
-    } else if (mode == 1) {
-        Rep r = ptr(km, ka, &cc, &pp, k);
-        printf("Generated text:\n%s\n", r.str);
-    } else if (mode == 2) {
-        // Rep r = bp(km, ka, &cc, &pp, k);
+    if (di == 0) {
+        if          (cov == 0) { // maximum matching
+            N = extract(infile, k, &km, &ka);        
+            u64 *mu = (u64*)malloc(N * sizeof(u64));
+            u64 *mv = (u64*)malloc(N * sizeof(u64));
+            if (mu == NULL || mv == NULL) {
+                fprintf(stderr, "Error: malloc failed for array mu or mv\n");
+                free(ka); free(mu); free(mv);
+                free_hm(&km);
+                return -1;
+            }
+            u64 M = mbm(km, ka, mu, mv, k, N);
+            if (M == INF) {
+                fprintf(stderr, "Warning: too large matching\n");
+                free(ka); free(mu); free(mv);
+                free_hm(&km);
+                return -1;
+            }
+            decompose(mu, mv, &cc, &pp, N);
+            free(mu); free(mv);
+        } else if   (cov == 1) { // directly find cover from infile
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else if   (cov == 2) { // greedy dfs cover
+            fprintf(stderr, "under construction\n");
+            exit(EXIT_FAILURE);
+        } else {
+            fprintf(stderr, "Error: invalid cover type\n");
+            exit(EXIT_FAILURE);
+        }
+        
+        if          (out == 0) { // flat
+            Rep r = flat(ka, &cc, &pp, k);
+            printf("%s\n", r.str);
+        } else if   (out == 1) { // pointer
+            Rep r = ptr(km, ka, &cc, &pp, k);
+            printf("%s\n", r.str);
+        } else if   (out == 2) { // bp
+            fprintf(stderr, "Error: under construction\n");
+            // Rep r = bp(km, ka, &cc, &pp, k);
+        } else {
+            fprintf(stderr, "Error: invalid out arg\n");
+            exit(EXIT_FAILURE);
+        }
     } else {
-        fprintf(stderr, "Error: invalid mode for output format\n");
+        fprintf(stderr, "under construction\n");
         exit(EXIT_FAILURE);
     }
 
-    free(ka); free(mu); free(mv);
-    free_hm(&km);
-    free_vv(&cc); free_vv(&pp);
-    
+    free(ka); free_hm(&km);
+    free_vv(&cc); free_vv(&pp);    
 	return 0;
 }

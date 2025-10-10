@@ -30,8 +30,8 @@ void free_rep(Rep *r);
 
 Rep flat(u64 *ka, VV *cc, VV *pp, int k);
 
-V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, u64 *in_pord, u64 *is_leaf, u64 *visited, u64 start);
-u64 nt(bool *v, size_t l);
+V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from);
+u64 nf(bool *v, size_t l);
 
 Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);

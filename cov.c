@@ -1,4 +1,4 @@
-#include "mbm.h"
+#include "cov.h"
 #include "utils.h"
 
 int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, u64 k, u64 N) {
