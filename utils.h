@@ -9,8 +9,10 @@ u64 enc(const char *s, int k);
 void dec(u64 h, int k, char *s);
 char* dec_base(u64 h);
 u64 rc(u64 h, int k);
-void proc_sq(const char *sq, int k, Hm **km, u64 *id);
-u64 extract(const char* infile, int k, Hm **km, u64 **ka);
-u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, int is_forward);
+u64 can(u64 h, int k);
+void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di);
+u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di);
+u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd);
+u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool fromc, bool toc);
 
 #endif // UTILS_H

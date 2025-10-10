@@ -81,7 +81,7 @@ int main(int argc, char *argv[]) {
     
     if (di == 0) {
         if          (cov == 0) { // maximum matching
-            N = extract(infile, k, &km, &ka);        
+            N = extract(infile, k, &km, &ka, di);        
             u64 *mu = (u64*)malloc(N * sizeof(u64));
             u64 *mv = (u64*)malloc(N * sizeof(u64));
             if (mu == NULL || mv == NULL) {

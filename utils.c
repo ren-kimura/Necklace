@@ -60,7 +60,12 @@ u64 rc(u64 h, int k)
     return (nh >> (2 * (32 - k))); // extract MSBs
 }
 
-void proc_sq(const char *sq, int k, Hm **km, u64 *id) {
+u64 can(u64 h, int k) {
+    u64 rh = rc(h, k);
+    return (h <= rh) ? h : rh;
+}
+
+void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
     u64 h;
@@ -71,6 +76,7 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id) {
         strncpy(s, sq + j, k);
         s[k] = '\0';
         h = enc(s, k);
+        if (di) h = can(h, k); // take canonical if bidrected
         if (add_hm(km, h, *id)) (*id)++;
         // rolling hash
         u64 m = (1ULL << (2 * (k - 1))) - 1; // clear two MSBs
@@ -86,13 +92,14 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id) {
                 strncpy(s, sq + j, k);
                 s[k] = '\0';
                 h = enc(s, k);
-            }         
+            }
+            if (di) h = can(h, k); // take canonical if bidirected         
             if (add_hm(km, h, *id)) (*id)++;
         }
     }
 }
 
-u64 extract(const char* infile, int k, Hm **km, u64 **ka) {
+u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Error: Could not open file %s\n", infile);
@@ -112,7 +119,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka) {
         if (ln[0] == '>') {
             if (buff_len > 0) {
                 // process the sequence accumulated so far
-                proc_sq(buff, k, km, &id);
+                proc_sq(buff, k, km, &id, di);
             }
             buff_len = 0;
         } else {
@@ -142,7 +149,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka) {
 
     // process the very last sequence in the file
     if (buff_len > 0) {
-        proc_sq(buff, k, km, &id);
+        proc_sq(buff, k, km, &id, di);
     }
 
     const u64 N = (u64)HASH_COUNT(*km);
@@ -177,7 +184,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka) {
     return N; // number of k-mers
 }
 
-u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, int is_fwd) {
+u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd) {
     u64 h = ka[id];
     if (h == INF) return INF;
     if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
@@ -193,7 +200,36 @@ u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, int is_fwd) {
         else if (c == 'G')  h |= (2ULL << (2 * (k - 1)));
         else if (c == 'T')  h |= (3ULL << (2 * (k - 1)));
     }
-    u64 nh = find_hm(km, h);
-    if (nh == INF) return INF; // no branch to c    
-    return nh;
+    u64 nid = find_hm(km, h);
+    if (nid == INF) return INF; // no branch to c    
+    return nid;
+}
+
+u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool fromc, bool toc) {
+    u64 h = ka[id]; // h is already canonical
+    if (!fromc) h = rc(h, k); // take rc of h if starts from non-canonical
+
+    if (h == INF) return INF;
+    if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
+        if (is_fwd) {
+        u64 m = (1ULL << (2 * (k - 1))) - 1;
+        h = (h & m) << 2;
+        if      (c == 'C')  h |= 1;
+        else if (c == 'G')  h |= 2;
+        else if (c == 'T')  h |= 3;
+    } else {
+        h >>= 2;
+        if      (c == 'C')  h |= (1ULL << (2 * (k - 1)));
+        else if (c == 'G')  h |= (2ULL << (2 * (k - 1)));
+        else if (c == 'T')  h |= (3ULL << (2 * (k - 1)));
+    }
+    u64 ch = can(h, k); // take can of h
+    u64 nid = find_hm(km, ch);
+    if (nid == INF) return INF; // no branch to c from the selected side
+    if (ch != rc(ch, k)) {
+        if ((ch == h) == toc) return nid; // positive if not self-complement and arrived at the selected side of ch
+    } else {
+        return nid; // positive regardless of toc if self-complement 
+    }
+    return INF;
 }
