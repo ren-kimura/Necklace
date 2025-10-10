@@ -2,10 +2,10 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm
 
-SRCS = necklace.c ds.c utils.c cov.c out.c stat.c
+SRCS = nl.c ds.c utils.c cov.c out.c stat.c
 OBJS = $(SRCS:.c=.o)
 
-TARGET = necklace
+TARGET = nl
 
 all: $(TARGET)
 
