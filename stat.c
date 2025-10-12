@@ -1,4 +1,4 @@
-#include <stdio.h>
+#include "stat.h"
 
 void prog(size_t n, size_t t, const char* s) {
     if (t == 0) return; // avoid division by zero

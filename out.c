@@ -1,4 +1,5 @@
 #include "out.h"
+#include "stat.h"
 #include <string.h>
 
 //---FSt---
@@ -197,6 +198,7 @@ u64 nf(bool *v, u64 l) {
 
 //---Pointer---
 Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+    size_t D = HASH_COUNT(km) + cc->size + pp->size;
     Hs *rp = NULL;
     Hm *hd = NULL; 
     for (u64 i = 0; i < pp->size; i++) {
@@ -259,7 +261,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                     push_back(&oi, ni);
                     ino[ni] = true;
                     r.arr[f++] = d;
-                } d++;
+                } d++; prog(d, D, "pointing");
             } d++;
         }
     }
@@ -282,7 +284,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 push_back(&oi, ni);
                 ino[ni] = true;
                 r.arr[f++] = d;
-            } d++;
+            } d++; prog(d, D, "pointing");
         } d++;
         
         while (!is_empty_q(&q)) {
@@ -300,14 +302,14 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                     push_back(&oi, ni);
                     ino[ni] = true;
                     r.arr[f++] = d;
-                } d++;
+                } d++; prog(d, D, "pointing");
             } d++;
         }
     }
 
     u64 l;
     while ((l = nf(ino, pp->size))) {
-        printf("%ld paths remaining\n", l);
+        printf("\n%ld paths remaining", l);
         bool fndc = false;
         for (size_t i = 0; i < pp->size; i++) {
             if (ino[i]) continue;
@@ -355,7 +357,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                         push_back(&oi, ni);
                         ino[ni] = true;
                         r.arr[f++] = d;
-                    } d++;
+                    } d++; prog(d, D, "pointing");
                 } d++;
                 while (!is_empty_q(&q)) {
                     u64 j = deq(&q);
@@ -372,7 +374,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                             push_back(&oi, ni);
                             ino[ni] = true;
                             r.arr[f++] = d;
-                        } d++;
+                        } d++; prog(d, D, "pointing");
                     } d++;
                 }
                 free_v(&nc);
@@ -384,13 +386,20 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         }
         if (!fndc) break;
     }
-
+    fin("pointing");
     l = nf(ino, pp->size);
     if (l == 0) printf("All paths are pointed\n");
     else        printf("%ld path(s) are not pointed\n", l);
 
     // take difference of r.arr
-    for (u64 i = pp->size - 1; i > 0; --i) r.arr[i] -= r.arr[i - 1];
+    if (pp->size > 1) {
+        for (u64 i = pp->size - 1; i > 0; --i) {
+            r.arr[i] -= r.arr[i - 1];
+        }
+    } else if (pp->size == 0) {
+        free(r.arr);
+        r.arr = NULL;
+    }
 
     Strbld sb; init_strbld(&sb);
     for (size_t i = 0; i < o.size; i++) {
@@ -475,6 +484,7 @@ char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64
 
 //---Balanced parentheses---
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+    size_t Z = cc->size + pp->size, z = 0;
     Hs *rp = NULL;
     Hm *hd = NULL; 
     for (u64 i = 0; i < pp->size; i++) {
@@ -512,6 +522,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         apnd_strbld(&sb, ss);
         apnd_strbld(&sb, ",");
         free(ss);
+        z++; prog(z, Z, "embedding");
     }
     apnd_strbld(&sb, ","); // extra delim between open and closed necklaces
     for (size_t i = 0; i < cc->size; i++) {
@@ -532,6 +543,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
             }
         }
         apnd_strbld(&sb, ",");
+        z++; prog(z, Z, "embedding");
     }
 
     u64 l;
@@ -588,12 +600,14 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 free_v(&nc);
                 free_v(pis);
                 free(pis);
+                z++; prog(z, Z, "embedding");
                 break;
             }
             if (pis) { free_v(pis); free(pis); }
         }
         if (!fndc) break;
     }
+    fin("embedding");
     l = nf(vis, pp->size);
     if (l == 0) printf("All paths are embedded\n");
     else        printf("%ld path(s) are not embedded\n", l);

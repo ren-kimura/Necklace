@@ -1,6 +1,8 @@
 #include "utils.h"
+#include "stat.h"
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>
 
 u64 next_pos(const char *read, u64 start, int k) {
     u64 len = strlen(read);
@@ -106,6 +108,10 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     }
     printf("file %s opened\n", infile);
 
+    struct stat st;
+    stat(infile, &st);
+    size_t fs = st.st_size;
+
     u64 id = 0;
     char *ln = NULL;
     size_t len = 0;
@@ -115,6 +121,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     size_t buff_cap = 0; // current allocated capacity for the buffer
 
     while ((getline(&ln, &len, fp)) != -1) {
+        prog(ftell(fp), fs, "extracting k-mers");
         if (ln[0] == '>') {
             if (buff_len > 0) {
                 // process the sequence accumulated so far
@@ -151,10 +158,11 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
         proc_sq(buff, k, km, &id, di);
     }
 
+    fin("extracting k-mers");
     const u64 N = (u64)HASH_COUNT(*km);
     printf("total unique k-mers = %ld\n", N);
     
-    disp_hm(*km, k); // display km
+    // disp_hm(*km, k);
 
     *ka = malloc(N * sizeof(u64));
     if (ka == NULL) {

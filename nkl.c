@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
             }
             decompose(mu, mv, &cc, &pp, N);
             free(mu); free(mv);
-            disp_cp(ka, &cc, &pp, k);
+            // disp_cp(ka, &cc, &pp, k);
         } else if (cov == 1) { // directly find cover from infile
             fprintf(stderr, "under construction\n");
             exit(EXIT_FAILURE);

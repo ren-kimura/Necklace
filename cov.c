@@ -1,5 +1,6 @@
 #include "cov.h"
 #include "utils.h"
+#include "stat.h"
 
 int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, u64 k, u64 N) {
     Q q;
@@ -62,7 +63,9 @@ u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 k, u64 N) {
                 M++; // found an augpath
             }
         }
+        prog(M, N, "maximum matching");
     }
+    fin("maximum matching");
     printf("matching size %ld\n", M);
     free(dt);
     return M;
@@ -118,8 +121,10 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
             free_v(&bv);
             free_v(&v);
         }
+        prog(u, N, "decomposing");
         free_v(&fv);
     }
+    fin("decomposing");
     free(su); free(sv);
 }
 
