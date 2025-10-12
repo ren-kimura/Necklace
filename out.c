@@ -110,38 +110,29 @@ void free_rep(Rep *r) {
 //---Flat---
 Rep flat(u64 *ka, VV *cc, VV *pp, int k) {
     Rep r; init_rep(&r);
-    size_t ll = 0;
-    for (size_t i = 0; i < cc->size; i++) ll += cc->vs[i].size;
-    for (size_t i = 0; i < pp->size; i++) ll += k - 1 + pp->vs[i].size;
-    ll += cc->size + pp->size + 2; 
-    r.str = malloc(ll);
-    if (r.str == NULL) {
-        fprintf(stderr, "Error: malloc failed for r.str\n");
-        exit(EXIT_FAILURE);
-    }
-    char *ptr = r.str;
-    ptr[0] = '\0';
+    Strbld sb; init_strbld(&sb);
 
     for (size_t i = 0; i < cc->size; i++) {
         V *cur = &cc->vs[i];
         for (size_t j = 0; j < cur->size; j++) {
-            ptr += sprintf(ptr, "%s", dec_base(ka[cur->data[j]] % 4));
+            apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
         }
-        ptr += sprintf(ptr, ",");
+        apnd_strbld(&sb, ",");
     }
-    ptr += sprintf(ptr, ",");
+    apnd_strbld(&sb, ",");
 
     for (size_t i = 0; i < pp->size; i++) {
         V *cur = &pp->vs[i];
         char s[k + 1];
         dec(ka[cur->data[0]], k, s);
-        ptr += sprintf(ptr, "%s", s);
+        apnd_strbld(&sb, s);
         for (size_t j = 1; j < cur->size; j++) {
-            ptr += sprintf(ptr, "%s", dec_base(ka[cur->data[j]] % 4));
+            apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
         }
-        ptr += sprintf(ptr, ",");
+        apnd_strbld(&sb, ",");
     }
 
+    r.str = sb.str;
     size_t fl = strlen(r.str);
     if (fl > 0 && r.str[fl - 1] == ',') {
         r.str[fl - 1] = '\0';
@@ -207,6 +198,7 @@ u64 nf(bool *v, u64 l) {
     return n;
 }
 
+//---Pointer---
 Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     Hs *rp = NULL;
     Hm *hd = NULL; 
@@ -236,6 +228,12 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     V oi; init_v(&oi); // cycle/path id of i-th item
     bool ino[pp->size]; // false if the path is not in o yet, true otherwise
     for (size_t i = 0; i < pp->size; i++) { ino[i] = false; }
+
+    u64 *hi = (u64*)calloc(pp->size, sizeof(u64));
+    if (hi == NULL) {
+        fprintf(stderr, "Error: calloc failed for hi\n");
+        exit(EXIT_FAILURE);
+    }
     
     u64 d = 0; // current cumulative distance
     u64 f = 0; // r.arr is initialized up to this idx
@@ -313,32 +311,30 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     u64 l;
     while ((l = nf(ino, pp->size))) {
         printf("%ld paths remaining\n", l);
+        bool fndc = false;
         for (size_t i = 0; i < pp->size; i++) {
             if (ino[i]) continue;
             bool vis[pp->size];
             for (size_t i = 0; i < pp->size; i++) { vis[i] = false; }
             V *pis = findc(km, ka, hd, k, pp, ino, vis, i);
             if (pis != NULL && pis->size != 0) {
+                fndc = true;
                 printf("\rfound a cycle of %ld paths\n", pis->size);
                 V nc; init_v(&nc);
                 for (size_t j = 0; j < pis->size; j++) {
                     u64 pi = pis->data[j];
                     u64 fpi = pis->data[(j + 1) % pis->size];
                     V *p = &pp->vs[pi];
-                    for (size_t x = 0; x < p->size; x++) {
+                    for (size_t x = hi[pi]; x < p->size; x++) {
                         u64 cur = p->data[x];
                         push_back(&nc, cur);
+                        u64 nxt_onp = (x + 1 < p->size) ? p->data[x + 1] : INF;
                         for (int c = 0; c < 4; c++) {
-                            u64 nxt = step(km, ka, k, cur, B[c], 1);
-                            if (nxt == INF) continue;
-                            if (nxt == pp->vs[fpi].data[0]) {
-                                // trim cycle from path, and renew hd
+                            u64 nxt_br = step(km, ka, k, cur, B[c], 1);
+                            if (nxt_br != INF && nxt_br != nxt_onp && nxt_br == pp->vs[fpi].data[hi[fpi]]) {
+                                hi[pi] = x + 1;
                                 del_hm(&hd, pp->vs[pi].data[0]);
-                                for (size_t y = 0; y <= x; y++) {
-                                    pp->vs[pi].data[y] = pp->vs[pi].data[y + x + 1];
-                                }
-                                pp->vs[pi].size -= x + 1;
-                                add_hm(&hd, pp->vs[pi].data[0], pi);
+                                add_hm(&hd, pp->vs[pi].data[hi[pi]], pi);
                                 goto ej;
                             }
                         }
@@ -386,11 +382,10 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 free_v(pis);
                 free(pis);
                 break;
-            } else {
-                free_v(pis);
-                free(pis);
             }
+            if (pis) { free_v(pis); free(pis); }
         }
+        if (!fndc) break;
     }
 
     l = nf(ino, pp->size);
@@ -398,44 +393,34 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     else        printf("%ld path(s) are not pointed\n", l);
 
     // take difference of r.arr
-    for (u64 i = pp->size; i > 0; --i) r.arr[i] -= r.arr[i - 1];
+    for (u64 i = pp->size - 1; i > 0; --i) r.arr[i] -= r.arr[i - 1];
 
-    size_t ll = 0;
-    for (size_t i = 0; i < cc->size; i++) ll += cc->vs[i].size + 1; // # of nodes plus a flag '*'
-    for (size_t i = 0; i < pp->size; i++) ll += pp->vs[i].size; // # of nodes
-    for (size_t i = 0; i < HASH_COUNT(rp); i++) ll += k; // # of root paths: ',' and k - 1 chars in the front
-    ll += cc->size + pp->size + 2; 
-    r.str = malloc(ll);
-    if (r.str == NULL) {
-        fprintf(stderr, "Error: malloc failed for r.str\n");
-        exit(EXIT_FAILURE);
-    }
-    char *ptr = r.str;
-    ptr[0] = '\0';
-
+    Strbld sb; init_strbld(&sb);
     for (size_t i = 0; i < o.size; i++) {
         if (o.data[i]) { // path
             u64 id = oi.data[i];
-            int isrp = find_hs(rp, id);
             V *cur = &pp->vs[id];
-            if (isrp) { // root path
+            u64 si = hi[id];
+            if (find_hs(rp, id)) { // root path
                 char s[k];
-                dec((ka[cur->data[0]] >> 2), k - 1, s);
-                ptr += sprintf(ptr, ",%s", s);
+                dec(ka[cur->data[si]], k - 1, s);
+                apnd_strbld(&sb, ",");
+                apnd_strbld(&sb, s);
             }
-            for (size_t j = 0; j < cur->size; j++) {
-                ptr += sprintf(ptr, "%s", dec_base(ka[cur->data[j]] % 4));
+            for (size_t j = si; j < cur->size; j++) {
+                apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
             }
         } else { // cycle
             V *cur = &cc->vs[oi.data[i]];
-            ptr += sprintf(ptr, "*");
+            apnd_strbld(&sb, "*");
             for (size_t j = 0; j < cur->size; j++) {
-                ptr += sprintf(ptr, "%s", dec_base(ka[cur->data[j]] % 4));
+                apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
             }
         }
-        ptr += sprintf(ptr, ","); // delim
+        apnd_strbld(&sb, ","); // delim
     }
 
+    r.str = sb.str;
     size_t fl = strlen(r.str);
     if (fl > 0 && r.str[fl - 1] == ',') {
         r.str[fl - 1] = '\0';
@@ -443,15 +428,16 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
      if (fl > 1 && r.str[fl - 2] == ',' && r.str[fl - 1] == '\0') {
         r.str[fl - 2] = '\0';
     }
+    free(hi); free_hs(&rp); free_hm(&hd); free_vb(&o); free_v(&oi);
     return r;
 }
 
-char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, u64 rpi) {
+char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi) {
     Strbld sb; init_strbld(&sb);
     FbSt s; init_fbst(&s);
 
     vis[rpi] = true;
-    push_fbst(&s, rpi, 0, 0, false);
+    push_fbst(&s, rpi, hi[rpi], 0, false);
     while (!is_empty_fbst(&s)) {
         Fb* f = s.top;
         V* p = &pp->vs[f->cur];
@@ -478,7 +464,7 @@ char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, u64 rpi) {
             vis[cpi] = true;
             f->b_idx++;
             apnd_strbld(&sb, "(");
-            push_fbst(&s, cpi, 0, 0, false);
+            push_fbst(&s, cpi, hi[cpi], 0, false);
             d = true;
             break;
         }
@@ -490,6 +476,7 @@ char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, u64 rpi) {
     return sb.str;
 }
 
+//---Balanced parentheses---
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     Hs *rp = NULL;
     Hm *hd = NULL; 
@@ -513,12 +500,17 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
     bool vis[pp->size]; // 1: path already embedded
     for (size_t i = 0; i < pp->size; i++) vis[i] = false;
+    u64 *hi = (u64*)calloc(pp->size, sizeof(u64));
+    if (hi == NULL) {
+        fprintf(stderr, "Error: calloc failed for hi\n");
+        exit(EXIT_FAILURE);
+    }
 
     Hs *s, *tmp;
     HASH_ITER(hh, rp, s, tmp) { // dfs from root paths
         char t[k]; // buffer for dec of head
         dec(ka[pp->vs[s->key].data[0]], k - 1, t);
-        char* ss = subt(km, ka, hd, k, pp, vis, s->key);
+        char* ss = subt(km, ka, hd, k, pp, vis, hi, s->key);
         apnd_strbld(&sb, t);
         apnd_strbld(&sb, ss);
         apnd_strbld(&sb, ",");
@@ -535,7 +527,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 u64 ni = find_hm(hd, nxt);
                 if (ni == INF) continue;
                 if (vis[ni]) continue;
-                char* ss = subt(km, ka, hd, k, pp, vis, ni);
+                char* ss = subt(km, ka, hd, k, pp, vis, hi, ni);
                 apnd_strbld(&sb, "(");
                 apnd_strbld(&sb, ss);
                 apnd_strbld(&sb, ")");
@@ -569,13 +561,9 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                             u64 nxt_br = step(km, ka, k, cur, B[c], 1);
                             if (nxt_br == INF || nxt_br == nxt_onp) continue;
                             if (nxt_br == pp->vs[fpi].data[0]) {
-                                // trim cycle from path, and renew hd
+                                hi[pi] = x + 1; // path pi's head is at index x + 1
                                 del_hm(&hd, pp->vs[pi].data[0]);
-                                for (size_t y = 0; y <= x; y++) {
-                                    pp->vs[pi].data[y] = pp->vs[pi].data[y + x + 1];
-                                }
-                                pp->vs[pi].size -= x + 1;
-                                add_hm(&hd, pp->vs[pi].data[0], pi);
+                                add_hm(&hd, pp->vs[pi].data[x + 1], pi);
                                 goto ej;
                             }
                         }
@@ -591,7 +579,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                         u64 ni = find_hm(hd, nxt);
                         if (ni == INF) continue;
                         if (vis[ni]) continue;
-                        char* ss = subt(km, ka, hd, k, pp, vis, ni);
+                        char* ss = subt(km, ka, hd, k, pp, vis, hi, ni);
                         apnd_strbld(&sb, "(");
                         apnd_strbld(&sb, ss);
                         apnd_strbld(&sb, ")");
@@ -602,20 +590,20 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 free_v(pis);
                 free(pis);
                 break;
-            } else {
-                free_v(pis);
-                free(pis);
             }
+            if (pis) { free_v(pis); free(pis); }
         }
-        if (nf(vis, pp->size) == l) {
-            fprintf(stderr, "Error: no new cycle found in remaining paths\n");
-            exit(EXIT_FAILURE);
-        }
+        if (!fndc) break;
     }
+    l = nf(vis, pp->size);
+    if (l == 0) printf("All paths are embedded\n");
+    else        printf("%ld path(s) are not embedded\n", l);
+
     if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
         sb.len--;
         sb.str[sb.len] = '\0';
     }
+    free(hi); free_hs(&rp); free_hm(&hd);
     r.str = sb.str;
     return r;
 }

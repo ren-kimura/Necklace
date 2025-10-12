@@ -61,7 +61,7 @@ u64 nf(bool *v, size_t l);
 
 Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
-char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, u64 rpi);
+char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi);
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 #endif // REP_UTILS_H

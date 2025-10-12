@@ -107,7 +107,7 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
             }
             V v; init_v(&v);
             if (bv.size > 0) {
-                for (u64 i = bv.size; i-- > 0; ) {
+                for (u64 i = bv.size - 1; i > 0; i--) {
                     push_back(&v, bv.data[i]);
                 }
             }
@@ -121,4 +121,29 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
         free_v(&fv);
     }
     free(su); free(sv);
+}
+
+void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
+    printf("---------------------------------\n");
+    printf("---cycles---\n");
+    for (size_t i = 0; i < cc->size; i++) {
+        V* c = &cc->vs[i];
+        for (size_t j = 0; j < c->size; j++) {
+            char s[k + 1];
+            dec(ka[c->data[j]], k, s);
+            printf("%s ", s);
+        }
+        printf("\n");
+    }
+    printf("---paths---\n");
+    for (size_t i = 0; i < pp->size; i++) {
+        V* p = &pp->vs[i];
+        for (size_t j = 0; j < p->size; j++) {
+            char s[k + 1];
+            dec(ka[p->data[j]], k, s);
+            printf("%s ", s);
+        }
+        printf("\n");
+    }
+    printf("---------------------------------\n");
 }

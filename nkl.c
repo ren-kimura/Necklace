@@ -15,7 +15,7 @@ static void usage(const char *s) {
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs"
+            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs\n"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n",
 	        s);
     exit(EXIT_FAILURE);
@@ -99,6 +99,7 @@ int main(int argc, char *argv[]) {
             }
             decompose(mu, mv, &cc, &pp, N);
             free(mu); free(mv);
+            disp_cp(ka, &cc, &pp, k);
         } else if (cov == 1) { // directly find cover from infile
             fprintf(stderr, "under construction\n");
             exit(EXIT_FAILURE);
@@ -116,9 +117,11 @@ int main(int argc, char *argv[]) {
         } else if (out == 1) { // pointer
             Rep r = ptr(km, ka, &cc, &pp, k);
             printf("%s\n", r.str);
+            for (size_t i = 0; i < pp.size; i++) printf("%ld ", r.arr[i]);
+            printf("\n");
         } else if (out == 2) { // bp
-            fprintf(stderr, "Error: under construction\n");
-            // Rep r = bp(km, ka, &cc, &pp, k);
+            Rep r = bp(km, ka, &cc, &pp, k);
+            printf("%s\n", r.str);
         } else {
             fprintf(stderr, "Error: invalid out arg\n");
             exit(EXIT_FAILURE);
@@ -128,8 +131,7 @@ int main(int argc, char *argv[]) {
             fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
             exit(EXIT_FAILURE);
         } else if (cov == 1) { // directly find cover from infile
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
+            N = extract(infile, k, &km, &ka, di);
         } else if (cov == 2) { // greedy dfs cover
             N = extract(infile, k, &km, &ka, di);
         } else {

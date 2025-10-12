@@ -154,24 +154,14 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     const u64 N = (u64)HASH_COUNT(*km);
     printf("total unique k-mers = %ld\n", N);
     
-    /* --- display km ---
-    printf("key\t\tdec(key)\tval\n");
-    printf("-----------------------------\n");
-    Hm *s, *tmp;
-    HASH_ITER(hh, *km, s, tmp) {
-        char t[k + 1];
-        dec(s->key, k, t);
-        printf("%lu\t\t%s\t\t%lu\n", s->key, t, s->val);
-    }
-    printf("-----------------------------\n");
-    */
+    disp_hm(*km, k); // display km
 
     *ka = malloc(N * sizeof(u64));
     if (ka == NULL) {
         fprintf(stderr, "Error: malloc failed for ka\n");
         exit(EXIT_FAILURE);
     }
-    Hm *s, *tmp; // comment out if [display km] activated
+    Hm *s, *tmp;
     HASH_ITER(hh, *km, s, tmp) {
         (*ka)[s->val] = s->key;
     }
@@ -182,6 +172,18 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     printf("file %s closed\n", infile);
 
     return N; // number of k-mers
+}
+
+void disp_hm(Hm *hm, int k) {
+    printf("key\t\tdec(key)\tval\n");
+    printf("-----------------------------\n");
+    Hm *s, *tmp;
+    HASH_ITER(hh, hm, s, tmp) {
+        char t[k + 1];
+        dec(s->key, k, t);
+        printf("%lu\t\t%s\t\t%lu\n", s->key, t, s->val);
+    }
+    printf("-----------------------------\n");
 }
 
 u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd) {
