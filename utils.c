@@ -37,7 +37,7 @@ void dec(u64 h, int k, char *s) {
     s[k] = '\0';
 }
 
-char* dec_base(u64 h) {
+char* dec_base(unsigned short h) {
     if      (h == 0) return "A";
     else if (h == 1) return "C";
     else if (h == 2) return "G";

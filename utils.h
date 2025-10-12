@@ -7,7 +7,7 @@
 u64 next_pos(const char *read, u64 start, int k);
 u64 enc(const char *s, int k);
 void dec(u64 h, int k, char *s);
-char* dec_base(u64 h);
+char* dec_base(unsigned short h);
 u64 rc(u64 h, int k);
 u64 can(u64 h, int k);
 void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di);

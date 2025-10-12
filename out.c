@@ -170,13 +170,10 @@ V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from)
             u64 cur = pp->vs[s.top->cur].data[s.top->idx];
             u64 nxt = step(km, ka, k, cur, c, 1);
             if (nxt == INF) continue;
-
             u64 ni = find_hm(hd, nxt);
-
-            if (ni == INF || ino[ni] || vis[ni]) continue;
-
+            if (ni == INF || ino[ni]) continue;
             if (ni == from) return nc; // cycle found
-            
+            if (vis[ni]) continue;            
             vis[ni] = true;
             push_fst(&s, ni, 0, 0);
         } else {
@@ -244,7 +241,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         push_backb(&o, true); // added a path
         push_back(&oi, s->key);
         ino[s->key] = true;
-        r.arr[s->key] = d;
+        r.arr[f++] = d;
         d += k; // ',' and k-1 chars in the front
 
         while (!is_empty_q(&q)) {
@@ -362,7 +359,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 } d++;
                 while (!is_empty_q(&q)) {
                     u64 j = deq(&q);
-                    for (size_t x = 0; x < pp->vs[j].size; x++) {
+                    for (size_t x = hi[j]; x < pp->vs[j].size; x++) {
                         u64 cur = pp->vs[j].data[x];
                         for (int c = 0; c < 4; c++) {
                             u64 nxt = step(km, ka, k, cur, B[c], 1);
@@ -403,7 +400,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
             u64 si = hi[id];
             if (find_hs(rp, id)) { // root path
                 char s[k];
-                dec(ka[cur->data[si]], k - 1, s);
+                dec(ka[cur->data[si]] >> 2, k - 1, s);
                 apnd_strbld(&sb, ",");
                 apnd_strbld(&sb, s);
             }
@@ -509,7 +506,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     Hs *s, *tmp;
     HASH_ITER(hh, rp, s, tmp) { // dfs from root paths
         char t[k]; // buffer for dec of head
-        dec(ka[pp->vs[s->key].data[0]], k - 1, t);
+        dec(ka[pp->vs[s->key].data[0]] >> 2, k - 1, t);
         char* ss = subt(km, ka, hd, k, pp, vis, hi, s->key);
         apnd_strbld(&sb, t);
         apnd_strbld(&sb, ss);
@@ -539,7 +536,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
     u64 l;
     while ((l = nf(vis, pp->size))) {
-        printf("\r%ld paths remaining", l);
+        printf("\r%ld paths remaining\n", l);
         bool fndc = false;
         for (u64 i = 0; i < pp->size; i++) {
             if (vis[i]) continue;
@@ -573,6 +570,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 push_backv(cc, nc);
                 for (size_t j = 0; j < nc.size; j++) {
                     u64 cur = nc.data[j];
+                    apnd_strbld(&sb, dec_base(ka[cur] % 4));
                     for (int c = 0; c < 4; c++) {
                         u64 nxt = step(km, ka, k, cur, B[c], 1);
                         if (nxt == INF) continue;
@@ -586,6 +584,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                         free(ss);
                     }
                 }
+                apnd_strbld(&sb, ",");
                 free_v(&nc);
                 free_v(pis);
                 free(pis);
