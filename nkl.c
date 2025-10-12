@@ -95,7 +95,7 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Warning: too large matching\n");
                 free(ka); free(mu); free(mv);
                 free_hm(&km);
-                return -1;
+                exit(EXIT_FAILURE);
             }
             decompose(mu, mv, &cc, &pp, N);
             free(mu); free(mv);

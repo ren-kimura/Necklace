@@ -42,7 +42,7 @@ typedef struct {
 } VV;
 
 void init_vv(VV *vv);
-void push_backv(VV *vv);
+void push_backv(VV *vv, V v);
 void free_vv(VV *vv);
 void print_vv(const char *title, VV *vv);
 

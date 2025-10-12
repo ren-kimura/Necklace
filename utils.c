@@ -154,7 +154,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     const u64 N = (u64)HASH_COUNT(*km);
     printf("total unique k-mers = %ld\n", N);
     
-    // /* --- display km ---
+    /* --- display km ---
     printf("key\t\tdec(key)\tval\n");
     printf("-----------------------------\n");
     Hm *s, *tmp;
@@ -164,13 +164,14 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
         printf("%lu\t\t%s\t\t%lu\n", s->key, t, s->val);
     }
     printf("-----------------------------\n");
-    // */
+    */
 
     *ka = malloc(N * sizeof(u64));
     if (ka == NULL) {
         fprintf(stderr, "Error: malloc failed for ka\n");
         exit(EXIT_FAILURE);
     }
+    Hm *s, *tmp; // comment out if [display km] activated
     HASH_ITER(hh, *km, s, tmp) {
         (*ka)[s->val] = s->key;
     }

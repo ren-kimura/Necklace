@@ -80,7 +80,7 @@ void init_vv(VV *vv) {
     vv->cap = 0;
 }
 
-void push_backv(VV *vv) {
+void push_backv(VV *vv, V v) {
     if (vv->size >= vv->cap) {
         size_t ncap = (vv->cap == 0) ? 8 : vv->cap * 2;
         V *nvs = realloc(vv->vs, ncap * sizeof(V));
@@ -92,9 +92,14 @@ void push_backv(VV *vv) {
         vv->cap = ncap;
     }
     V *nv = &vv->vs[vv->size];
-    nv->data = NULL;
-    nv->size = 0;
-    nv->cap = 0;
+    nv->size = v.size;
+    nv->cap = v.size;
+    if (v.size > 0) {
+        nv->data = malloc(nv->cap * sizeof(u64));
+        memcpy(nv->data, v.data, nv->size * sizeof(u64));
+    } else {
+        nv->data = NULL;
+    }
     vv->size++;
 }
 

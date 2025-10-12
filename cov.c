@@ -69,7 +69,14 @@ u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 k, u64 N) {
 }
 
 void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
-    u64 su[N]; u64 sv[N];
+    u64 *su = (u64*)malloc(N * sizeof(u64));
+    u64 *sv = (u64*)malloc(N * sizeof(u64));
+    if (su == NULL || sv == NULL) {
+        fprintf(stderr, "Error: malloc failed for su or sv\n");
+        free(su); free(sv);
+        return;
+    }
+
     for (u64 i = 0; i < N; i++) su[i] = sv[i] = 0;
     for (u64 u = 0; u < N; u++) {
         if (su[u]) continue;
@@ -84,12 +91,8 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
             sv[next] = 1;
             cur = next;
         }
-        if (mu[fv.data[fv.size - 1]] == fv.data[0]) {
-            push_backv(cc);
-            V *c = &cc->vs[cc->size - 1];
-            for (u64 i = 0; i < fv.size; i++) {
-                push_back(c, fv.data[i]);
-            }
+        if (fv.size > 0 && mu[fv.data[fv.size - 1]] == fv.data[0]) {
+            push_backv(cc, fv);
         } else {
             V bv; init_v(&bv);
             cur = u;
@@ -102,18 +105,20 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
                 su[prev] = 1;
                 cur = prev;
             }
-            push_backv(pp);
-            V *p = &pp->vs[pp->size - 1];
+            V v; init_v(&v);
             if (bv.size > 0) {
-                for (u64 i = bv.size - 1; i > 0; i--) {
-                    push_back(p, bv.data[i]);
+                for (u64 i = bv.size; i-- > 0; ) {
+                    push_back(&v, bv.data[i]);
                 }
             }
             for (u64 i = 0; i < fv.size; i++) {
-                push_back(p, fv.data[i]);
+                push_back(&v, fv.data[i]);
             }
-            free(bv.data);
+            push_backv(pp, v);
+            free_v(&bv);
+            free_v(&v);
         }
-        free(fv.data);
+        free_v(&fv);
     }
+    free(su); free(sv);
 }
