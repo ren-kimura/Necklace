@@ -5,7 +5,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
-int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, u64 k, u64 N) {
+int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, int k, u64 N) {
     Q q;
     init_q(&q);
     int found = 0;
@@ -32,7 +32,7 @@ int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, u64 k, u64 N) {
     return found;
 }
 
-int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, u64 k) {
+int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, int k) {
     for (int i = 0; i < 4; i++){
         char c = B[i];
         u64 v = step(km, ka, k, u, c, 1);
@@ -48,7 +48,7 @@ int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, u64 k) {
     return 0;
 }
 
-u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 k, u64 N) {
+u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, int k, u64 N) {
     u64 *dt = malloc(N * sizeof(u64));
     if (dt == NULL) {
         printf("Error: malloc failed for array dt\n");
@@ -290,6 +290,8 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
 
     return N; // number of k-mers
 }
+
+void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, u64 N) {}
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
     printf("---------------------------------\n");
