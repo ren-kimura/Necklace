@@ -150,8 +150,10 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
             (*id)++;
         } else {
             if (v.size > 0) {
-                u64 y = find_hm(*km, h);
-                if (y == v.data[0]) {
+                u64 g = (h >> 2) << 2;
+                u64 w = g | 0, x = g | 1, y = g | 2, z = g | 3;
+                u64 iw = find_hm(*km, w), ix = find_hm(*km, x), iy = find_hm(*km, y), iz = find_hm(*km, z);
+                if (v.data[0] == iw || v.data[0] == ix || v.data[0] == iy || v.data[0] == iz) {
                     push_backv(cc, v);
                 } else {
                     push_backv(pp, v);
@@ -172,8 +174,10 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
                     (*id)++;
                 } else {
                     if (v.size > 0) {
-                        u64 y = find_hm(*km, h);
-                        if (y == v.data[0]) {
+                        u64 g = (h >> 2) << 2;
+                        u64 w = g | 0, x = g | 1, y = g | 2, z = g | 3;
+                        u64 iw = find_hm(*km, w), ix = find_hm(*km, x), iy = find_hm(*km, y), iz = find_hm(*km, z);
+                        if (v.data[0] == iw || v.data[0] == ix || v.data[0] == iy || v.data[0] == iz) {
                             push_backv(cc, v);
                         } else {
                             push_backv(pp, v);

@@ -148,16 +148,16 @@ int main(int argc, char *argv[]) {
             }
             char* b = rm_ext(infile);
             wrt(b, &r, k, di, cov, out, pp.size);
-            if (out == 1 && pp.size > 0) {
-                char a[FILENAME_MAX];
-                snprintf(a, FILENAME_MAX, "%s-%d-%d-%d-%d.arr", b, k, di, cov, out);
-                vread(a);
-                printf("\n");
-                for (size_t i = 0; i < pp.size; i++) {
-                    printf("%ld ", r.arr[i]);
-                }
-                printf("\n");
-            }
+            // if (out == 1 && pp.size > 0) {
+            //     char a[FILENAME_MAX];
+            //     snprintf(a, FILENAME_MAX, "%s-%d-%d-%d-%d.arr", b, k, di, cov, out);
+            //     vread(a);
+            //     printf("\n");
+            //     for (size_t i = 0; i < pp.size; i++) {
+            //         printf("%ld ", r.arr[i]);
+            //     }
+            //     printf("\n");
+            // }
             free_rep(&r); free(b);
         } else {
             if (cov == 0) {
