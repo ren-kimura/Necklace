@@ -124,8 +124,8 @@ int main(int argc, char *argv[]) {
                 free(mu); free(mv);
                 // disp_cp(ka, &cc, &pp, k);
             } else if (cov == 1) { // directly find cover from infile
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
+                N = dextract(infile, k, &km, &ka, di, &cc, &pp);
+                disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) { // greedy dfs cover
                 fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
@@ -148,7 +148,7 @@ int main(int argc, char *argv[]) {
             }
             char* b = rm_ext(infile);
             wrt(b, &r, k, di, cov, out, pp.size);
-            if (out == 1) {
+            if (out == 1 && pp.size > 0) {
                 char a[FILENAME_MAX];
                 snprintf(a, FILENAME_MAX, "%s-%d-%d-%d-%d.arr", b, k, di, cov, out);
                 vread(a);
@@ -164,7 +164,8 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
-                N = extract(infile, k, &km, &ka, di);
+                N = dextract(infile, k, &km, &ka, di, &cc, &pp);
+                disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) { // greedy dfs cover
                 N = extract(infile, k, &km, &ka, di);
             } else {

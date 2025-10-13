@@ -113,6 +113,8 @@ Rep flat(u64 *ka, VV *cc, VV *pp, int k) {
     Rep r; init_rep(&r);
     Strbld sb; init_strbld(&sb);
 
+    printf("# of (cycles, paths) = (%ld, %ld)\n", cc->size, pp->size);
+
     for (size_t i = 0; i < cc->size; i++) {
         V *cur = &cc->vs[i];
         for (size_t j = 0; j < cur->size; j++) {
@@ -391,6 +393,8 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     if (l == 0) printf("All paths are pointed\n");
     else        printf("%ld path(s) are not pointed\n", l);
 
+    printf("# of (cycles, root paths, non-root paths) = (%ld, %d, %d)\n", cc->size, HASH_COUNT(rp), HASH_COUNT(hd));
+
     // take difference of r.arr
     if (pp->size > 1) {
         for (u64 i = pp->size - 1; i > 0; --i) {
@@ -611,6 +615,8 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     l = nf(vis, pp->size);
     if (l == 0) printf("All paths are embedded\n");
     else        printf("%ld path(s) are not embedded\n", l);
+
+    printf("# of (cycles, root paths, non-root paths) = (%ld, %d, %d)\n", cc->size, HASH_COUNT(rp), HASH_COUNT(hd));
 
     if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
         sb.len--;
