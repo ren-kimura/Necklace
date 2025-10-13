@@ -138,8 +138,8 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
     u64 m = (1ULL << (2 * (k - 1))) - 1; // mask that clears two MSBs
     V v; init_v(&v);
     
-    u64 j = next_pos(sq, 0, k);
-    while (j != INF) {
+    u64 j = 0;
+    while ((j = next_pos(sq, j, k)) != INF) {
         char s[k + 1];
         memcpy(s, sq + j, k);
         s[k] = '\0';
@@ -190,7 +190,6 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
             }
             j++;
         }
-        j = next_pos(sq, j, k);
     }
     if (v.size > 0) {
         push_backv(pp, v);
@@ -260,7 +259,7 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     const u64 N = (u64)HASH_COUNT(*km);
     printf("total unique k-mers = %ld\n", N);
     
-    disp_hm(*km, k);
+    // disp_hm(*km, k);
 
     *ka = malloc(N * sizeof(u64));
     if (ka == NULL) {

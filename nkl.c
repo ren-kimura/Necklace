@@ -125,7 +125,7 @@ int main(int argc, char *argv[]) {
                 // disp_cp(ka, &cc, &pp, k);
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
-                disp_cp(ka, &cc, &pp, k);
+                // disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) { // greedy dfs cover
                 fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
