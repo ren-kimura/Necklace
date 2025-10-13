@@ -8,33 +8,43 @@
 #include "utils.h"
 #include "cov.h"
 #include "out.h"
+#include "write.h"
+#include "veri.h"
 
 static void usage(const char *s) {
     fprintf(stderr,
-	        "Usage: %s -i [filename] -k [2-31] -d [0|1] -c [0|1|2] -o [0|1|2]\n"
+            "Usage:\n"
+	        "\tgenerate: %s -i [in.fa] -k [k] -d [d] -c [c] -o [o]\n"
+            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -o [0] -f [target.str]\n\n"
+            "Modes:\n"
+            "\t-m MODE\t0:generate(default) 1:verify\n\n"
+            "Options:\n"
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
             "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs\n"
-	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n",
-	        s);
+	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
+            "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
+	        s, s);
     exit(EXIT_FAILURE);
 }
 
 static int parse_int(const char *s) {
-    char *end;
+    char *e;
     errno = 0;
-    int v = strtol(s, &end, 10);
-    if (errno || *end) usage("./necklace");
+    int v = strtol(s, &e, 10);
+    if (errno || *e) usage("./nkl");
     return v;
 }
 
 int main(int argc, char *argv[]) {
     const char *infile = NULL;
+    const char *outfile = NULL;
     int k, di, cov, out, opt;
     k = di = cov = out = -1;
+    int m = 0;
 
-	while ((opt = getopt(argc, argv, "i:k:d:c:o:")) != -1) {
+	while ((opt = getopt(argc, argv, "i:k:d:c:o:m:f:")) != -1) {
 	    switch (opt) {
 		    case 'i':
 			    if (infile) usage(argv[0]);
@@ -61,100 +71,124 @@ int main(int argc, char *argv[]) {
                 if (out != 0 && out != 1 && out != 2)
                     usage(argv[0]);
                 break;
+            case 'm':
+                m = parse_int(optarg);
+                if (m != 0 && m != 1) usage(argv[0]);
+                break;
+            case 'f':
+                outfile = optarg;
+                break;
             default:
                 usage(argv[0]);
 		}
 	}
+    if (m == 1) {
+        if (!infile || !outfile ||  k == -1 || di == -1 || out == -1) {
+            fprintf(stderr, "Error: provide -i -k -d -o -f\n");
+            usage(argv[0]);
+        }
+        return veri(infile, outfile, k, di, out);
+    } else {
+        if (!infile || k == -1 || di == -1 || cov == -1 || out == -1) {
+            usage(argv[0]);
+        }
 
-    if (!infile || k == -1 || di == -1 || cov == -1 || out == -1) {
-        usage(argv[0]);
-    }
+        printf("infile = %s\n", infile);
+        printf("k = %d\n", k);
+        printf("di = %s\n", (di == 0) ? "uni" : "bi");
+        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
+        printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
-    printf("infile = %s\n", infile);
-    printf("k = %d\n", k);
-    printf("di = %s\n", (di == 0) ? "uni" : "bi");
-    printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
-    printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
-
-    Hm *km = NULL; u64 *ka = NULL; u64 N;
-    VV cc, pp; init_vv(&cc); init_vv(&pp);
-    
-    if (di == 0) {
-        if (cov == 0) { // maximum matching
-            N = extract(infile, k, &km, &ka, di);        
-            u64 *mu = (u64*)malloc(N * sizeof(u64));
-            u64 *mv = (u64*)malloc(N * sizeof(u64));
-            if (mu == NULL || mv == NULL) {
-                fprintf(stderr, "Error: malloc failed for array mu or mv\n");
-                free(ka); free(mu); free(mv);
-                free_hm(&km);
-                return -1;
-            }
-            u64 M = mbm(km, ka, mu, mv, k, N);
-            if (M == INF) {
-                fprintf(stderr, "Warning: too large matching\n");
-                free(ka); free(mu); free(mv);
-                free_hm(&km);
+        Hm *km = NULL; u64 *ka = NULL; u64 N;
+        VV cc, pp; init_vv(&cc); init_vv(&pp);
+        
+        if (di == 0) {
+            if (cov == 0) { // maximum matching
+                N = extract(infile, k, &km, &ka, di);        
+                u64 *mu = (u64*)malloc(N * sizeof(u64));
+                u64 *mv = (u64*)malloc(N * sizeof(u64));
+                if (mu == NULL || mv == NULL) {
+                    fprintf(stderr, "Error: malloc failed for array mu or mv\n");
+                    free(ka); free(mu); free(mv);
+                    free_hm(&km);
+                    return -1;
+                }
+                u64 M = mbm(km, ka, mu, mv, k, N);
+                if (M == INF) {
+                    fprintf(stderr, "Warning: too large matching\n");
+                    free(ka); free(mu); free(mv);
+                    free_hm(&km);
+                    exit(EXIT_FAILURE);
+                }
+                decompose(mu, mv, &cc, &pp, N);
+                free(mu); free(mv);
+                // disp_cp(ka, &cc, &pp, k);
+            } else if (cov == 1) { // directly find cover from infile
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else if (cov == 2) { // greedy dfs cover
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else {
+                fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
             }
-            decompose(mu, mv, &cc, &pp, N);
-            free(mu); free(mv);
-            // disp_cp(ka, &cc, &pp, k);
-        } else if (cov == 1) { // directly find cover from infile
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
-        } else if (cov == 2) { // greedy dfs cover
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
+            
+            Rep r; init_rep(&r);
+            if (out == 0) { // flat
+                r = flat(ka, &cc, &pp, k);
+                printf("%s\n", r.str);
+            } else if (out == 1) { // pointer
+                r = ptr(km, ka, &cc, &pp, k);
+            } else if (out == 2) { // bp
+                r = bp(km, ka, &cc, &pp, k);
+            } else {
+                fprintf(stderr, "Error: invalid out arg\n");
+                exit(EXIT_FAILURE);
+            }
+            char* b = rm_ext(infile);
+            wrt(b, &r, k, di, cov, out, pp.size);
+            if (out == 1) {
+                char a[FILENAME_MAX];
+                snprintf(a, FILENAME_MAX, "%s-%d-%d-%d-%d.arr", b, k, di, cov, out);
+                vread(a);
+                printf("\n");
+                for (size_t i = 0; i < pp.size; i++) {
+                    printf("%ld ", r.arr[i]);
+                }
+                printf("\n");
+            }
+            free_rep(&r); free(b);
         } else {
-            fprintf(stderr, "Error: invalid cover type\n");
-            exit(EXIT_FAILURE);
-        }
-        
-        if (out == 0) { // flat
-            Rep r = flat(ka, &cc, &pp, k);
-            printf("%s\n", r.str);
-        } else if (out == 1) { // pointer
-            Rep r = ptr(km, ka, &cc, &pp, k);
-            printf("%s\n", r.str);
-            for (size_t i = 0; i < pp.size; i++) printf("%ld ", r.arr[i]);
-            printf("\n");
-        } else if (out == 2) { // bp
-            Rep r = bp(km, ka, &cc, &pp, k);
-            printf("%s\n", r.str);
-        } else {
-            fprintf(stderr, "Error: invalid out arg\n");
-            exit(EXIT_FAILURE);
-        }
-    } else {
-        if (cov == 0) {
-            fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
-            exit(EXIT_FAILURE);
-        } else if (cov == 1) { // directly find cover from infile
-            N = extract(infile, k, &km, &ka, di);
-        } else if (cov == 2) { // greedy dfs cover
-            N = extract(infile, k, &km, &ka, di);
-        } else {
-            fprintf(stderr, "Error: invalid cover type\n");
-            exit(EXIT_FAILURE);
+            if (cov == 0) {
+                fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
+                exit(EXIT_FAILURE);
+            } else if (cov == 1) { // directly find cover from infile
+                N = extract(infile, k, &km, &ka, di);
+            } else if (cov == 2) { // greedy dfs cover
+                N = extract(infile, k, &km, &ka, di);
+            } else {
+                fprintf(stderr, "Error: invalid cover type\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (out == 0) {
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else if (out == 1) {
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else if (out == 2) {
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else {
+                fprintf(stderr, "Error: invalid out arg\n");
+                exit(EXIT_FAILURE);
+            }
         }
 
-        if (out == 0) {
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
-        } else if (out == 1) {
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
-        } else if (out == 2) {
-            fprintf(stderr, "under construction\n");
-            exit(EXIT_FAILURE);
-        } else {
-            fprintf(stderr, "Error: invalid out arg\n");
-            exit(EXIT_FAILURE);
-        }
+        free(ka); free_hm(&km);
+        free_vv(&cc); free_vv(&pp);    
+        return 0;
     }
-
-    free(ka); free_hm(&km);
-    free_vv(&cc); free_vv(&pp);    
-	return 0;
 }

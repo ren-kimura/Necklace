@@ -1,6 +1,7 @@
 #include "cov.h"
 #include "utils.h"
 #include "stat.h"
+#include <string.h>
 
 int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, u64 k, u64 N) {
     Q q;
@@ -135,6 +136,7 @@ void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
         V* c = &cc->vs[i];
         for (size_t j = 0; j < c->size; j++) {
             char s[k + 1];
+            memset(s, 0, k + 1);
             dec(ka[c->data[j]], k, s);
             printf("%s ", s);
         }
@@ -145,6 +147,7 @@ void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
         V* p = &pp->vs[i];
         for (size_t j = 0; j < p->size; j++) {
             char s[k + 1];
+            memset(s, 0, k + 1);
             dec(ka[p->data[j]], k, s);
             printf("%s ", s);
         }

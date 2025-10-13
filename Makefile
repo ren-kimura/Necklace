@@ -2,7 +2,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm
 
-SRCS = nkl.c ds.c utils.c cov.c out.c stat.c
+SRCS = nkl.c ds.c utils.c cov.c out.c stat.c write.c veri.c
 OBJS = $(SRCS:.c=.o)
 
 TARGET = nkl
