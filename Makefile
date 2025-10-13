@@ -1,20 +1,21 @@
-CXX      := g++
-CXXFLAGS := -std=c++23 -g -Wall -Wextra -fsanitize=undefined -Wno-deprecated -O3
+CC = gcc
+CFLAGS = -Wall -Wextra -O2 -g
+LDFLAGS = -lm
 
-all: rep birep
+SRCS = nkl.c ds.c utils.c cov.c out.c stat.c write.c veri.c
+OBJS = $(SRCS:.c=.o)
 
-rep: rep.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $<
+TARGET = nkl
 
-birep: birep.cpp
-	$(CXX) $(CXXFLAGS) -o $@ $<
+all: $(TARGET)
 
-memcheck-rep: rep
-	valgrind --leak-check=full --show-leak-kinds=all ./rep
+$(TARGET): $(OBJS)
+		$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-memcheck-birep: birep
-	valgrind --leak-check=full --show-leak-kinds=all ./birep
+%.o: %.c
+		$(CC) $(CFLAGS) -c $< -o $@
 
-.PHONY: all clean memcheck-rep memcheck-birep
 clean:
-	rm -f rep birep
+		rm -f $(OBJS) $(TARGET)
+
+.PHONY: all clean
