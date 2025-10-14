@@ -211,3 +211,64 @@ int veri(const char* of, const char* tf, int k, int di, int out) {
     free_hs(&ks);
     return fz ? 0 : -1;
 }
+
+int veri_fa(const char *of, const char *tf, int k) {
+    fprintf(stdout, "verification mode\n");
+    fprintf(stdout, "original file: %s\n", of);
+    fprintf(stdout, "target file: %s\n", tf);
+
+    fprintf(stdout, "\n[Step 1/3] extracting k-mers from original file\n");
+    Hm *km = NULL;
+    u64 *ka = NULL;
+    u64 no1 = extract(of, k, &km, &ka, 0);
+    Hs *ks = NULL;
+    Hm *s, *tmp;
+    HASH_ITER(hh, km, s, tmp) { add_hs(&ks, s->key); }
+    free(ka); free_hm(&km);
+    fprintf(stdout, "%ld k-mers in %s\n", no1, of); 
+    
+    fprintf(stdout, "\n[Step 2/3] reconstructing k-mers from target file\n");
+    km = NULL;
+    ka = NULL;
+    u64 no2 = extract(tf, k, &km, &ka, 0);
+    fprintf(stdout, "%ld k-mers in %s\n", no2, tf);
+
+    fprintf(stdout, "\n[Step 3/3] final check\n");
+    bool fz = true;
+
+    HASH_ITER(hh, km, s, tmp) {
+        if (find_hs(ks, s->key)) {
+            del_hs(&ks, s->key);
+        } else {
+            char t[k + 1];
+            dec(s->key, k, t);
+            fprintf(stderr, "Error: found a k-mer not in original: %s\n", t);
+            fz = false;
+            break;
+        }
+    }
+    free(ka); free_hm(&km);
+
+    if (fz && HASH_COUNT(ks) > 0) {
+        fprintf(stderr, "Error: target file is missing %d k-mers from original\n", HASH_COUNT(ks));
+        Hs* it;
+        int c = 0;
+        for (it = ks; it != NULL; it = it->hh.next) {
+            char t[k + 1];
+            dec(it->key, k, t);
+            fprintf(stderr, "  - missing: %s\n", t);
+            c++;
+        }
+        fz = false;
+    }
+
+    free_hs(&ks);
+
+    if (fz) {
+        fprintf(stdout, "All original k-mers were found\n");
+        return 0;
+    } else {
+        fprintf(stderr, "spectrum not identical\n");
+        return -1;
+    }
+}

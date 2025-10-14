@@ -2,20 +2,25 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm
 
-SRCS = nkl.c ds.c utils.c cov.c out.c stat.c write.c veri.c
-OBJS = $(SRCS:.c=.o)
+TARGETS = nkl eu
 
-TARGET = nkl
+BASE_OBJS = ds.o utils.o cov.o stat.o write.o veri.o
 
-all: $(TARGET)
+NKL_OBJS = nkl.o $(BASE_OBJS) out.o
+EU_OBJS = eu.o $(BASE_OBJS) eutils.o
 
-$(TARGET): $(OBJS)
-		$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+all: $(TARGETS)
+
+nkl: $(NKL_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+eu: $(EU_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
-		$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-		rm -f $(OBJS) $(TARGET)
+	rm -f *.o $(TARGETS)
 
 .PHONY: all clean

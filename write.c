@@ -109,3 +109,18 @@ void vread(const char* f) {
     printf("\n");
     fclose(fp);
 }
+
+void wrt_fa(const char *f, int k, char** ss, size_t ns) {
+    char of[100];
+    snprintf(of, 100, "%s-%d.fa", f, k);
+    FILE *ofp = fopen(of, "w");
+    if (ofp == NULL) {
+        fprintf(stderr, "Error: cannot open %s in w mode\n", of);
+        return;
+    } 
+    for (size_t i = 0; i < ns; ++i) {
+        fprintf(ofp, ">%ld\n%s\n", i + 1, ss[i]);
+    }
+    fclose(ofp);
+    printf("\nEulertigs written to %s\n", of);
+}
