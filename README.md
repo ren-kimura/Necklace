@@ -23,7 +23,7 @@ nkl -i [in.fa] -k [k] -d [d] -c [c] -o [o]
 - `-i`: set a path to an input FASTA file after this
 - `-k`: choose $k$ s.t. $2\leq k\leq 31$
 - `-d`: choose either 0: uni-directed or 1: bi-directed
-- `-c`: choose how to cover the de Bruijn graph, 0: maximum matching (ONLY WHEN d == 0) 1: greedy linear scan of `infile` 2: greedy dfs from unvisited vertices
+- `-c`: choose how to cover the de Bruijn graph, 0: maximum matching (ONLY WHEN d == 0) 1: greedy linear scan of `infile`
 - `-o`: choose representation 0: flat 1: pointer 2: balanced parentheses
 ### verify an output
 ```bash

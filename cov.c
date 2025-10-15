@@ -291,8 +291,6 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     return N; // number of k-mers
 }
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, u64 N) {}
-
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
     printf("---------------------------------\n");
     printf("---cycles---\n");

@@ -22,7 +22,7 @@ static void usage(const char *s) {
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs\n"
+            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan\n"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
             "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
 	        s, s);
@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
         printf("infile = %s\n", infile);
         printf("k = %d\n", k);
         printf("di = %s\n", (di == 0) ? "uni" : "bi");
-        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
+        printf("cov = %s\n", (cov == 0) ? "matching" : "linearscan");
         printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
@@ -126,10 +126,6 @@ int main(int argc, char *argv[]) {
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
                 // disp_cp(ka, &cc, &pp, k);
-            } else if (cov == 2) { // greedy dfs cover
-                N = extract(infile, k, &km, &ka, di);
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -167,8 +163,6 @@ int main(int argc, char *argv[]) {
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
                 disp_cp(ka, &cc, &pp, k);
-            } else if (cov == 2) { // greedy dfs cover
-                N = extract(infile, k, &km, &ka, di);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
