@@ -134,7 +134,6 @@ int main(int argc, char *argv[]) {
             Rep r; init_rep(&r);
             if (out == 0) { // flat
                 r = flat(ka, &cc, &pp, k);
-                printf("%s\n", r.str);
             } else if (out == 1) { // pointer
                 r = ptr(km, ka, &cc, &pp, k);
             } else if (out == 2) { // bp
