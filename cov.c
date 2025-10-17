@@ -289,7 +289,44 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     return N; // number of k-mers
 }
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, int di) {
+    u64 N = (u64)HASH_COUNT(km);
+    bool* vis = (bool*)malloc(sizeof(bool) * N);
+    for (u64 u = 0; u < N; u++) { vis[u] = false; }
+    for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy dfs");
+        if (vis[u]) continue;
+        V w; init_v(&w);
+        u64 tu = u;
+        int c = 1; // use this if di == 1
+        do {
+            push_back(&w, tu);
+            vis[tu] = true;
+            u64 ntu;
+            for (uint8_t i = 0; i < 4; i++) {
+                if (di == 0) {
+                    ntu = step(km, ka, k, tu, B[i], 1);
+                } else {
+                    for (int j = 1; j >= 0; j--) {
+                        ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
+                        if (ntu != INF) { c = j; break; }
+                    }
+                }
+                if (ntu != INF) break;
+            }
+            if (ntu == INF) break; // no outneighbors of tu
+            tu = ntu;
+        } while (vis[tu] == false);
+        if (tu == u && c == 1) {
+            push_backv(cc, w);
+        } else {
+            push_backv(pp, w);
+        }
+    }
+    fin("greedy dfs");
+}
+
+void gdfs_tmp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
@@ -301,25 +338,25 @@ void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         do {
             push_back(&w, tu);
             vis[tu] = true;
-            u64 ntu;
+            u64 ntu = INF;
             for (uint8_t i = 0; i < 4; i++) {
                 ntu = step(km, ka, k, tu, B[i], 1);
                 if (ntu == INF) continue;
+                if (vis[ntu] == false || ntu == u) break;
             }
-            if (ntu == INF) break; // no outneighbors of tu
             tu = ntu;
+            if (ntu == INF) break; // no outneighbors of tu
         } while (vis[tu] == false);
+
         if (tu == u) {
             push_backv(cc, w);
         } else {
             push_backv(pp, w);
         }
+        free_v(&w);
     }
     fin("greedy dfs");
-}
-
-void bgdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
-
+    free(vis);
 }
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {

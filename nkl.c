@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
         printf("infile = %s\n", infile);
         printf("k = %d\n", k);
         printf("di = %s\n", (di == 0) ? "uni" : "bi");
-        printf("cov = %s\n", (cov == 0) ? "matching" : "linearscan");
+        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
         printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
@@ -128,7 +128,9 @@ int main(int argc, char *argv[]) {
                 // disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) {
                 N = extract(infile, k, &km, &ka, di);
-                gdfs(km, ka, &cc, &pp, k);
+                //gdfs(km, ka, &cc, &pp, k, di);
+                gdfs_tmp(km, ka, &cc, &pp, k);
+                disp_cp(ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -167,7 +169,9 @@ int main(int argc, char *argv[]) {
                 disp_hm(km, k);
                 disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) {
-                bgdfs(km, ka, &cc, &pp, k);
+                N = extract(infile, k, &km, &ka, di);
+                gdfs(km, ka, &cc, &pp, k, di);
+                disp_cp(ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);

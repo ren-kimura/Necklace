@@ -236,10 +236,7 @@ u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool f
     u64 ch = can(h, k); // take can of h
     u64 nid = find_hm(km, ch);
     if (nid == INF) return INF; // no branch to c from the selected side
-    if (ch != rc(ch, k)) {
-        if ((ch == h) == toc) return nid; // positive if not self-complement and arrived at the selected side of ch
-    } else {
-        return nid; // positive regardless of toc if self-complement 
-    }
+    
+    if ((ch == h) == toc) return nid; // positive if not self-complement and arrived at the selected side of ch
     return INF;
 }
