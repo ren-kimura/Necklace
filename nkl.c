@@ -122,15 +122,11 @@ int main(int argc, char *argv[]) {
                 }
                 decompose(mu, mv, &cc, &pp, N);
                 free(mu); free(mv);
-                // disp_cp(ka, &cc, &pp, k);
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
-                // disp_cp(ka, &cc, &pp, k);
-            } else if (cov == 2) {
+            } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                //gdfs(km, ka, &cc, &pp, k, di);
-                gdfs_tmp(km, ka, &cc, &pp, k);
-                disp_cp(ka, &cc, &pp, k);
+                gdfs(km, ka, &cc, &pp, k, di);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -149,16 +145,6 @@ int main(int argc, char *argv[]) {
             }
             char* b = rm_ext(infile);
             wrt(b, &r, k, di, cov, out, pp.size);
-            // if (out == 1 && pp.size > 0) {
-            //     char a[FILENAME_MAX];
-            //     snprintf(a, FILENAME_MAX, "%s-%d-%d-%d-%d.arr", b, k, di, cov, out);
-            //     vread(a);
-            //     printf("\n");
-            //     for (size_t i = 0; i < pp.size; i++) {
-            //         printf("%ld ", r.arr[i]);
-            //     }
-            //     printf("\n");
-            // }
             free_rep(&r); free(b);
         } else {
             if (cov == 0) {
@@ -168,7 +154,7 @@ int main(int argc, char *argv[]) {
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
                 disp_hm(km, k);
                 disp_cp(ka, &cc, &pp, k);
-            } else if (cov == 2) {
+            } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
                 gdfs(km, ka, &cc, &pp, k, di);
                 disp_cp(ka, &cc, &pp, k);
