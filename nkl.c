@@ -22,7 +22,7 @@ static void usage(const char *s) {
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan\n"
+            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs\n"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
             "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
 	        s, s);
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
             case 'c':
                 if (cov != -1) usage(argv[0]);
                 cov = parse_int(optarg);
-                if (cov != 0 && cov != 1) usage(argv[0]);
+                if (cov != 0 && cov != 1 && cov != 2) usage(argv[0]);
                 break;
             case 'o':
                 if (out != -1) usage(argv[0]);
@@ -126,6 +126,9 @@ int main(int argc, char *argv[]) {
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
                 // disp_cp(ka, &cc, &pp, k);
+            } else if (cov == 2) {
+                N = extract(infile, k, &km, &ka, di);
+                gdfs(km, ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -161,7 +164,10 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
                 N = dextract(infile, k, &km, &ka, di, &cc, &pp);
+                disp_hm(km, k);
                 disp_cp(ka, &cc, &pp, k);
+            } else if (cov == 2) {
+                bgdfs(km, ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);

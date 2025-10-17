@@ -262,8 +262,6 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     fin("extracting k-mers into cycles and paths");
     const u64 N = (u64)HASH_COUNT(*km);
     printf("total unique k-mers = %ld\n", N);
-    
-    // disp_hm(*km, k);
 
     *ka = malloc(N * sizeof(u64));
     if (ka == NULL) {
@@ -289,6 +287,39 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     }
 
     return N; // number of k-mers
+}
+
+void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+    u64 N = (u64)HASH_COUNT(km);
+    bool* vis = (bool*)malloc(sizeof(bool) * N);
+    for (u64 u = 0; u < N; u++) { vis[u] = false; }
+    for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy dfs");
+        if (vis[u]) continue;
+        V w; init_v(&w);
+        u64 tu = u;
+        do {
+            push_back(&w, tu);
+            vis[tu] = true;
+            u64 ntu;
+            for (uint8_t i = 0; i < 4; i++) {
+                ntu = step(km, ka, k, tu, B[i], 1);
+                if (ntu == INF) continue;
+            }
+            if (ntu == INF) break; // no outneighbors of tu
+            tu = ntu;
+        } while (vis[tu] == false);
+        if (tu == u) {
+            push_backv(cc, w);
+        } else {
+            push_backv(pp, w);
+        }
+    }
+    fin("greedy dfs");
+}
+
+void bgdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+
 }
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
