@@ -144,8 +144,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
         memcpy(s, sq + j, k);
         s[k] = '\0';
         u64 h = enc(s, k);
-        if (di) h = can(h, k);
-        if (add_hm(km, h, *id)) {
+        if ((di == 0 && add_hm(km, h, *id)) || (di == 1 && add_hm(km, can(h, k), *id))) {
             push_back(&v, *id);
             (*id)++;
         } else {
@@ -168,8 +167,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
             char c = toupper(sq[j + k - 1]);
             if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
                 h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
-                if (di) h = can(h, k);
-                if (add_hm(km, h, *id)) {
+                if ((di == 0 && add_hm(km, h, *id)) || (di == 1 && add_hm(km, can(h, k), *id))) {
                     push_back(&v, *id);
                     (*id)++;
                 } else {
