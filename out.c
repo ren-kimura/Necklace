@@ -146,6 +146,42 @@ Rep flat(u64 *ka, VV *cc, VV *pp, int k) {
     return r;
 }
 
+Rep flat_w(W *w) {
+    Rep r; init_rep(&r);
+    Strbld sb; init_strbld(&sb);
+
+    size_t ncc = 0;
+    if (w->cc) for (ncc = 0; w->cc[ncc] != NULL; ncc++);
+    size_t npp = 0;
+    if (w->pp) for (npp = 0; w->pp[npp] != NULL; npp++);
+
+    printf("# of (cycles, paths) = (%ld, %ld)\n", ncc, npp);
+
+    if (w->cc) {
+        for (size_t i = 0; w->cc[i] != NULL; i++) {
+            apnd_strbld(&sb, w->cc[i]);
+            apnd_strbld(&sb, ",");
+        }
+    }
+    apnd_strbld(&sb, ",");
+    if (w->pp) {
+        for (size_t i = 0; w->pp[i] != NULL; i++) {
+            apnd_strbld(&sb, w->pp[i]);
+            apnd_strbld(&sb, ",");
+        }
+    }
+    r.str = sb.str;
+    size_t fl = sb.len;
+
+    if (fl > 0 && r.str[fl - 1] == ',') {
+        r.str[fl - 1] = '\0';
+    }
+    if (fl > 1 && r.str[fl - 2] == ',' && r.str[fl - 1] == '\0') {
+        r.str[fl - 2] = '\0';
+    }
+    return r;
+}
+
 V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from) {
     V* nc = (V*)malloc(sizeof(V));
     if (nc == NULL) return NULL;

@@ -253,3 +253,49 @@ void free_hm(Hm **hm) {
         free(cur);
     }
 }
+
+void init_w(W *w) {
+    w->cc = NULL;
+    w->pp = NULL;
+}
+
+static void pusha(char*** a, char* s) {
+    size_t t = 0;
+    if (*a != NULL) {
+        for (; (*a)[t] != NULL; t++);
+    }
+
+    char** na = realloc(*a, (t + 2) * sizeof(char*));
+    if (na == NULL) {
+        fprintf(stderr, "Error: realloc failed for char**\n");
+        exit(EXIT_FAILURE);
+    }
+
+    na[t] = s;
+    na[t + 1] = NULL;
+    *a = na;
+}
+
+void pushcc(W *w, char *s) {
+    pusha(&(w->cc), s);    
+}
+
+void pushpp(W *w, char *s) {
+    pusha(&(w->pp), s);
+}
+
+void free_w(W *w) {
+    if (w->cc != NULL) {
+        for (size_t t = 0; w->cc[t] != NULL; t++) {
+            free(w->cc[t]);
+        }
+        free(w->cc);
+    }
+    if (w->pp != NULL) {
+        for (size_t t = 0; w->pp[t] != NULL; t++) {
+            free(w->pp[t]);
+        }
+        free(w->pp);
+    }
+    init_w(w);
+}

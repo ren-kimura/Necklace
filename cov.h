@@ -8,9 +8,13 @@ int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, int k);
 u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, int k, u64 N);
 void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N);
 
-u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *pp);
+u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp);
+u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w);
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, int di);
+void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+void bgdfs(Hm *km, u64 *ka, W *w, int k);
+
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k);
+void disp_w(W *w);
 
 #endif // MBM_H

@@ -131,7 +131,7 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
     free(su); free(sv);
 }
 
-void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
+void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
 
@@ -144,7 +144,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
         memcpy(s, sq + j, k);
         s[k] = '\0';
         u64 h = enc(s, k);
-        if ((di == 0 && add_hm(km, h, *id)) || (di == 1 && add_hm(km, can(h, k), *id))) {
+        if (add_hm(km, h, *id)) {
             push_back(&v, *id);
             (*id)++;
         } else {
@@ -167,7 +167,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
             char c = toupper(sq[j + k - 1]);
             if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
                 h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
-                if ((di == 0 && add_hm(km, h, *id)) || (di == 1 && add_hm(km, can(h, k), *id))) {
+                if (add_hm(km, h, *id)) {
                     push_back(&v, *id);
                     (*id)++;
                 } else {
@@ -199,7 +199,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, int di, VV *cc, VV *pp) {
     free_v(&v);
 }
 
-u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *pp) {
+u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Error: Could not open file %s\n", infile);
@@ -224,7 +224,7 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
         if (ln[0] == '>') {
             if (buff_len > 0) {
                 // process the sequence accumulated so far
-                dproc_sq(buff, k, km, &id, di, cc, pp);
+                dproc_sq(buff, k, km, &id, cc, pp);
             }
             buff_len = 0;
         } else {
@@ -254,7 +254,7 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
 
     // process the very last sequence in the file
     if (buff_len > 0) {
-        dproc_sq(buff, k, km, &id, di, cc, pp);
+        dproc_sq(buff, k, km, &id, cc, pp);
     }
 
     fin("extracting k-mers into cycles and paths");
@@ -287,7 +287,11 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, int di, VV *cc, VV *p
     return N; // number of k-mers
 }
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, int di) {
+u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w) {
+    return INF;
+}
+
+void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
@@ -296,38 +300,100 @@ void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k, int di) {
         if (vis[u]) continue;
         V w; init_v(&w);
         u64 tu = u;
-        int c = 1; // for type-consistency check
         do {
             push_back(&w, tu);
             vis[tu] = true;
             u64 ntu = INF;
             for (uint8_t i = 0; i < 4; i++) {
-                if (di == 0) {
-                    ntu = step(km, ka, k, tu, B[i], 1);
-                    if (ntu == INF) continue;
-                    if (vis[ntu] == false || ntu == u) break;
-                } else {
-                    for (int j = 1; j >= 0; j--) {
-                        ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
-                        if (ntu == INF) continue;
-                        if (vis[ntu] == false || ntu == u) {
-                            c = j;
-                            goto e;
-                        }
-                    }
-                }
+                ntu = step(km, ka, k, tu, B[i], 1);
+                if (ntu == INF) continue;
+                if (vis[ntu] == false || ntu == u) break;
             }
-            e:
             tu = ntu;
             if (ntu == INF) break; // no outneighbors of tu
         } while (vis[tu] == false);
 
-        if (tu == u && c) {
+        if (tu == u) {
             push_backv(cc, w);
         } else {
             push_backv(pp, w);
         }
         free_v(&w);
+    }
+    fin("greedy dfs");
+    free(vis);
+}
+
+static void apndb(char** s, size_t* len, char b) {
+    (*len)++;
+    char* ns = (char*)realloc(*s, *len + 1); // +1 for '\0'
+    if (ns == NULL) {
+        fprintf(stderr, "Error: realloc failed in bgdfs\n");
+        exit(EXIT_FAILURE);
+    }
+    ns[*len - 1] = b;
+    ns[*len] = '\0';
+    *s = ns;
+}
+
+void bgdfs(Hm *km, u64 *ka, W *w, int k) {
+    u64 N = (u64)HASH_COUNT(km);
+    bool* vis = (bool*)malloc(sizeof(bool) * N);
+    for (u64 u = 0; u < N; u++) { vis[u] = false; }
+
+    char ts[k + 1];
+    for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy dfs");
+        if (vis[u]) continue;
+
+        dec(ka[u], k, ts);
+        char* s = (char*)malloc(k + 1); // +1 for '\0'
+        if (s == NULL) {
+            fprintf(stderr, "Error: malloc failed for s\n");
+            exit(EXIT_FAILURE);
+        }
+        strcpy(s, ts);
+        size_t ls = k;
+
+        u64 tu = u;
+        int c = 1;
+        do {
+            vis[tu] = true;
+            u64 ntu = INF;
+            char nb = '\0';
+            for (uint8_t i = 0; i < 4; i++) {
+                for (int j = 1; j >= 0; j--) {
+                    ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
+                    if (ntu == INF) continue;
+                    c = j;
+                    if (vis[ntu] == false || (ntu == u && c)) {
+                        nb = B[i];
+                        goto e;
+                    }
+                }
+            }
+            e:
+            if (ntu != INF) {
+                apndb(&s, &ls, nb);
+            }
+            tu = ntu;
+            if (ntu == INF) break;
+        } while (vis[tu] == false);
+
+        if (tu == u && c) {
+            size_t lc = ls - k;
+            char* cs = (char*)malloc(lc + 1);
+            if (cs == NULL) {
+                fprintf(stderr, "Error: malloc failed for cs\n");
+                exit(EXIT_FAILURE);
+            }
+            memcpy(cs, s + k, lc);
+            cs[lc] = '\0';
+            pushcc(w, cs);
+            free(s);
+        } else {
+            pushpp(w, s);
+        }
     }
     fin("greedy dfs");
     free(vis);
@@ -358,4 +424,21 @@ void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
         printf("\n");
     }
     printf("---------------------------------\n");
+}
+
+void disp_w(W *w) {
+    printf("---------------------------------\n"); 
+    printf("---cycles---\n");
+    if (w->cc != NULL) {
+        for (size_t i = 0; w->cc[i] != NULL; i++) {
+            printf("%s\n", w->cc[i]);
+        }
+    }
+    printf("---paths---\n");
+    if (w->pp != NULL) {
+        for (size_t i = 0; w->pp[i] != NULL; i++) {
+            printf("%s\n", w->pp[i]);
+        }
+    }
+    printf("---------------------------------\n"); 
 }

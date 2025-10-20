@@ -100,9 +100,9 @@ int main(int argc, char *argv[]) {
         printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
-        VV cc, pp; init_vv(&cc); init_vv(&pp);
         
         if (di == 0) {
+            VV cc, pp; init_vv(&cc); init_vv(&pp);
             if (cov == 0) { // maximum matching
                 N = extract(infile, k, &km, &ka, di);        
                 u64 *mu = (u64*)malloc(N * sizeof(u64));
@@ -123,10 +123,10 @@ int main(int argc, char *argv[]) {
                 decompose(mu, mv, &cc, &pp, N);
                 free(mu); free(mv);
             } else if (cov == 1) { // directly find cover from infile
-                N = dextract(infile, k, &km, &ka, di, &cc, &pp);
+                N = dextract(infile, k, &km, &ka, &cc, &pp);
             } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                gdfs(km, ka, &cc, &pp, k, di);
+                gdfs(km, ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -143,29 +143,30 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: invalid out arg\n");
                 exit(EXIT_FAILURE);
             }
+            u64 np = pp.size;
+            free_vv(&cc); free_vv(&pp); 
             char* b = rm_ext(infile);
-            wrt(b, &r, k, di, cov, out, pp.size);
+            wrt(b, &r, k, di, cov, out, np);
             free_rep(&r); free(b);
         } else {
+            W w; init_w(&w);
             if (cov == 0) {
                 fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
-                N = dextract(infile, k, &km, &ka, di, &cc, &pp);
+                N = bdextract(infile, k, &km, &ka, &w);
                 disp_hm(km, k);
-                disp_cp(ka, &cc, &pp, k);
             } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                gdfs(km, ka, &cc, &pp, k, di);
-                disp_cp(ka, &cc, &pp, k);
+                bgdfs(km, ka, &w, k);
+                disp_w(&w);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
             }
-
+            Rep r; init_rep(&r);
             if (out == 0) {
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
+                r = flat_w(&w);
             } else if (out == 1) {
                 fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
@@ -176,10 +177,15 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: invalid out arg\n");
                 exit(EXIT_FAILURE);
             }
+            u64 np = 0;
+            if (w.pp) for (np = 0; w.pp[np] != NULL; np++);
+            char* b = rm_ext(infile);
+            wrt(b, &r, k, di, cov, out, np);
+            free_rep(&r);
+            free_w(&w);
         }
 
-        free(ka); free_hm(&km);
-        free_vv(&cc); free_vv(&pp);    
+        free(ka); free_hm(&km);   
         return 0;
     }
 }

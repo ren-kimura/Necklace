@@ -94,4 +94,14 @@ u64 find_hm(Hm *m, u64 k);
 void del_hm(Hm **m, u64 k);
 void free_hm(Hm **m);
 
+typedef struct {
+    char** cc;
+    char** pp;
+} W;
+
+void init_w(W *w);
+void pushcc(W *w, char *s);
+void pushpp(W *w, char *s);
+void free_w(W *w);
+
 #endif // DS_H
