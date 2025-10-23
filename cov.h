@@ -2,6 +2,7 @@
 #define MBM_H
 
 #include "ds.h"
+#include "out.h"
 
 int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, int k, u64 N);
 int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, int k);

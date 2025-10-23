@@ -4,9 +4,9 @@ LDFLAGS = -lm
 
 TARGETS = nkl eu
 
-BASE_OBJS = ds.o utils.o cov.o stat.o write.o veri.o
+BASE_OBJS = ds.o utils.o cov.o stat.o write.o veri.o out.o
 
-NKL_OBJS = nkl.o $(BASE_OBJS) out.o
+NKL_OBJS = nkl.o $(BASE_OBJS)
 EU_OBJS = eu.o $(BASE_OBJS) eutils.o
 
 all: $(TARGETS)

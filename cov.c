@@ -1,7 +1,6 @@
 #include "cov.h"
 #include "utils.h"
 #include "stat.h"
-#include "out.h"
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
@@ -325,34 +324,22 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     free(vis);
 }
 
-static void apndb(char** s, size_t* len, char b) {
-    (*len)++;
-    char* ns = (char*)realloc(*s, *len + 1); // +1 for '\0'
-    if (ns == NULL) {
-        fprintf(stderr, "Error: realloc failed in bgdfs\n");
-        exit(EXIT_FAILURE);
-    }
-    ns[*len - 1] = b;
-    ns[*len] = '\0';
-    *s = ns;
-}
-
 void bgcov(Hm *km, u64 *ka, W *w, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
 
+    char ts[k + 1];
+
     for (u64 u = 0; u < N; u++) {
-        prog(u, N, "greedy dfs");
+        prog(u, N, "greedy cover");
         if (vis[u]) continue;
 
-        char* s = (char*)malloc(k + 1); // +1 for '\0'
-        if (s == NULL) {
-            fprintf(stderr, "Error: malloc failed for s\n");
-            exit(EXIT_FAILURE);
-        }
-        dec(ka[u], k, s);
-        size_t ls = k;
+        Strbld s;
+        init_strbld(&s);
+
+        dec(ka[u], k, ts);
+        apnd_strbld(&s, ts);
 
         u64 tu = u;
         int c = 1;
@@ -367,7 +354,8 @@ void bgcov(Hm *km, u64 *ka, W *w, int k) {
                     if (vis[ntu] == false) {
                         tu = ntu;
                         c = j;
-                        apndb(&s, &ls, B[i]);
+                        char bs[2] = {B[i], '\0'};
+                        apnd_strbld(&s, bs);
                         goto e;
                     }
                 }
@@ -379,21 +367,21 @@ void bgcov(Hm *km, u64 *ka, W *w, int k) {
         } while (1);
 
         if (tu == u && c) {
-            size_t lc = ls - k;
+            size_t lc = s.len - k;
             char* cs = (char*)malloc(lc + 1);
             if (cs == NULL) {
                 fprintf(stderr, "Error: malloc failed for cs\n");
                 exit(EXIT_FAILURE);
             }
-            memcpy(cs, s + k, lc);
+            memcpy(cs, s.str + k, lc);
             cs[lc] = '\0';
             pushcc(w, cs);
-            free(s);
+            free(s.str);
         } else {
-            pushpp(w, s);
+            pushpp(w, s.str);
         }
     }
-    fin("greedy dfs");
+    fin("greedy cover");
     free(vis);
 }
 
