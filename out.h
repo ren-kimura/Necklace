@@ -56,6 +56,7 @@ void free_rep(Rep *r);
 
 Rep flat(u64 *ka, VV *cc, VV *pp, int k);
 Rep flat_w(W *w);
+Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
 
 V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from);
 u64 nf(bool *v, size_t l);

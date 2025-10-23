@@ -182,6 +182,47 @@ Rep flat_w(W *w) {
     return r;
 }
 
+Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) { // WIP!!!
+    Rep r; init_rep(&r);
+    Strbld sb; init_strbld(&sb);
+
+    printf("# of (cycles, paths) = (%ld, %ld)\n", cc->size, pp->size);
+
+    for (size_t i = 0; i < cc->size; i++) {
+        V *cur = &cc->vs[i]; Vb *curb = &ccb->vs[i];
+        for (size_t j = 0; j < cur->size; j++) {
+            u64 h = ka[cur->data[j]];
+            if (curb->data[j] == false) h = rc(h, k);
+            apnd_strbld(&sb, dec_base(h % 4));
+        }
+        apnd_strbld(&sb, ",");
+    }
+    apnd_strbld(&sb, ",");
+
+    for (size_t i = 0; i < pp->size; i++) {
+        V *cur = &pp->vs[i]; Vb *curb = &ppb->vs[i];
+        char s[k + 1];
+        dec(ka[cur->data[0]], k, s);
+        apnd_strbld(&sb, s);
+        for (size_t j = 1; j < cur->size; j++) {
+            u64 h = ka[cur->data[j]];
+            if (curb->data[j] == false) h = rc(h, k);
+            apnd_strbld(&sb, dec_base(h % 4));
+        }
+        apnd_strbld(&sb, ",");
+    }
+
+    r.str = sb.str;
+    size_t fl = strlen(r.str);
+    if (fl > 0 && r.str[fl - 1] == ',') {
+        r.str[fl - 1] = '\0';
+    }
+     if (fl > 1 && r.str[fl - 2] == ',' && r.str[fl - 1] == '\0') {
+        r.str[fl - 2] = '\0';
+    }
+    return r;
+}
+
 V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from) {
     V* nc = (V*)malloc(sizeof(V));
     if (nc == NULL) return NULL;

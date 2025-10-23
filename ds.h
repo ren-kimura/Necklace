@@ -20,7 +20,19 @@ typedef struct {
 
 void init_vb(Vb *v);
 void push_backb(Vb *v, bool b);
+bool pop_backb(Vb *v);
 void free_vb(Vb *v);
+
+//--- vector of Vb ---
+typedef struct {
+    Vb *vs;
+    size_t size;
+    size_t cap;
+} VVb;
+
+void init_vvb(VVb *vvb);
+void push_backvb(VVb *vvb, Vb vb);
+void free_vvb(VVb *vvb);
 
 //--- vector of uint64_t ---
 typedef struct {

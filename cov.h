@@ -14,6 +14,9 @@ u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w);
 
 void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 void bgcov(Hm *km, u64 *ka, W *w, int k);
+void bgcov_t(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
+
+void bgdfs(Hm *km, u64 *ka, W *w, int k);
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k);
 void disp_w(W *w);

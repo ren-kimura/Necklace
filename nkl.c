@@ -150,6 +150,8 @@ int main(int argc, char *argv[]) {
             free_rep(&r); free(b);
         } else {
             W w; init_w(&w);
+            VV cc, pp; init_vv(&cc); init_vv(&pp);
+            VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
             if (cov == 0) { // greedy dfs
                 fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
@@ -158,29 +160,39 @@ int main(int argc, char *argv[]) {
                 // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                bgcov(km, ka, &w, k);
+                // bgcov(km, ka, &w, k);
+                bgcov_t(km, ka, &cc, &pp, &ccb, &ppb, k);
                 // disp_w(&w);
+            } else if (cov == 3) {
+                if (out != 2) {
+                    fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");
+                    fprintf(stderr, "Overwritten out=%d -> 2\n", out);
+                    out = 2;
+                }
+                N = extract(infile, k, &km, &ka, di);
+                bgdfs(km, ka, &w, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
             }
             Rep r; init_rep(&r);
-            if (cov != 3) {
-                if (out == 0) {
+            if (out == 0) {
+                // r = flat_w(&w);
+                r = bflat(ka, &cc, &pp, &ccb, &ppb, k);
+            } else if (out == 1) {
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
+            } else if (out == 2) {
+                if (cov == 3) {
                     r = flat_w(&w);
-                } else if (out == 1) {
-                    fprintf(stderr, "under construction\n");
-                    exit(EXIT_FAILURE);
-                } else if (out == 2) {
-                    fprintf(stderr, "under construction\n");
-                    exit(EXIT_FAILURE);
                 } else {
-                    fprintf(stderr, "Error: invalid out arg\n");
+                    fprintf(stderr, "under construction\n");
                     exit(EXIT_FAILURE);
                 }
-            } else { // cov == 3
-                // bgdfs
-            } 
+            } else {
+                fprintf(stderr, "Error: invalid out arg\n");
+                exit(EXIT_FAILURE);
+            }
             u64 np = 0;
             if (w.pp) for (np = 0; w.pp[np] != NULL; np++);
             char* b = rm_ext(infile);

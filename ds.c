@@ -38,6 +38,43 @@ void free_vb(Vb *v) {
     init_vb(v);
 }
 
+//---VVb---
+void init_vvb(VVb *vvb) {
+    vvb->vs = NULL;
+    vvb->size = vvb->cap = 0;
+}
+
+void push_backvb(VVb *vvb, Vb vb) {
+    if (vvb->size >= vvb->cap) {
+        size_t ncap = (vvb->cap == 0) ? 8 : vvb->cap * 2;
+        Vb *nvbs = realloc(vvb->vs, ncap * sizeof(Vb));
+        if (nvbs == NULL) {
+            fprintf(stderr, "Error: realloc failed for new vector\n");
+            exit(EXIT_FAILURE);
+        }
+        vvb->vs = nvbs;
+        vvb->cap = ncap;
+    }
+    Vb *nvb = &vvb->vs[vvb->size];
+    nvb->size = vb.size;
+    nvb->cap = vb.size;
+    if (vb.size > 0) {
+        nvb->data = malloc(nvb->cap * sizeof(bool));
+        memcpy(nvb->data, vb.data, nvb->size * sizeof(bool));
+    } else {
+        nvb->data = NULL;
+    }
+    vvb->size++;
+}
+
+void free_vvb(VVb *vvb) {
+    for (size_t i = 0; i < vvb->size; i++) {
+        free_vb(&vvb->vs[i]);
+    }
+    free(vvb->vs);
+    init_vvb(vvb);
+}
+
 //---V---
 void init_v(V *v) {
     v->data = NULL;
