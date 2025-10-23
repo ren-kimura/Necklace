@@ -160,9 +160,7 @@ int main(int argc, char *argv[]) {
                 // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                // bgcov(km, ka, &w, k);
-                bgcov_t(km, ka, &cc, &pp, &ccb, &ppb, k);
-                // disp_w(&w);
+                bgcov(km, ka, &cc, &pp, &ccb, &ppb, k);
             } else if (cov == 3) {
                 if (out != 2) {
                     fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");
@@ -170,14 +168,13 @@ int main(int argc, char *argv[]) {
                     out = 2;
                 }
                 N = extract(infile, k, &km, &ka, di);
-                bgdfs(km, ka, &w, k);
+                // bgdfs(km, ka, &cc, &pp, &ccb, &ppb, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
             }
             Rep r; init_rep(&r);
             if (out == 0) {
-                // r = flat_w(&w);
                 r = bflat(ka, &cc, &pp, &ccb, &ppb, k);
             } else if (out == 1) {
                 fprintf(stderr, "under construction\n");
