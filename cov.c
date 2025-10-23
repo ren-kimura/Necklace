@@ -341,18 +341,16 @@ void bgdfs(Hm *km, u64 *ka, W *w, int k) {
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
 
-    char ts[k + 1];
     for (u64 u = 0; u < N; u++) {
         prog(u, N, "greedy dfs");
         if (vis[u]) continue;
 
-        dec(ka[u], k, ts);
         char* s = (char*)malloc(k + 1); // +1 for '\0'
         if (s == NULL) {
             fprintf(stderr, "Error: malloc failed for s\n");
             exit(EXIT_FAILURE);
         }
-        strcpy(s, ts);
+        dec(ka[u], k, s);
         size_t ls = k;
 
         u64 tu = u;
@@ -360,25 +358,24 @@ void bgdfs(Hm *km, u64 *ka, W *w, int k) {
         do {
             vis[tu] = true;
             u64 ntu = INF;
-            char nb = '\0';
+            int j = 1;
             for (uint8_t i = 0; i < 4; i++) {
-                for (int j = 1; j >= 0; j--) {
+                for (; j >= 0; j--) {
                     ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
                     if (ntu == INF) continue;
-                    c = j;
-                    if (vis[ntu] == false || (ntu == u && c)) {
-                        nb = B[i];
+                    if (vis[ntu] == false) {
+                        tu = ntu;
+                        c = j;
+                        apndb(&s, &ls, B[i]);
                         goto e;
                     }
                 }
             }
-            e:
-            if (ntu != INF) {
-                apndb(&s, &ls, nb);
-            }
             tu = ntu;
-            if (ntu == INF) break;
-        } while (vis[tu] == false);
+            c = j;
+            break;
+            e:
+        } while (1);
 
         if (tu == u && c) {
             size_t lc = ls - k;
