@@ -22,7 +22,7 @@ static void usage(const char *s) {
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching(only when d == 0) 1:linearscan 2:greedydfs\n"
+            "\t-c COVER TYPE\t0:matching(under d=0) 1:linearscan 2:greedycover 3:greedydfs(under o=2)\n"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
             "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
 	        s, s);
@@ -63,7 +63,7 @@ int main(int argc, char *argv[]) {
             case 'c':
                 if (cov != -1) usage(argv[0]);
                 cov = parse_int(optarg);
-                if (cov != 0 && cov != 1 && cov != 2) usage(argv[0]);
+                if (cov != 0 && cov != 1 && cov != 2 && cov != 3) usage(argv[0]);
                 break;
             case 'o':
                 if (out != -1) usage(argv[0]);
@@ -96,7 +96,7 @@ int main(int argc, char *argv[]) {
         printf("infile = %s\n", infile);
         printf("k = %d\n", k);
         printf("di = %s\n", (di == 0) ? "uni" : "bi");
-        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : "greedydfs");
+        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : (cov == 2) ? "greedycover" : "greedydfs");
         printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
@@ -126,7 +126,7 @@ int main(int argc, char *argv[]) {
                 N = dextract(infile, k, &km, &ka, &cc, &pp);
             } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                gdfs(km, ka, &cc, &pp, k);
+                gcov(km, ka, &cc, &pp, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -150,33 +150,37 @@ int main(int argc, char *argv[]) {
             free_rep(&r); free(b);
         } else {
             W w; init_w(&w);
-            if (cov == 0) {
-                fprintf(stderr, "Error: cov == 0 is only available for unidirected\n");
+            if (cov == 0) { // greedy dfs
+                fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
                 N = bdextract(infile, k, &km, &ka, &w);
                 disp_hm(km, k);
-            } else if (cov == 2) { // greedy dfs from unvisited vertices
+            } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                bgdfs(km, ka, &w, k);
+                bgcov(km, ka, &w, k);
                 disp_w(&w);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
             }
             Rep r; init_rep(&r);
-            if (out == 0) {
-                r = flat_w(&w);
-            } else if (out == 1) {
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
-            } else if (out == 2) {
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
-            } else {
-                fprintf(stderr, "Error: invalid out arg\n");
-                exit(EXIT_FAILURE);
-            }
+            if (cov != 3) {
+                if (out == 0) {
+                    r = flat_w(&w);
+                } else if (out == 1) {
+                    fprintf(stderr, "under construction\n");
+                    exit(EXIT_FAILURE);
+                } else if (out == 2) {
+                    fprintf(stderr, "under construction\n");
+                    exit(EXIT_FAILURE);
+                } else {
+                    fprintf(stderr, "Error: invalid out arg\n");
+                    exit(EXIT_FAILURE);
+                }
+            } else { // cov == 3
+                // bgdfs
+            } 
             u64 np = 0;
             if (w.pp) for (np = 0; w.pp[np] != NULL; np++);
             char* b = rm_ext(infile);

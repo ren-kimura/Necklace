@@ -11,8 +11,8 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N);
 u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp);
 u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w);
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
-void bgdfs(Hm *km, u64 *ka, W *w, int k);
+void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+void bgcov(Hm *km, u64 *ka, W *w, int k);
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k);
 void disp_w(W *w);

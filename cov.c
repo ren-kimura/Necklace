@@ -1,6 +1,7 @@
 #include "cov.h"
 #include "utils.h"
 #include "stat.h"
+#include "out.h"
 #include <string.h>
 #include <ctype.h>
 #include <sys/stat.h>
@@ -291,7 +292,7 @@ u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w) {
     return INF;
 }
 
-void gdfs(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
@@ -336,7 +337,7 @@ static void apndb(char** s, size_t* len, char b) {
     *s = ns;
 }
 
-void bgdfs(Hm *km, u64 *ka, W *w, int k) {
+void bgcov(Hm *km, u64 *ka, W *w, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
