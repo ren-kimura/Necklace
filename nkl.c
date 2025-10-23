@@ -155,11 +155,11 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
                 N = bdextract(infile, k, &km, &ka, &w);
-                disp_hm(km, k);
+                // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
                 bgcov(km, ka, &w, k);
-                disp_w(&w);
+                // disp_w(&w);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
