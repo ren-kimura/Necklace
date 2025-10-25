@@ -299,15 +299,17 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         prog(u, N, "greedy cover");
         if (vis[u]) continue;
         V w; init_v(&w);
+        V vw; init_v(&vw);
+
         u64 tu = u;
         do {
             push_back(&w, tu);
             vis[tu] = true;
             u64 ntu = INF;
             for (uint8_t i = 0; i < 4; i++) {
-                ntu = step(km, ka, k, tu, B[i], 1);
+                ntu = step(km, ka, k, tu, B[i], 1); // step forward
                 if (ntu == INF) continue;
-                if (vis[ntu] == false || ntu == u) break;
+                if (vis[ntu] == false) break;
             }
             tu = ntu;
             if (ntu == INF) break; // no outneighbors of tu
@@ -315,10 +317,32 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
         if (tu == u) {
             push_backv(cc, w);
-        } else {
-            push_backv(pp, w);
+        } else { // backward search
+            V v; init_v(&v);
+            u64 tu = u;
+            do {
+                push_back(&v, tu);
+                vis[tu] = true;
+                u64 ntu = INF;
+                for (uint8_t i = 0; i < 4; i++) {
+                    ntu = step(km, ka, k, tu, B[i], 0); // step backward
+                    if (ntu == INF) continue;
+                    if (vis[ntu] == false) break;
+                }
+                tu = ntu;
+                if (ntu == INF) break; // no outneighbors of tu
+            } while (vis[tu] == false);
+
+            for (size_t i = v.size - 1; i > 0; i--) {
+                push_back(&vw, v.data[i]);
+            }
+            free_v(&v);
+            for (size_t i = 0; i < w.size; i++) {
+                push_back(&vw, w.data[i]);
+            }
+            push_backv(pp, vw);
         }
-        free_v(&w);
+        free_v(&w); free_v(&vw);
     }
     fin("greedy cover");
     free(vis);
@@ -332,39 +356,110 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     for (u64 u = 0; u < N; u++) {
         prog(u, N, "greedy cover");
         if (vis[u]) continue;
-        V w; init_v(&w); Vb wb; init_vb(&wb);
-        push_back(&w, u); push_backb(&wb, true);
+
+        // ---- forward search ----
+        V w; init_v(&w);
+        Vb wb; init_vb(&wb);
+
+        push_back(&w, u);
+        push_backb(&wb, true);
+        vis[u] = true;
+
         u64 tu = u;
         int c = 1;
-        do {
-            vis[tu] = true;
+
+        while (1) {
             u64 ntu = INF;
-            int j = 1;
-            for (uint8_t i = 0; i < 4; i++) {
-                for (; j >= 0; j--) {
+            int nc = -1;
+            bool found = false;
+
+            for (uint8_t i = 0; i < 4 && !found; i++) {
+                for (int j = 1; j >= 0; j--) {
                     ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
                     if (ntu == INF) continue;
-                    if (vis[ntu] == false) {
+                    if (!vis[ntu]) {
+                        if (ntu >= N) continue;
+                        vis[ntu] = true;
                         tu = ntu;
-                        c = j;
-                        push_back(&w, tu); push_backb(&wb, c);
-                        goto e;
+                        nc = j;
+                        push_back(&w, tu);
+                        push_backb(&wb, nc);
+                        c = nc;
+                        found = true;
+                        break;
                     }
                 }
             }
-            tu = ntu;
-            c = j;
-            break;
-            e:
-        } while (1);
-
-        if (tu == u && c) {
-            push_backv(cc, w); push_backvb(ccb, wb);
-        } else {
-            push_backv(pp, w); push_backvb(ppb, wb);
+            if (!found) break;
         }
-        free_v(&w); free_vb(&wb);
+
+        // closed necklace?
+        if (tu == u && c) {
+            // remove redundant trailing duplicate if it exists
+            if (w.size > 1 && w.data[w.size - 1] == u) {
+                w.size--; wb.size--;
+            }
+            push_backv(cc, w);
+            push_backvb(ccb, wb);
+        } else {
+            // ---- backward search ----
+            V v; init_v(&v);
+            Vb vb; init_vb(&vb);
+            tu = u;
+            c = 1;
+            vis[u] = true;
+
+            while (1) {
+                u64 ntu = INF;
+                int nc = -1;
+                bool found = false;
+
+                for (uint8_t i = 0; i < 4 && !found; i++) {
+                    for (int j = 1; j >= 0; j--) {
+                        ntu = bstep(km, ka, k, tu, B[i], 0, c, j);
+                        if (ntu == INF) continue;
+                        if (!vis[ntu]) {
+                            if (ntu >= N) continue;
+                            vis[ntu] = true;
+                            tu = ntu;
+                            nc = j;
+                            push_back(&v, tu);
+                            push_backb(&vb, nc);
+                            c = nc;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) break;
+            }
+
+            // reverse(v) + w → path
+            V vw; init_v(&vw);
+            Vb vwb; init_vb(&vwb);
+
+            for (size_t i = v.size; i > 0; i--) {
+                push_back(&vw, v.data[i-1]);
+                push_backb(&vwb, vb.data[i-1]);
+            }
+            free_v(&v);
+            free_vb(&vb);
+
+            for (size_t i = 0; i < w.size; i++) {
+                push_back(&vw, w.data[i]);
+                push_backb(&vwb, wb.data[i]);
+            }
+
+            push_backv(pp, vw);
+            push_backvb(ppb, vwb);
+            free_v(&vw);
+            free_vb(&vwb);
+        }
+
+        free_v(&w);
+        free_vb(&wb);
     }
+
     fin("greedy cover");
     free(vis);
 }
