@@ -202,7 +202,9 @@ Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) { // WIP!!!
     for (size_t i = 0; i < pp->size; i++) {
         V *cur = &pp->vs[i]; Vb *curb = &ppb->vs[i];
         char s[k + 1];
-        dec(ka[cur->data[0]], k, s);
+        u64 h = ka[cur->data[0]];
+        if (curb->data[0] == false) h = rc(h, k);
+        dec(h, k, s);
         apnd_strbld(&sb, s);
         for (size_t j = 1; j < cur->size; j++) {
             u64 h = ka[cur->data[j]];

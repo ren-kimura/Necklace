@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
                 // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
-                bgcov(km, ka, &cc, &pp, &ccb, &ppb, k);
+                bgcov_t(km, ka, &cc, &pp, &ccb, &ppb, k);
             } else if (cov == 3) {
                 if (out != 2) {
                     fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");

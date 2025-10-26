@@ -299,8 +299,6 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         prog(u, N, "greedy cover");
         if (vis[u]) continue;
         V w; init_v(&w);
-        V vw; init_v(&vw);
-
         u64 tu = u;
         do {
             push_back(&w, tu);
@@ -332,17 +330,19 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 tu = ntu;
                 if (ntu == INF) break; // no outneighbors of tu
             } while (vis[tu] == false);
-
-            for (size_t i = v.size - 1; i > 0; i--) {
-                push_back(&vw, v.data[i]);
+            
+            V vw; init_v(&vw);
+            for (size_t i = v.size; i > 1; i--) {
+                push_back(&vw, v.data[i - 1]);
             }
             free_v(&v);
             for (size_t i = 0; i < w.size; i++) {
                 push_back(&vw, w.data[i]);
             }
             push_backv(pp, vw);
+            free_v(&vw);
         }
-        free_v(&w); free_v(&vw);
+        free_v(&w);
     }
     fin("greedy cover");
     free(vis);
@@ -350,8 +350,7 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
 void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     u64 N = (u64)HASH_COUNT(km);
-    bool* vis = (bool*)malloc(sizeof(bool) * N);
-    for (u64 u = 0; u < N; u++) { vis[u] = false; }
+    bool* vis = (bool*)calloc(N, sizeof(bool));
 
     for (u64 u = 0; u < N; u++) {
         prog(u, N, "greedy cover");
@@ -370,7 +369,6 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
         while (1) {
             u64 ntu = INF;
-            int nc = -1;
             bool found = false;
 
             for (uint8_t i = 0; i < 4 && !found; i++) {
@@ -380,11 +378,10 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
                     if (!vis[ntu]) {
                         if (ntu >= N) continue;
                         vis[ntu] = true;
+                        push_back(&w, ntu);
+                        push_backb(&wb, j);
                         tu = ntu;
-                        nc = j;
-                        push_back(&w, tu);
-                        push_backb(&wb, nc);
-                        c = nc;
+                        c = j;
                         found = true;
                         break;
                     }
@@ -395,10 +392,6 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
         // closed necklace?
         if (tu == u && c) {
-            // remove redundant trailing duplicate if it exists
-            if (w.size > 1 && w.data[w.size - 1] == u) {
-                w.size--; wb.size--;
-            }
             push_backv(cc, w);
             push_backvb(ccb, wb);
         } else {
@@ -411,7 +404,6 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
             while (1) {
                 u64 ntu = INF;
-                int nc = -1;
                 bool found = false;
 
                 for (uint8_t i = 0; i < 4 && !found; i++) {
@@ -421,11 +413,10 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
                         if (!vis[ntu]) {
                             if (ntu >= N) continue;
                             vis[ntu] = true;
+                            push_back(&v, ntu);
+                            push_backb(&vb, j);
                             tu = ntu;
-                            nc = j;
-                            push_back(&v, tu);
-                            push_backb(&vb, nc);
-                            c = nc;
+                            c = j;
                             found = true;
                             break;
                         }
@@ -455,13 +446,175 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
             free_v(&vw);
             free_vb(&vwb);
         }
-
         free_v(&w);
         free_vb(&wb);
     }
 
+    for (size_t i = 0; i < cc->size; i++) {
+        printf("cc[%ld]: ", i);
+        for (size_t j = 0; j < cc->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = ka[cc->vs[i].data[j]];
+            if (!ccb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    for (size_t i = 0; i < pp->size; i++) {
+        printf("pp[%ld]: ", i);
+        for (size_t j = 0; j < pp->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = ka[pp->vs[i].data[j]];
+            if (!ppb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
+
     fin("greedy cover");
     free(vis);
+}
+
+void bgcov_t(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
+    u64 N = (u64)HASH_COUNT(km);
+    bool* vis = (bool*)malloc(sizeof(bool) * N);
+    for (u64 u = 0; u < N; u++) vis[u] = false;
+
+    for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy cover");
+        if (vis[u]) continue;
+
+        // --- forward search ---
+        V w; init_v(&w);
+        Vb wb; init_vb(&wb);
+
+        u64 tu = u;
+        int c = 1;
+
+        do {
+            push_back(&w, tu);
+            push_backb(&wb, (bool)c);
+            vis[tu] = true;
+            u64 ntu = INF;
+            int nc = -1;
+            u64 colu = INF;
+            int colc = -1;
+            bool found = false;
+            for (uint8_t i = 0; i < 4 && !found; i++) {
+                for (int j = 1; j >= 0; j--) {
+                    ntu = bstep(km, ka, k, tu, B[i], 1, c, j);
+                    if (ntu == INF) continue;
+                    if (!vis[ntu]) {
+                        nc = j;
+                        found = true;
+                        break;
+                    } else if (ntu == u) {
+                        colu = ntu;
+                        colc = j;
+                    }
+                }
+            }
+            if (found) {
+                c = nc;
+                tu = ntu;
+            } else {
+                if (colu != INF) {
+                    tu = colu;
+                    c = colc;
+                } else {
+                    tu = INF;
+                    c = -1;
+                }
+                break;
+            }
+        } while (tu != INF);
+
+        if (tu == u && c == 1) {
+            push_backv(cc, w);
+            push_backvb(ccb, wb);
+        } else { // backward search
+            V v; init_v(&v);
+            Vb vb; init_vb(&vb);
+
+            u64 tu = u;
+            int c = 1;
+
+            do {
+                push_back(&v, tu);
+                push_backb(&vb, (bool)c);
+                vis[tu] = true;
+                u64 ntu = INF;
+                int nc = -1;
+                bool found = false;
+                for (uint8_t i = 0; i < 4 && !found; i++) {
+                    for (int j = 1; j >= 0; j--) {
+                        ntu = bstep(km, ka, k, tu, B[i], 0, c, j);
+                        if (ntu == INF) continue;
+                        if (!vis[ntu]) {
+                            nc = j;
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (found) {
+                    c = nc;
+                    tu = ntu;
+                } else {
+                    tu = INF;
+                    break;
+                }
+            } while (tu != INF);
+
+            V vw; init_v(&vw);
+            Vb vwb; init_vb(&vwb);
+            for (size_t i = v.size; i > 1; i--) {
+                push_back(&vw, v.data[i - 1]);
+                push_backb(&vwb, vb.data[i - 1]);
+            }
+            free_v(&v);
+            free_vb(&vb);
+            for (size_t i = 0; i < w.size; i++) {
+                push_back(&vw, w.data[i]);
+                push_backb(&vwb, wb.data[i]);
+            }
+            push_backv(pp, vw);
+            push_backvb(ppb, vwb);
+            free_v(&vw);
+            free_vb(&vwb);
+        }
+        free_v(&w);
+        free_vb(&wb);
+    }
+    fin("greedy cover");
+    free(vis);
+
+    for (size_t i = 0; i < cc->size; i++) {
+        printf("cc[%ld]: ", i);
+        for (size_t j = 0; j < cc->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = ka[cc->vs[i].data[j]];
+            if (!ccb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    for (size_t i = 0; i < pp->size; i++) {
+        printf("pp[%ld]: ", i);
+        for (size_t j = 0; j < pp->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = ka[pp->vs[i].data[j]];
+            if (!ppb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
 }
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
