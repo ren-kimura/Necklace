@@ -199,6 +199,89 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
     free_v(&v);
 }
 
+void bdproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
+    u64 sq_len = (u64)strlen(sq);
+    if (sq_len < (u64)k) return; // too short
+
+    u64 m = (1ULL << (2 * (k - 1))) - 1; // mask that clears two MSBs
+    V v; init_v(&v);
+    Vb vb; init_vb(&vb);
+    
+    u64 j = 0;
+    while ((j = next_pos(sq, j, k)) != INF) {
+        char s[k + 1];
+        memcpy(s, sq + j, k);
+        s[k] = '\0';
+        u64 h = enc(s, k);
+        u64 ch = can(h, k);
+        if (add_hm(km, ch, *id)) {
+            push_back(&v, *id);
+            push_backb(&vb, (bool)(ch == h));
+            (*id)++;
+        } else {
+            if (v.size > 0) {
+                u64 g = (h >> 2) << 2;
+                u64 w = g | 0, x = g | 1, y = g | 2, z = g | 3;
+                u64 iw = find_hm(*km, can(w, k)), ix = find_hm(*km, can(x, k)), iy = find_hm(*km, can(y, k)), iz = find_hm(*km, can(z, k));
+                if ((v.data[0] == iw && vb.data[0] == (w == can(w, k))) || (v.data[0] == ix && vb.data[0] == (x == can(x, k))) || (v.data[0] == iy && vb.data[0] == (y == can(y, k))) || (v.data[0] == iz && vb.data[0] == (z == can(z, k)))) {
+                    push_backv(cc, v);
+                    push_backvb(ccb, vb);
+                } else {
+                    push_backv(pp, v);
+                    push_backvb(ppb, vb);
+                }
+            }
+            init_v(&v);
+            init_vb(&vb);
+        }
+        
+        // rolling hash
+        j++;
+        while (j <= sq_len - k) {
+            char c = toupper(sq[j + k - 1]);
+            if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
+                h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
+                ch = can(h, k);
+                if (add_hm(km, ch, *id)) {
+                    push_back(&v, *id);
+                    push_backb(&vb, (bool)(ch == h));
+                    (*id)++;
+                } else {
+                    if (v.size > 0) {
+                        u64 g = (h >> 2) << 2;
+                        u64 w = g | 0, x = g | 1, y = g | 2, z = g | 3;
+                        u64 iw = find_hm(*km, can(w, k)), ix = find_hm(*km, can(x, k)), iy = find_hm(*km, can(y, k)), iz = find_hm(*km, can(z, k));
+                        if ((v.data[0] == iw && vb.data[0] == (w == can(w, k))) || (v.data[0] == ix && vb.data[0] == (x == can(x, k))) || (v.data[0] == iy && vb.data[0] == (y == can(y, k))) || (v.data[0] == iz && vb.data[0] == (z == can(z, k)))) {
+                            push_backv(cc, v);
+                            push_backvb(ccb, vb);
+                        } else {
+                            push_backv(pp, v);
+                            push_backvb(ppb, vb);
+                        }
+                    }
+                    init_v(&v);
+                    init_vb(&vb);
+                }
+            } else {
+                if (v.size > 0) {
+                    push_backv(pp, v);
+                    push_backvb(ppb, vb);
+                }
+                init_v(&v);
+                init_vb(&vb);
+                break;
+            }
+            j++;
+        }
+    }
+    if (v.size > 0) {
+        push_backv(pp, v);
+        push_backvb(ppb, vb);
+    }
+    free_v(&v);
+    free_vb(&vb);
+}
+
 u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
@@ -287,8 +370,116 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
     return N; // number of k-mers
 }
 
-u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, W *w) {
-    return INF;
+u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
+    FILE *fp = fopen(infile, "rb");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", infile);
+        exit(EXIT_FAILURE);
+    }
+    printf("file %s opened\n", infile);
+
+    struct stat st;
+    stat(infile, &st);
+    size_t fs = st.st_size;
+
+    u64 id = 0;
+    char *ln = NULL;
+    size_t len = 0;
+
+    char *buff = NULL;
+    size_t buff_len = 0; // current len of the string in the buffer
+    size_t buff_cap = 0; // current allocated capacity for the buffer
+
+    while ((getline(&ln, &len, fp)) != -1) {
+        prog(ftell(fp), fs, "extracting k-mers into cycles and paths");
+        if (ln[0] == '>') {
+            if (buff_len > 0) {
+                // process the sequence accumulated so far
+                bdproc_sq(buff, k, km, &id, cc, pp, ccb, ppb);
+            }
+            buff_len = 0;
+        } else {
+            ln[strcspn(ln, "\r\n")] = 0; // remove carriage returns and newlines
+            size_t ln_len = strlen(ln);
+            if (ln_len == 0) continue;
+            // check if the buffer has enough capacity
+            if (buff_len + ln_len + 1 > buff_cap) {
+                size_t ncap = (buff_cap == 0) ? 256 : buff_cap * 2;
+                while (ncap < buff_len + ln_len + 1) {
+                    ncap *= 2;
+                }
+                char *nbuff = realloc(buff, ncap);
+                if (nbuff == NULL) {
+                    fprintf(stderr, "Error: realloc failed for sq_buff\n");
+                    exit(EXIT_FAILURE);
+                }
+                buff = nbuff;
+                buff_cap = ncap;
+            }
+            // append the line to the buffer
+            memcpy(buff + buff_len, ln, ln_len);
+            buff_len += ln_len;
+            buff[buff_len] = '\0';
+        }
+    }
+
+    // process the very last sequence in the file
+    if (buff_len > 0) {
+        bdproc_sq(buff, k, km, &id, cc, pp, ccb, ppb);
+    }
+
+    fin("extracting k-mers into cycles and paths");
+    const u64 N = (u64)HASH_COUNT(*km);
+    printf("total unique k-mers = %ld\n", N);
+
+    *ka = malloc(N * sizeof(u64));
+    if (ka == NULL) {
+        fprintf(stderr, "Error: malloc failed for ka\n");
+        exit(EXIT_FAILURE);
+    }
+    Hm *s, *tmp;
+    HASH_ITER(hh, *km, s, tmp) {
+        (*ka)[s->val] = s->key;
+    }
+
+    free(ln);
+    free(buff);
+    fclose(fp);
+    printf("file %s closed\n", infile);
+
+    u64 Z = 0;
+    for (size_t i = 0; i < cc->size; i++) Z += cc->vs[i].size;
+    for (size_t i = 0; i < pp->size; i++) Z += pp->vs[i].size;
+    if (N != Z) {
+        fprintf(stderr, "Error: total nodes in cycles and paths is not equal to k-mers count\n");
+        exit(EXIT_FAILURE);
+    }
+
+    for (size_t i = 0; i < cc->size; i++) {
+        printf("cc[%ld]: ", i);
+        for (size_t j = 0; j < cc->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = (*ka)[cc->vs[i].data[j]];
+            if (!ccb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
+    printf("\n");
+    for (size_t i = 0; i < pp->size; i++) {
+        printf("pp[%ld]: ", i);
+        for (size_t j = 0; j < pp->vs[i].size; j++) {
+            char ss[k + 1];
+            u64 h = (*ka)[pp->vs[i].data[j]];
+            if (!ppb->vs[i].data[j]) h = can(h, k);
+            dec(h, k, ss);
+            printf("%s ", ss);
+        }
+        printf("\n");
+    }
+
+    return N; // number of k-mers
 }
 
 void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
@@ -461,30 +652,6 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     }
     fin("greedy cover");
     free(vis);
-
-    for (size_t i = 0; i < cc->size; i++) {
-        printf("cc[%ld]: ", i);
-        for (size_t j = 0; j < cc->vs[i].size; j++) {
-            char ss[k + 1];
-            u64 h = ka[cc->vs[i].data[j]];
-            if (!ccb->vs[i].data[j]) h = can(h, k);
-            dec(h, k, ss);
-            printf("%s ", ss);
-        }
-        printf("\n");
-    }
-    printf("\n");
-    for (size_t i = 0; i < pp->size; i++) {
-        printf("pp[%ld]: ", i);
-        for (size_t j = 0; j < pp->vs[i].size; j++) {
-            char ss[k + 1];
-            u64 h = ka[pp->vs[i].data[j]];
-            if (!ppb->vs[i].data[j]) h = can(h, k);
-            dec(h, k, ss);
-            printf("%s ", ss);
-        }
-        printf("\n");
-    }
 }
 
 void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {

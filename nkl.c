@@ -149,14 +149,13 @@ int main(int argc, char *argv[]) {
             wrt(b, &r, k, di, cov, out, np);
             free_rep(&r); free(b);
         } else {
-            W w; init_w(&w);
             VV cc, pp; init_vv(&cc); init_vv(&pp);
             VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
             if (cov == 0) { // greedy dfs
                 fprintf(stderr, "under construction\n");
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
-                N = bdextract(infile, k, &km, &ka, &w);
+                N = bdextract(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
                 // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
@@ -181,7 +180,8 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             } else if (out == 2) {
                 if (cov == 3) {
-                    r = flat_w(&w);
+                    fprintf(stderr, "under construction\n");
+                    exit(EXIT_FAILURE);
                 } else {
                     fprintf(stderr, "under construction\n");
                     exit(EXIT_FAILURE);
@@ -190,12 +190,11 @@ int main(int argc, char *argv[]) {
                 fprintf(stderr, "Error: invalid out arg\n");
                 exit(EXIT_FAILURE);
             }
-            u64 np = 0;
-            if (w.pp) for (np = 0; w.pp[np] != NULL; np++);
+            u64 np = pp.size;
+            free_vv(&cc); free_vv(&pp); free_vvb(&ccb); free_vvb(&ppb);
             char* b = rm_ext(infile);
             wrt(b, &r, k, di, cov, out, np);
-            free_rep(&r);
-            free_w(&w);
+            free_rep(&r); free(b);
         }
 
         free(ka); free_hm(&km);   
