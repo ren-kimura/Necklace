@@ -79,16 +79,24 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
         strncpy(s, sq + j, k);
         s[k] = '\0';
         u64 h = enc(s, k);
-        if (di) h = can(h, k);
-        if (add_hm(km, h, *id)) (*id)++;
+        if (di) {
+            u64 ch = can(h, k);
+            if (add_hm(km, ch, *id)) (*id)++;
+        } else {
+            if (add_hm(km, h, *id)) (*id)++;
+        }
         
         // rolling hash
         while (++j <= sq_len - k) {
             char c = toupper(sq[j + k - 1]);
             if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
                 h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
-                if (di) h = can(h, k);
-                if (add_hm(km, h, *id)) (*id)++;
+                if (di) {
+                    u64 ch = can(h, k);
+                    if (add_hm(km, ch, *id)) (*id)++;
+                } else {
+                    if (add_hm(km, h, *id)) (*id)++;
+                }
             } else {
                 // if interrupted by a non-ACGT
                 j = next_pos(sq, j, k);

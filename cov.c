@@ -455,30 +455,6 @@ u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp, VVb 
         exit(EXIT_FAILURE);
     }
 
-    for (size_t i = 0; i < cc->size; i++) {
-        printf("cc[%ld]: ", i);
-        for (size_t j = 0; j < cc->vs[i].size; j++) {
-            char ss[k + 1];
-            u64 h = (*ka)[cc->vs[i].data[j]];
-            if (!ccb->vs[i].data[j]) h = can(h, k);
-            dec(h, k, ss);
-            printf("%s ", ss);
-        }
-        printf("\n");
-    }
-    printf("\n");
-    for (size_t i = 0; i < pp->size; i++) {
-        printf("pp[%ld]: ", i);
-        for (size_t j = 0; j < pp->vs[i].size; j++) {
-            char ss[k + 1];
-            u64 h = (*ka)[pp->vs[i].data[j]];
-            if (!ppb->vs[i].data[j]) h = can(h, k);
-            dec(h, k, ss);
-            printf("%s ", ss);
-        }
-        printf("\n");
-    }
-
     return N; // number of k-mers
 }
 

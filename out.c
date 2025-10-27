@@ -182,7 +182,7 @@ Rep flat_w(W *w) {
     return r;
 }
 
-Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) { // WIP!!!
+Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     Rep r; init_rep(&r);
     Strbld sb; init_strbld(&sb);
 
