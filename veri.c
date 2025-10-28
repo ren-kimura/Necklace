@@ -82,67 +82,135 @@ static bool fveri(const char* ss, int k, int di, Hs** ks) {
     return true;
 }
 
-static bool bveri(const char* ss, int k, int di, Hs** ks) {
-    char* tt = strdup(ss);
-    if (!tt) return false;
+static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
+    size_t l = k - 1 + strlen(to);
+    char* toc = (char*)malloc(l + 1);
+    size_t i = 0;
+    if (closed) {
+        int depth = 0;
+        Strbld ss; init_strbld(&ss);
+        for (size_t x = 0; x < strlen(to); x++) {
+            char c = (char)toupper(to[x]);
+            if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (isalpha(c) && depth == 0) {
+                char tmp[2] = {c, '\0'};
+                apnd_strbld(&ss, tmp);
+            }
+        }
+        while (i < (size_t)(k - 1)) {
+            toc[i] = ss.str[(ss.len - (k - 1) + i) % ss.len];
+            i++;
+        }
+        free(ss.str);
+    }
+    size_t j = 0;
+    while (to[j] != '\0') {
+        toc[i] = to[j];
+        i++;
+        j++;
+    }
+    toc[i] = '\0';
 
-    char buf[k + 1];
+    char buf[k + 1]; // buffer for k-mer
+    for (int i = 0; i < k; i++) {
+        buf[i] = toc[i];
+    }
     buf[k] = '\0';
+    u64 h = enc(buf, k);
 
-    u64 mask = (1ULL << (2 * (k - 1))) - 1;
+    if (!proc_rm(buf, k, di, ks)) { // handle the very first k-mer
+        free(toc); return false;
+    }
+    u64 m = (1ULL << (2 * (k - 1))) - 1; // mask
 
-    char* to = strtok(tt, ",");
-    while (to) {
-        if (*to == '\0') {
-            to = strtok(NULL, ",");
-            continue;
-        }
+    St s; init_st(&s);
+    int depth = 0;
 
-        size_t l = strlen(to);
-        if (l < (size_t)k) {
-            if (l > 0) {
-                strncpy(buf, to, k);
-                if (!proc_rm(buf, k, di, ks)) {
-                    free(tt);
-                    return false;
-                }
+    for (size_t i = k; i < l; i++) {
+        char c = (char)toupper(toc[i]);
+        if (c == '(') {
+            depth++;
+            push(&s, h);
+        } else if (c == ')') {
+            depth--;
+            h = pop(&s);
+        } else if (isalpha(c)) {
+            u64 g = (c == 'A') ? 0 : (c == 'C') ? 1 : (c == 'G') ? 2 : (c == 'T') ? 3 : INF;
+            if (g == INF) {
+                fprintf(stderr, "Error: non-ACGT appeared in token: %s", toc);
+                free(toc); return false;
             }
-        } else {
-            strncpy(buf, to, k);
+            h = (h & m) << 2 | g;
+            dec(h, k, buf);
             if (!proc_rm(buf, k, di, ks)) {
-                free(tt);
-                return false;
+                free(toc); return false;
             }
-            St s;
-            init_st(&s);
-            u64 pre = enc(buf, k) & mask;
-            for (size_t i = 1; i <= l - k; ++i) {
-                char cur = to[i + k - 1];
-                if (isalpha(cur)) {
-                    u64 h = (pre << 2) | (cur == 'A' ? 0 : cur == 'C' ? 1 : cur == 'G' ? 2 : 3);
-                    dec(h, k, buf);
-                    if (!proc_rm(buf, k, di, ks)) {
-                        free(tt);
-                        while(!is_empty_st(&s)) pop(&s);
-                        return false;
-                    }
-                    pre = h & mask;
-                } else if (cur == '(') {
-                    push(&s, pre);
-                } else if (cur == ')') {
-                    if (!is_empty_st(&s)) {
-                        pre = pop(&s);
-                    }
-                }
-            }
-            // スタックをクリーンアップ
-            while(!is_empty_st(&s)) pop(&s);
         }
-        to = strtok(NULL, ",");
+    }
+    free(toc); init_st(&s);
+    return true;
+}
+
+static bool bveri(const char* ss, int k, int di, Hs** ks) {
+    char* tt = strdup(ss); // Duplicate string for strtok
+    if (!tt) {
+        perror("strdup failed in bveri");
+        return false;
     }
 
+    char* op = tt;
+    char* cp = NULL;
+
+    // Find the boundary ",,"
+    char* bd = strstr(tt, ",,");
+    if (bd != NULL) {
+        *bd = '\0'; // Null-terminate the open part
+        cp = bd + 2;
+    } else {
+        // No ",,", check if the whole string starts with ','
+        if (tt[0] == ',') {
+            cp = tt + 1; // Skip the first comma
+            op = NULL; // No open part
+        } else {
+            // Assumes the whole string is an open path if no boundary and doesn't start with ','
+            // open_part remains tt, closed_part remains NULL
+        }
+    }
+
+    bool vf = true;
+
+    // Process open necklaces (linear root)
+    if (op != NULL) {
+        char* to = strtok(op, ",");
+        while (to != NULL) {
+            if (*to != '\0') {
+                 if (!proc_bp_to(to, k, di, ks, false)) { // closed = false
+                    vf = false;
+                    goto clean;
+                 }
+            }
+            to = strtok(NULL, ",");
+        }
+    }
+
+    // Process closed necklaces (circular root)
+    if (cp != NULL) {
+        char* to = strtok(cp, ",");
+        while (to != NULL) {
+             if (*to != '\0') {
+                 if (!proc_bp_to(to, k, di, ks, true)) { // closed = true
+                    vf = false;
+                    goto clean;
+                 }
+            }
+            to = strtok(NULL, ",");
+        }
+    }
+
+clean:
     free(tt);
-    return true;
+    return vf;
 }
 
 int veri(const char* of, const char* tf, int k, int di, int out) {
