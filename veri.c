@@ -83,8 +83,12 @@ static bool fveri(const char* ss, int k, int di, Hs** ks) {
 }
 
 static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
-    size_t l = k - 1 + strlen(to);
+    size_t l = strlen(to);
+    if (closed) {
+        l += (k - 1);
+    }
     char* toc = (char*)malloc(l + 1);
+    if (!toc) { fprintf(stderr, "Error: malloc failed for toc\n"); return false; }
     size_t i = 0;
     if (closed) {
         int depth = 0;
@@ -99,24 +103,18 @@ static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
             }
         }
         while (i < (size_t)(k - 1)) {
-            toc[i] = ss.str[(ss.len - (k - 1) + i) % ss.len];
+            int64_t j = ss.len - (k - 1) + i;
+            while (j < 0) j += ss.len;
+            toc[i] = ss.str[j % ss.len];
             i++;
         }
         free(ss.str);
     }
-    size_t j = 0;
-    while (to[j] != '\0') {
-        toc[i] = to[j];
-        i++;
-        j++;
-    }
-    toc[i] = '\0';
+    memcpy(toc + i, to, strlen(to));
+    toc[l] = '\0';
 
     char buf[k + 1]; // buffer for k-mer
-    for (int i = 0; i < k; i++) {
-        buf[i] = toc[i];
-    }
-    buf[k] = '\0';
+    strncpy(buf, toc, k); buf[k] = '\0';
     u64 h = enc(buf, k);
 
     if (!proc_rm(buf, k, di, ks)) { // handle the very first k-mer
@@ -148,7 +146,8 @@ static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
             }
         }
     }
-    free(toc); init_st(&s);
+    free(toc);
+    if (!is_empty_st(&s)) { fprintf(stderr, "Error: stack not empty at the end of verification of bp rep\n"); return false; }
     return true;
 }
 

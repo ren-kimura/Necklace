@@ -701,7 +701,26 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         sb.len--;
         sb.str[sb.len] = '\0';
     }
+    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
+        sb.len--;
+        sb.str[sb.len] = '\0';
+    }
     free(hi); free_hs(&rp); free_hm(&hd);
     r.str = sb.str;
+    return r;
+}
+
+Rep bgdfs(Hm *km, u64 *ka, int k) {
+    u64 N = (u64)HASH_COUNT(km);
+    bool* vis = (bool*)malloc(sizeof(bool) * N);
+    for (u64 u = 0; u < N; u++) vis[u] = false;
+
+    for (u64 u = 0; u < N; u++) {
+        if (vis[u]) continue;
+        St s; init_st(&s); // vertex IDs
+        Stb sb; init_stb(&sb); // vertex orients
+        // write logic to dfs in bidirected DBG
+    }
+    Rep r; init_rep(&r);
     return r;
 }

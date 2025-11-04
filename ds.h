@@ -58,7 +58,7 @@ void push_backv(VV *vv, V v);
 void free_vv(VV *vv);
 void print_vv(const char *title, VV *vv);
 
-//---Stack and Queue of uint64_t---
+//---Stack and Queue---
 typedef struct El {
     u64 data;
     struct El *next;
@@ -82,6 +82,20 @@ void init_q(Q *q);
 int is_empty_q(Q *q);
 void enq(Q *q, u64 val);
 u64 deq(Q *q);
+
+typedef struct Elb {
+    bool data;
+    struct Elb *next;
+} Elb;
+
+typedef struct {
+    Elb *top;
+} Stb;
+
+void init_stb(Stb *s);
+int is_empty_stb(Stb *s);
+void pushb(Stb *s, bool b);
+bool popb(Stb *s);
 
 //---Hash set of u64---
 typedef struct {

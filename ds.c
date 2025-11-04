@@ -223,6 +223,38 @@ u64 deq(Q *q) {
     return val;
 }
 
+//---Stb---
+void init_stb(Stb *s) {
+    s->top = NULL;
+}
+
+int is_empty_stb(Stb *s) {
+    return (s->top == NULL);
+}
+
+void pushb(Stb *s, bool b) {
+    Elb *nelb = (Elb*)malloc(sizeof(Elb));
+    if (nelb == NULL) {
+        fprintf(stderr, "Error: malloc failed for new elb\n");
+        exit(EXIT_FAILURE);
+    }
+    nelb->data = b;
+    nelb->next = s->top;
+    s->top = nelb;
+}
+
+bool popb(Stb *s) {
+    if (is_empty_stb(s)) {
+        fprintf(stderr, "Error; popb called on an empty stackb\n");
+        return INF;
+    }
+    Elb *t = s->top;
+    bool b = t->data;
+    s->top = s->top->next;
+    free(t);
+    return b;
+}
+
 //---Hs---
 int add_hs(Hs **hs, u64 k) {
     Hs *e;
