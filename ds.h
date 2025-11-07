@@ -83,20 +83,6 @@ int is_empty_q(Q *q);
 void enq(Q *q, u64 val);
 u64 deq(Q *q);
 
-typedef struct Elb {
-    bool data;
-    struct Elb *next;
-} Elb;
-
-typedef struct {
-    Elb *top;
-} Stb;
-
-void init_stb(Stb *s);
-int is_empty_stb(Stb *s);
-void pushb(Stb *s, bool b);
-bool popb(Stb *s);
-
 //---Hash set of u64---
 typedef struct {
     u64 key;

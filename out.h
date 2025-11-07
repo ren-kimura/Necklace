@@ -37,6 +37,24 @@ int is_empty_fbst(FbSt *s);
 void push_fbst(FbSt *s, u64 cur, u64 idx, int b_idx, bool wrn);
 void pop_fbst(FbSt *s);
 
+typedef struct Fc {
+    u64 nid;
+    int side;
+    bool wrn;
+    int b_idx;
+    int nc;
+    struct Fc *next;
+} Fc;
+
+typedef struct {
+    Fc *top;
+} FcSt;
+
+void init_fcst(FcSt *s);
+int is_empty_fcst(FcSt *s);
+void push_fcst(FcSt *s, u64 nid, int side, bool wrn, int b_idx, int nc);
+void pop_fcst(FcSt *s);
+
 typedef struct {
     char* str;
     size_t len;

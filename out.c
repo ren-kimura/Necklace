@@ -67,6 +67,40 @@ void pop_fbst(FbSt *s) {
     free(tmp);
 }
 
+//---FcSt---
+void init_fcst(FcSt *s) {
+    s->top = NULL;
+}
+
+int is_empty_fcst(FcSt *s) {
+    return (s->top == NULL);
+}
+
+void push_fcst(FcSt *s, u64 nid, int side, bool wrn, int b_idx, int nc) {
+    Fc *nfc = (Fc*)malloc(sizeof(Fc));
+    if (nfc == NULL) {
+        fprintf(stderr, "Error: malloc failed for new frame\n");
+        exit(EXIT_FAILURE);
+    }
+    nfc->nid = nid;
+    nfc->side = side;
+    nfc->wrn = wrn;
+    nfc->b_idx = b_idx;
+    nfc->nc = nc;
+    nfc->next = s->top;
+    s->top = nfc;
+}
+
+void pop_fcst(FcSt *s) {
+    if (is_empty_fcst(s)) {
+        fprintf(stderr, "Error: pop_fcst called on an empty stack\n");
+        return;
+    }
+    Fc *tmp = s->top;
+    s->top = s->top->next;
+    free(tmp);
+}
+
 //---Strbld---
 void init_strbld(Strbld *s) {
     s->cap = 64;
@@ -710,17 +744,91 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     return r;
 }
 
+static void subt_bgdfs(u64 tu, int c, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
+    FcSt t; init_fcst(&t);
+    if (vis[tu]) return;
+    
+    vis[tu] = true;
+    push_fcst(&t, tu, c, false, 0, 0);
+
+    while(!is_empty_fcst(&t)) {
+        Fc* f = t.top; // PEEK
+
+        u64 h = ka[f->nid];
+        if (f->side == 0) h = rc(h, k);
+
+        if (!f->wrn) {
+            if (f->next == NULL) { // root vertex
+                char ts[k + 1];
+                dec(h, k, ts);
+                apnd_strbld(s, ts);
+            } else {
+                if (f->nc > 0) apnd_strbld(s, "(");
+                apnd_strbld(s, dec_base(h % 4));
+            }
+            f->wrn = true;
+        }
+
+        if (f->b_idx > 0) {
+            pop_fcst(&t);
+            if (f->next != NULL && f->nc > 0) {
+                 apnd_strbld(s, ")");
+            }
+            continue;
+        }
+        u64 chldn[4];
+        int chldn_side[4];
+        int nc = 0;
+
+        for (uint8_t i = 0; i < 4; i++) { 
+            for (int j = 1; j >= 0; j--) {
+                u64 nxt = bstep(km, ka, k, f->nid, B[i], 1, f->side, j);
+                if (nxt == INF) continue;
+                if (vis[nxt]) continue;
+
+                chldn[nc] = nxt;
+                chldn_side[nc] = j;
+                nc++;
+            }
+        }
+
+        f->b_idx = 4;
+
+        for (int i = 0; i < nc; i++) {
+            vis[chldn[i]] = true;
+            push_fcst(&t, chldn[i], chldn_side[i], false, 0, i);
+        }
+    }
+}
+
 Rep bgdfs(Hm *km, u64 *ka, int k) {
-    u64 N = (u64)HASH_COUNT(km);
+    Rep r; init_rep(&r);
+    Strbld sb; init_strbld(&sb);
+    
+    u64 N = HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
+    if (vis == NULL) { fprintf(stderr, "Error: malloc failed for vis\n"); exit(EXIT_FAILURE); }
     for (u64 u = 0; u < N; u++) vis[u] = false;
 
     for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy BP dfs");
         if (vis[u]) continue;
-        St s; init_st(&s); // vertex IDs
-        Stb sb; init_stb(&sb); // vertex orients
-        // write logic to dfs in bidirected DBG
+        subt_bgdfs(u, 1, &sb, km, ka, k, vis);        
+        apnd_strbld(&sb, ",");
     }
-    Rep r; init_rep(&r);
+    
+    fin("greedy BP dfs");
+    free(vis);
+
+    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
+        sb.len--;
+        sb.str[sb.len] = '\0';
+    }
+    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
+        sb.len--;
+        sb.str[sb.len] = '\0';
+    }
+    
+    r.str = sb.str;
     return r;
 }

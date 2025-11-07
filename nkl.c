@@ -127,6 +127,14 @@ int main(int argc, char *argv[]) {
             } else if (cov == 2) { // greedy dfs from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
                 gcov(km, ka, &cc, &pp, k);
+            } else if (cov == 3) {
+                if (out != 2) {
+                    fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");
+                    fprintf(stderr, "Overwritten out=%d -> 2\n", out);
+                    out = 2;
+                }
+                fprintf(stderr, "under construction\n");
+                exit(EXIT_FAILURE);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -138,7 +146,12 @@ int main(int argc, char *argv[]) {
             } else if (out == 1) { // pointer
                 r = ptr(km, ka, &cc, &pp, k);
             } else if (out == 2) { // bp
-                r = bp(km, ka, &cc, &pp, k);
+                if (cov == 3) {
+                    fprintf(stderr, "under construction\n");
+                    exit(EXIT_FAILURE);
+                } else {
+                    r = bp(km, ka, &cc, &pp, k);
+                }
             } else {
                 fprintf(stderr, "Error: invalid out arg\n");
                 exit(EXIT_FAILURE);
@@ -156,7 +169,6 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             } else if (cov == 1) { // directly find cover from infile
                 N = bdextract(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
-                // disp_hm(km, k);
             } else if (cov == 2) { // greedy covering from unvisited vertices
                 N = extract(infile, k, &km, &ka, di);
                 bgcov(km, ka, &cc, &pp, &ccb, &ppb, k);
@@ -167,7 +179,6 @@ int main(int argc, char *argv[]) {
                     out = 2;
                 }
                 N = extract(infile, k, &km, &ka, di);
-                // bgdfs(km, ka, &cc, &pp, &ccb, &ppb, k);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -180,8 +191,7 @@ int main(int argc, char *argv[]) {
                 exit(EXIT_FAILURE);
             } else if (out == 2) {
                 if (cov == 3) {
-                    fprintf(stderr, "under construction\n");
-                    exit(EXIT_FAILURE);
+                    r = bgdfs(km, ka, k);
                 } else {
                     fprintf(stderr, "under construction\n");
                     exit(EXIT_FAILURE);
