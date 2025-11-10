@@ -193,8 +193,7 @@ int main(int argc, char *argv[]) {
                 if (cov == 3) {
                     r = bgdfs(km, ka, k);
                 } else {
-                    fprintf(stderr, "under construction\n");
-                    exit(EXIT_FAILURE);
+                    r = bbp(km, ka, &cc, &pp, &ccb, &ppb, k);
                 }
             } else {
                 fprintf(stderr, "Error: invalid out arg\n");

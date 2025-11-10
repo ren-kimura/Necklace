@@ -832,3 +832,170 @@ Rep bgdfs(Hm *km, u64 *ka, int k) {
     r.str = sb.str;
     return r;
 }
+
+static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, int k, VV *pp, VVb *ppb, bool *vis) {
+    Strbld sb; init_strbld(&sb);
+    V *p = &pp->vs[pid];
+    Vb *pb = &ppb->vs[pid];
+
+    if (forward) {
+        for (size_t j = offset; j < p->size; j++) {
+            u64 cur = p->data[j];
+            bool curside = pb->data[j];
+            u64 h = ka[cur];
+            if (curside == false) h = rc(h, k);
+            apnd_strbld(&sb, dec_base(h % 4));
+            u64 nxt_on_path = (j + 1 < p->size) ? p->data[j + 1] : INF;
+
+            for (uint8_t i = 0; i < 4; i++) {
+                for (int s = 1; s >= 0; s--) {
+                    u64 nxt = bstep(km, ka, k, cur, B[i], 1, curside, s);
+                    if (nxt == INF || nxt == nxt_on_path) continue;
+                    u64 val = find_hm(hd, nxt);
+                    if (val == INF) continue;
+                    u64 ni = val >> 1;
+                    bool is_head = (val & 1);
+                    if (vis[ni]) continue;
+                    vis[ni] = true;
+
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    apnd_strbld(&sb, "(");
+                    apnd_strbld(&sb, ss);
+                    apnd_strbld(&sb, ")");
+                    free(ss);
+                }
+            }
+        }
+    } else {
+        for (int64_t j = p->size - 1; j >= (int64_t)offset; j--) {
+            u64 cur = p->data[j];
+            bool curside = pb->data[j];
+            u64 h = ka[cur];
+            if (curside == false) h = rc(h, k);
+            apnd_strbld(&sb, dec_base(h % 4));
+            u64 nxt_on_path = (j - 1 >= 0) ? p->data[j - 1] : INF;
+            
+            for (uint8_t i = 0; i < 4; i++) {
+                for (int s = 1; s >= 0; s--) {
+                    u64 nxt = bstep(km, ka, k, cur, B[i], 0, curside, s);
+                    if (nxt == INF || nxt == nxt_on_path) continue;
+                    u64 val = find_hm(hd, nxt);
+                    if (val == INF) continue;
+                    u64 ni = val >> 1;
+                    bool is_head = (val & 1);
+                    if (vis[ni]) continue;
+                    vis[ni] = true;
+
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    apnd_strbld(&sb, "(");
+                    apnd_strbld(&sb, ss);
+                    apnd_strbld(&sb, ")");
+                    free(ss);
+                }
+            }
+        }
+    }
+    return sb.str;
+}
+
+Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
+    Rep r; init_rep(&r);
+
+    Strbld sbp; init_strbld(&sbp);
+    Strbld sbc; init_strbld(&sbc);
+
+    u64 Np = pp->size;
+    bool *vis = (bool*)malloc(sizeof(bool) * Np);
+    if (vis == NULL) { fprintf(stderr, "Error: malloc failed for vis\n"); exit(EXIT_FAILURE); }
+    for (u64 i = 0; i < Np; i++) vis[i] = false;
+
+    Hm *hd = NULL;
+
+    for (u64 i = 0; i < Np; i++) {
+        V *p = &pp->vs[i];
+        if (p->size == 0) continue;
+
+        u64 head = p->data[0];
+        u64 tail = p->data[p->size - 1];
+        add_hm(&hd, head, (i << 1) | 1);
+        if (head != tail) {
+            add_hm(&hd, tail, (i << 1) | 0);
+        }
+    }
+
+    for (size_t i = 0; i < cc->size; i++) {
+        V *c = &cc->vs[i];
+        Vb *cb = &ccb->vs[i];
+        if (c->size == 0) continue;
+
+        for (size_t j = 0; j < c->size; j++) {
+            u64 cur = c->data[j];
+            bool curside = cb->data[j];
+            u64 h = ka[cur];
+            if (curside == false) h = rc(h, k);
+            apnd_strbld(&sbc, dec_base(h % 4));
+            u64 nxt_on_cyc = c->data[(j + 1) % c->size];
+
+            for (uint8_t b = 0; b < 4; b++) {
+                for (int toc = 1; toc >= 0; toc--) {
+                    u64 nxt = bstep(km, ka, k, cur, B[b], 1, cur, toc);
+                    if (nxt == INF || nxt == nxt_on_cyc) continue;
+                    u64 val = find_hm(hd, nxt);
+                    if (val == INF) continue;
+                    u64 ni = val >> 1;
+                    bool is_head = (val & 1);
+                    if (vis[ni]) continue;
+                    vis[ni] = true;
+
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    apnd_strbld(&sbc, "(");
+                    apnd_strbld(&sbc, ss);
+                    apnd_strbld(&sbc, ")");
+                    free(ss);
+                }
+            }
+        }
+        apnd_strbld(&sbc, ",");
+    }
+
+    for (u64 i = 0; i < Np; i++) {
+        if (vis[i]) continue;
+        vis[i] = true;
+
+        V *p = &pp->vs[i];
+        Vb *pb = &ppb->vs[i];
+        if (p->size == 0) continue;
+        u64 head = p->data[0];
+        bool headside = pb->data[0];
+        u64 h = ka[head];
+        if (headside == false) h = rc(h, k);
+        char ts[k + 1];
+        dec(h, k, ts);
+        apnd_strbld(&sbp, ts);
+
+        char* ss = subt_bbp(i, true, 1, km, ka, hd, k, pp, ppb, vis);
+        apnd_strbld(&sbp, ss);
+        free(ss);
+        apnd_strbld(&sbp, ",");
+    }
+
+    size_t fl = sbp.len;
+    if (fl > 0 && sbp.str[fl - 1] == ',') {
+        sbp.str[fl - 1] = '\0';
+        sbp.len--;
+    }
+    apnd_strbld(&sbp, ",,");
+    fl = sbc.len;
+    if (fl > 0 && sbc.str[fl - 1] == ',') {
+        sbc.str[fl - 1] = '\0';
+        sbc.len--;
+    }
+    apnd_strbld(&sbp, sbc.str);
+    free(sbc.str);
+
+    free(vis);
+    free_hm(&hd);
+    r.str = sbp.str;
+    r.arr = NULL;
+    return r;
+}

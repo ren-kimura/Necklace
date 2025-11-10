@@ -86,4 +86,6 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 Rep bgdfs(Hm *km, u64 *ka, int k);
 
+Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
+
 #endif // REP_UTILS_H
