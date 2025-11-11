@@ -833,7 +833,7 @@ Rep bgdfs(Hm *km, u64 *ka, int k) {
     return r;
 }
 
-static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, int k, VV *pp, VVb *ppb, bool *vis) {
+static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, Hm *tl, int k, VV *pp, VVb *ppb, bool *vis) {
     Strbld sb; init_strbld(&sb);
     V *p = &pp->vs[pid];
     Vb *pb = &ppb->vs[pid];
@@ -851,14 +851,19 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
                 for (int s = 1; s >= 0; s--) {
                     u64 nxt = bstep(km, ka, k, cur, B[i], 1, curside, s);
                     if (nxt == INF || nxt == nxt_on_path) continue;
-                    u64 val = find_hm(hd, nxt);
-                    if (val == INF) continue;
-                    u64 ni = val >> 1;
-                    bool is_head = (val & 1);
+                    u64 h = ka[nxt];
+                    if (s == 0) h = rc(h, k);
+                    u64 ni = find_hm(hd, h);
+                    bool is_head = true;
+                    if (ni == INF) {
+                        ni = find_hm(tl, h);
+                        is_head = false;
+                    }
+                    if (ni == INF) continue;
                     if (vis[ni]) continue;
                     vis[ni] = true;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
                     apnd_strbld(&sb, "(");
                     apnd_strbld(&sb, ss);
                     apnd_strbld(&sb, ")");
@@ -869,7 +874,7 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
     } else {
         for (int64_t j = p->size - 1; j >= (int64_t)offset; j--) {
             u64 cur = p->data[j];
-            bool curside = pb->data[j];
+            bool curside = !pb->data[j];
             u64 h = ka[cur];
             if (curside == false) h = rc(h, k);
             apnd_strbld(&sb, dec_base(h % 4));
@@ -877,16 +882,21 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
             
             for (uint8_t i = 0; i < 4; i++) {
                 for (int s = 1; s >= 0; s--) {
-                    u64 nxt = bstep(km, ka, k, cur, B[i], 0, curside, s);
+                    u64 nxt = bstep(km, ka, k, cur, B[i], 1, curside, s);
                     if (nxt == INF || nxt == nxt_on_path) continue;
-                    u64 val = find_hm(hd, nxt);
-                    if (val == INF) continue;
-                    u64 ni = val >> 1;
-                    bool is_head = (val & 1);
+                    u64 h = ka[nxt];
+                    if (s == 0) h = rc(h, k);
+                    u64 ni = find_hm(hd, h);
+                    bool is_head = true;
+                    if (ni == INF) {
+                        ni = find_hm(tl, h);
+                        is_head = false;
+                    }
+                    if (ni == INF) continue;
                     if (vis[ni]) continue;
                     vis[ni] = true;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
                     apnd_strbld(&sb, "(");
                     apnd_strbld(&sb, ss);
                     apnd_strbld(&sb, ")");
@@ -910,17 +920,19 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     for (u64 i = 0; i < Np; i++) vis[i] = false;
 
     Hm *hd = NULL;
+    Hm *tl = NULL;
 
     for (u64 i = 0; i < Np; i++) {
         V *p = &pp->vs[i];
+        Vb *pb = &ppb->vs[i];
         if (p->size == 0) continue;
 
-        u64 head = p->data[0];
-        u64 tail = p->data[p->size - 1];
-        add_hm(&hd, head, (i << 1) | 1);
-        if (head != tail) {
-            add_hm(&hd, tail, (i << 1) | 0);
-        }
+        u64 h = ka[p->data[0]];
+        if (pb->data[0] == false) h = rc(h, k);
+        add_hm(&hd, h, i); // raw hash of head considering the strand
+        h = ka[p->data[p->size - 1]];
+        if (pb->data[p->size - 1] == true) h = rc(h, k);
+        add_hm(&tl, h, i); // raw hash of tail considering the strand
     }
 
     for (size_t i = 0; i < cc->size; i++) {
@@ -938,16 +950,21 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
             for (uint8_t b = 0; b < 4; b++) {
                 for (int toc = 1; toc >= 0; toc--) {
-                    u64 nxt = bstep(km, ka, k, cur, B[b], 1, cur, toc);
+                    u64 nxt = bstep(km, ka, k, cur, B[b], 1, curside, toc);
                     if (nxt == INF || nxt == nxt_on_cyc) continue;
-                    u64 val = find_hm(hd, nxt);
-                    if (val == INF) continue;
-                    u64 ni = val >> 1;
-                    bool is_head = (val & 1);
+                    u64 h = ka[nxt];
+                    if (toc == 0) h = rc(h, k);
+                    u64 ni = find_hm(hd, h);
+                    bool is_head = true;
+                    if (ni == INF) {
+                        ni = find_hm(tl, h);
+                        is_head = false;
+                    }
+                    if (ni == INF) continue;
                     if (vis[ni]) continue;
                     vis[ni] = true;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
                     apnd_strbld(&sbc, "(");
                     apnd_strbld(&sbc, ss);
                     apnd_strbld(&sbc, ")");
@@ -973,28 +990,27 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
         dec(h, k, ts);
         apnd_strbld(&sbp, ts);
 
-        char* ss = subt_bbp(i, true, 1, km, ka, hd, k, pp, ppb, vis);
+        char* ss = subt_bbp(i, true, 1, km, ka, hd, tl, k, pp, ppb, vis);
         apnd_strbld(&sbp, ss);
         free(ss);
         apnd_strbld(&sbp, ",");
     }
 
-    size_t fl = sbp.len;
-    if (fl > 0 && sbp.str[fl - 1] == ',') {
-        sbp.str[fl - 1] = '\0';
-        sbp.len--;
-    }
-    apnd_strbld(&sbp, ",,");
-    fl = sbc.len;
-    if (fl > 0 && sbc.str[fl - 1] == ',') {
-        sbc.str[fl - 1] = '\0';
-        sbc.len--;
-    }
+    apnd_strbld(&sbp, ",");
     apnd_strbld(&sbp, sbc.str);
+    if (sbp.str[sbp.len - 1] == ',') {
+        sbp.len--;
+        sbp.str[sbp.len] = '\0';
+    }
+    if (sbp.str[sbp.len - 1] == ',') {
+        sbp.len--;
+        sbp.str[sbp.len] = '\0';
+    }
     free(sbc.str);
 
     free(vis);
     free_hm(&hd);
+    free_hm(&tl);
     r.str = sbp.str;
     r.arr = NULL;
     return r;
