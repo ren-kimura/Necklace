@@ -833,7 +833,8 @@ Rep bgdfs(Hm *km, u64 *ka, int k) {
     return r;
 }
 
-static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, Hm *tl, int k, VV *pp, VVb *ppb, bool *vis) {
+static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, Hm *tl, int k, VV *pp, VVb *ppb, bool *vis, u64 *nvis) {
+    prog(*nvis, pp->size, "embedding paths");
     Strbld sb; init_strbld(&sb);
     V *p = &pp->vs[pid];
     Vb *pb = &ppb->vs[pid];
@@ -861,9 +862,9 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
                     }
                     if (ni == INF) continue;
                     if (vis[ni]) continue;
-                    vis[ni] = true;
+                    vis[ni] = true; (*nvis)++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
                     apnd_strbld(&sb, "(");
                     apnd_strbld(&sb, ss);
                     apnd_strbld(&sb, ")");
@@ -894,9 +895,9 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
                     }
                     if (ni == INF) continue;
                     if (vis[ni]) continue;
-                    vis[ni] = true;
+                    vis[ni] = true; (*nvis)++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
                     apnd_strbld(&sb, "(");
                     apnd_strbld(&sb, ss);
                     apnd_strbld(&sb, ")");
@@ -914,7 +915,7 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     Strbld sbp; init_strbld(&sbp);
     Strbld sbc; init_strbld(&sbc);
 
-    u64 Np = pp->size;
+    u64 Np = pp->size, nvis = 0; 
     bool *vis = (bool*)malloc(sizeof(bool) * Np);
     if (vis == NULL) { fprintf(stderr, "Error: malloc failed for vis\n"); exit(EXIT_FAILURE); }
     for (u64 i = 0; i < Np; i++) vis[i] = false;
@@ -962,9 +963,9 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
                     }
                     if (ni == INF) continue;
                     if (vis[ni]) continue;
-                    vis[ni] = true;
+                    vis[ni] = true; nvis++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis);
+                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
                     apnd_strbld(&sbc, "(");
                     apnd_strbld(&sbc, ss);
                     apnd_strbld(&sbc, ")");
@@ -977,7 +978,7 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
     for (u64 i = 0; i < Np; i++) {
         if (vis[i]) continue;
-        vis[i] = true;
+        vis[i] = true; nvis++;
 
         V *p = &pp->vs[i];
         Vb *pb = &ppb->vs[i];
@@ -990,11 +991,12 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
         dec(h, k, ts);
         apnd_strbld(&sbp, ts);
 
-        char* ss = subt_bbp(i, true, 1, km, ka, hd, tl, k, pp, ppb, vis);
+        char* ss = subt_bbp(i, true, 1, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
         apnd_strbld(&sbp, ss);
         free(ss);
         apnd_strbld(&sbp, ",");
     }
+    fin("embedding paths");
 
     apnd_strbld(&sbp, ",");
     apnd_strbld(&sbp, sbc.str);
