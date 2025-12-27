@@ -23,7 +23,7 @@ static int parse_int(const char *s) {
     char *e;
     errno = 0;
     int v = strtol(s, &e, 10);
-    if (errno || *e) usage("./nkl");
+    if (errno || *e) usage("./eu");
     return v;
 }
 

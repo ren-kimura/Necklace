@@ -8,6 +8,7 @@
 #include "uthash.h"
 
 #define INF UINT64_MAX
+#define MAX_CLD 4
 typedef uint64_t u64;
 extern char B[4];
 
@@ -115,5 +116,12 @@ void init_w(W *w);
 void pushcc(W *w, char *s);
 void pushpp(W *w, char *s);
 void free_w(W *w);
+
+typedef struct Node_t {
+    bool is_path;
+    u64 id;
+    struct Node_t* parent;
+    struct Node_t* child[MAX_CLD];
+} Node_t;
 
 #endif // DS_H

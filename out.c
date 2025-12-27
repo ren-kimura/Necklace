@@ -101,6 +101,34 @@ void pop_fcst(FcSt *s) {
     free(tmp);
 }
 
+// --- Helper Struct for rbp (Necklace Refined) ---
+typedef struct Link {
+    u64 u_id;      // Node ID (Parent)
+    V p_idxs;      // List of Path IDs starting from this node
+    UT_hash_handle hh;
+} Link;
+
+void add_link(Link **links, u64 u_id, u64 p_idx) {
+    Link *l;
+    HASH_FIND(hh, *links, &u_id, sizeof(u64), l);
+    if (!l) {
+        l = (Link*)malloc(sizeof(Link));
+        l->u_id = u_id;
+        init_v(&l->p_idxs);
+        HASH_ADD(hh, *links, u_id, sizeof(u64), l);
+    }
+    push_back(&l->p_idxs, p_idx);
+}
+
+void free_links(Link **links) {
+    Link *curr, *tmp;
+    HASH_ITER(hh, *links, curr, tmp) {
+        free_v(&curr->p_idxs);
+        HASH_DEL(*links, curr);
+        free(curr);
+    }
+}
+
 //---Strbld---
 void init_strbld(Strbld *s) {
     s->cap = 64;
@@ -741,6 +769,165 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     }
     free(hi); free_hs(&rp); free_hm(&hd);
     r.str = sb.str;
+    return r;
+}
+
+// Recursive function to write path and its children
+// is_head_full: if true, print the full k-mer of the first node. Otherwise print only the last char.
+void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full) {
+    if (vis[pid]) return;
+    vis[pid] = true;
+
+    V *p = &pp->vs[pid];
+    for (size_t i = 0; i < p->size; i++) {
+        u64 u = p->data[i];
+
+        // Output the node string
+        if (i == 0 && is_head_full) {
+            char s[k + 1];
+            dec(ka[u], k, s);
+            apnd_strbld(sb, s);
+        } else {
+            apnd_strbld(sb, dec_base(ka[u] % 4));
+        }
+
+        // Check if this node has attached child paths (branches)
+        Link *l;
+        HASH_FIND(hh, *links, &u, sizeof(u64), l);
+        if (l) {
+            for (size_t j = 0; j < l->p_idxs.size; j++) {
+                u64 child_pid = l->p_idxs.data[j];
+                if (!vis[child_pid]) { // Avoid infinite recursion if cycle exists
+                    apnd_strbld(sb, "(");
+                    // Children are attached, so they share k-1 overlap. 
+                    // Their head is already represented by u's suffix. 
+                    // But in standard notation, if we branch, we usually continue the sequence.
+                    // Here, child starts with successor of u. We print it incrementally.
+                    write_refined_dfs(child_pid, pp, links, vis, sb, ka, k, false);
+                    apnd_strbld(sb, ")");
+                }
+            }
+        }
+    }
+}
+
+Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+    Rep r; init_rep(&r);
+    Strbld sb; init_strbld(&sb);
+    
+    // 1. Setup Data Structures
+    Link *links = NULL; // Map: Node ID -> List of Path IDs (children)
+    bool *is_root = (bool*)malloc(pp->size * sizeof(bool));
+    bool *vis = (bool*)malloc(pp->size * sizeof(bool));
+    
+    if (!is_root || !vis) {
+        fprintf(stderr, "Error: malloc failed in rbp\n");
+        exit(EXIT_FAILURE);
+    }
+    for(size_t i=0; i<pp->size; i++) { is_root[i] = true; vis[i] = false; }
+
+    // 2. Build the Necklace Graph (Algorithm 8 logic)
+    // For each path, try to find *one* incoming edge from the graph
+    for (size_t i = 0; i < pp->size; i++) {
+        if (pp->vs[i].size == 0) continue;
+        u64 head = pp->vs[i].data[0];
+        u64 pred = INF;
+
+        // Try to find a predecessor (backward step)
+        for (int j = 0; j < 4; j++) {
+            u64 p = step(km, ka, k, head, B[j], 0); // 0 = backward
+            if (p != INF) {
+                pred = p;
+                break; // Pick ANY predecessor (Alg 8)
+            }
+        }
+
+        if (pred != INF) {
+            // Found a predecessor: this path is NOT a root of an open necklace
+            // It is attached to node 'pred'
+            add_link(&links, pred, i);
+            is_root[i] = false;
+        }
+        // If pred == INF, it remains a root (is_root[i] = true)
+    }
+
+    // 3. Output - Phase A: Existing Cycles (Closed Necklaces from Graph Decomp)
+    // These are treated as closed necklaces. We traverse them and embed any paths attached.
+    for (size_t i = 0; i < cc->size; i++) {
+        V *c = &cc->vs[i];
+        if (c->size == 0) continue;
+        
+        apnd_strbld(&sb, "*"); // Marker for cycle start (optional, standardizes format)
+        
+        for (size_t j = 0; j < c->size; j++) {
+            u64 u = c->data[j];
+            
+            // For the very first node of a cycle, we print full k-mer?
+            // Usually cycles are printed linearly. 
+            if (j == 0) {
+                 char s[k + 1];
+                 dec(ka[u], k, s);
+                 apnd_strbld(&sb, s);
+            } else {
+                 apnd_strbld(&sb, dec_base(ka[u] % 4));
+            }
+
+            // Check for attached paths
+            Link *l;
+            HASH_FIND(hh, links, &u, sizeof(u64), l);
+            if (l) {
+                for (size_t x = 0; x < l->p_idxs.size; x++) {
+                    u64 cpid = l->p_idxs.data[x];
+                    if (!vis[cpid]) {
+                        apnd_strbld(&sb, "(");
+                        write_refined_dfs(cpid, pp, &links, vis, &sb, ka, k, false);
+                        apnd_strbld(&sb, ")");
+                    }
+                }
+            }
+        }
+        apnd_strbld(&sb, ",");
+    }
+
+    // 4. Output - Phase B: Open Necklaces (Root Paths)
+    for (size_t i = 0; i < pp->size; i++) {
+        if (is_root[i]) {
+            // This is a start of an open necklace (tree)
+            write_refined_dfs(i, pp, &links, vis, &sb, ka, k, true);
+            apnd_strbld(&sb, ",");
+        }
+    }
+
+    // 5. Output - Phase C: Remaining Paths (Cycles formed by paths)
+    // If a path was not visited yet, it means it's part of a cycle formed solely by paths.
+    // We break the cycle at an arbitrary point and treat it as a closed necklace.
+    for (size_t i = 0; i < pp->size; i++) {
+        if (!vis[i]) {
+            apnd_strbld(&sb, "*"); // Marker for cycle
+            // Start DFS from here. Since it's a cycle, the recursive calls will stop 
+            // when they hit 'vis[i]=true' (which we set immediately).
+            write_refined_dfs(i, pp, &links, vis, &sb, ka, k, true);
+            apnd_strbld(&sb, ",");
+        }
+    }
+
+    // Cleanup string
+    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
+        sb.len--;
+        sb.str[sb.len] = '\0';
+    }
+
+    free(is_root);
+    free(vis);
+    free_links(&links);
+
+    r.str = sb.str;
+    r.arr = NULL;
+    return r;
+}
+
+Rep gdfs(Hm *km, u64 *ka, int k) {
+    Rep r; init_rep(&r);
     return r;
 }
 

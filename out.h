@@ -83,7 +83,9 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi);
 Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
+Rep gdfs(Hm *km, u64 *ka, int k);
 Rep bgdfs(Hm *km, u64 *ka, int k);
 
 Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
