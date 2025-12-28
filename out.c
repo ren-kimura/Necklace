@@ -774,9 +774,13 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
 // Recursive function to write path and its children
 // is_head_full: if true, print the full k-mer of the first node. Otherwise print only the last char.
-void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full) {
+void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full, u64 *parent, size_t *z, size_t Z) {
     if (vis[pid]) return;
     vis[pid] = true;
+    if (parent[pid] != INF) {
+        (*z)++; // attached a non-root open path
+        prog(*z, Z, "embedding");
+    }
 
     V *p = &pp->vs[pid];
     for (size_t i = 0; i < p->size; i++) {
@@ -803,7 +807,7 @@ void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64
                     // Their head is already represented by u's suffix. 
                     // But in standard notation, if we branch, we usually continue the sequence.
                     // Here, child starts with successor of u. We print it incrementally.
-                    write_refined_dfs(child_pid, pp, links, vis, sb, ka, k, false);
+                    write_refined_dfs(child_pid, pp, links, vis, sb, ka, k, false, parent, z, Z);
                     apnd_strbld(sb, ")");
                 }
             }
@@ -835,6 +839,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     }
 
     // For each path, try to find *one* incoming edge from the graph
+    size_t Z = 0;
     for (size_t i = 0; i < Np; i++) {
         if (pp->vs[i].size == 0) continue;
         u64 head = pp->vs[i].data[0];
@@ -847,16 +852,20 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 if (p_pid != INF) {
                     parent[i] = p_pid;
                     add_link(&links, pred, i);
+                    Z++;
                     break;
                 }
             }
         }
     }
 
+    size_t z = 0;
+    printf("# of non-root open paths: %ld\n", Z);
+
     // from root open paths
     for (size_t i = 0; i < Np; i++) {
         if (parent[i] == INF && !vis[i]) {
-            write_refined_dfs(i, pp, &links, vis, &sb, ka, k, true);
+            write_refined_dfs(i, pp, &links, vis, &sb, ka, k, true, parent, &z, Z);
             apnd_strbld(&sb, ",");
         }
     }
@@ -880,7 +889,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                     u64 cpid = l->p_idxs.data[x];
                     if (!vis[cpid]) {
                         apnd_strbld(&sb, "(");
-                        write_refined_dfs(cpid, pp, &links, vis, &sb, ka, k, false);
+                        write_refined_dfs(cpid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
                         apnd_strbld(&sb, ")");
                     }
                 }
@@ -916,6 +925,10 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 u64 pid = c_pids[j];
                 u64 next_pid = c_pids[(j + 1) % c_len];
                 vis[pid] = true;
+                if (parent[pid] != INF) {
+                    z++; // attached a non-root open path
+                    prog(z, Z, "embedding");
+                }
 
                 V *p = &pp->vs[pid];
 
@@ -934,7 +947,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                                 to_next = true;
                             } else if (!vis[child_pid]) {
                                 apnd_strbld(&sb, "(");
-                                write_refined_dfs(child_pid, pp, &links, vis, &sb, ka, k, false);
+                                write_refined_dfs(child_pid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
                                 apnd_strbld(&sb, ")");
                             }
                         }
@@ -953,6 +966,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         }
         for (size_t j = 0; j < top; j++) in_stack[stack[j]] = false;
     }
+    fin("embedding");
 
     // Cleanup string
     if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
