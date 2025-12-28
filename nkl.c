@@ -150,7 +150,8 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "under construction\n");
                     exit(EXIT_FAILURE);
                 } else {
-                    r = bp(km, ka, &cc, &pp, k);
+                    // r = bp(km, ka, &cc, &pp, k);
+                    r = rbp(km, ka, &cc, &pp, k);
                 }
             } else {
                 fprintf(stderr, "Error: invalid out arg\n");

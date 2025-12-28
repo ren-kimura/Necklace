@@ -117,11 +117,4 @@ void pushcc(W *w, char *s);
 void pushpp(W *w, char *s);
 void free_w(W *w);
 
-typedef struct Node_t {
-    bool is_path;
-    u64 id;
-    struct Node_t* parent;
-    struct Node_t* child[MAX_CLD];
-} Node_t;
-
 #endif // DS_H
