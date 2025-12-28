@@ -133,8 +133,7 @@ int main(int argc, char *argv[]) {
                     fprintf(stderr, "Overwritten out=%d -> 2\n", out);
                     out = 2;
                 }
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
+                N = extract(infile, k, &km, &ka, di);
             } else {
                 fprintf(stderr, "Error: invalid cover type\n");
                 exit(EXIT_FAILURE);
@@ -147,8 +146,7 @@ int main(int argc, char *argv[]) {
                 r = ptr(km, ka, &cc, &pp, k);
             } else if (out == 2) { // bp
                 if (cov == 3) {
-                    fprintf(stderr, "under construction\n");
-                    exit(EXIT_FAILURE);
+                    r = gdfs(km, ka, k);
                 } else {
                     // r = bp(km, ka, &cc, &pp, k);
                     r = rbp(km, ka, &cc, &pp, k);
