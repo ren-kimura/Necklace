@@ -158,7 +158,7 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
                     push_backv(pp, v);
                 }
             }
-            init_v(&v);
+            free_v(&v);
         }
         
         // rolling hash
@@ -181,13 +181,13 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
                             push_backv(pp, v);
                         }
                     }
-                    init_v(&v);
+                    free_v(&v);
                 }
             } else {
                 if (v.size > 0) {
                     push_backv(pp, v);
                 }
-                init_v(&v);
+                free_v(&v);
                 break;
             }
             j++;
@@ -231,8 +231,8 @@ void bdproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb
                     push_backvb(ppb, vb);
                 }
             }
-            init_v(&v);
-            init_vb(&vb);
+            free_v(&v);
+            free_vb(&vb);
         }
         
         // rolling hash
@@ -259,16 +259,16 @@ void bdproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb
                             push_backvb(ppb, vb);
                         }
                     }
-                    init_v(&v);
-                    init_vb(&vb);
+                    free_v(&v);
+                    free_vb(&vb);
                 }
             } else {
                 if (v.size > 0) {
                     push_backv(pp, v);
                     push_backvb(ppb, vb);
                 }
-                init_v(&v);
-                init_vb(&vb);
+                free_v(&v);
+                free_vb(&vb);
                 break;
             }
             j++;
