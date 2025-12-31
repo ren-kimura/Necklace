@@ -1153,9 +1153,8 @@ Rep bgdfs(Hm *km, u64 *ka, int k) {
     return r;
 }
 
-static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, Hm *tl, int k, VV *pp, VVb *ppb, bool *vis, u64 *nvis) {
+static void subt_bbp(Strbld *sb, u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd, Hm *tl, int k, VV *pp, VVb *ppb, bool *vis, u64 *nvis) {
     prog(*nvis, pp->size, "embedding paths");
-    Strbld sb; init_strbld(&sb);
     V *p = &pp->vs[pid];
     Vb *pb = &ppb->vs[pid];
 
@@ -1165,7 +1164,7 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
             bool curside = pb->data[j];
             u64 h = ka[cur];
             if (curside == false) h = rc(h, k);
-            apnd_strbld(&sb, dec_base(h % 4));
+            apnd_strbld(sb, dec_base(h % 4));
             u64 nxt_on_path = (j + 1 < p->size) ? p->data[j + 1] : INF;
 
             for (uint8_t i = 0; i < 4; i++) {
@@ -1184,11 +1183,9 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
                     if (vis[ni]) continue;
                     vis[ni] = true; (*nvis)++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
-                    apnd_strbld(&sb, "(");
-                    apnd_strbld(&sb, ss);
-                    apnd_strbld(&sb, ")");
-                    free(ss);
+                    apnd_strbld(sb, "(");
+                    subt_bbp(sb, ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
+                    apnd_strbld(sb, ")");
                 }
             }
         }
@@ -1198,7 +1195,7 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
             bool curside = !pb->data[j];
             u64 h = ka[cur];
             if (curside == false) h = rc(h, k);
-            apnd_strbld(&sb, dec_base(h % 4));
+            apnd_strbld(sb, dec_base(h % 4));
             u64 nxt_on_path = (j - 1 >= 0) ? p->data[j - 1] : INF;
             
             for (uint8_t i = 0; i < 4; i++) {
@@ -1217,16 +1214,13 @@ static char* subt_bbp(u64 pid, bool forward, int offset, Hm *km, u64 *ka, Hm *hd
                     if (vis[ni]) continue;
                     vis[ni] = true; (*nvis)++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
-                    apnd_strbld(&sb, "(");
-                    apnd_strbld(&sb, ss);
-                    apnd_strbld(&sb, ")");
-                    free(ss);
+                    apnd_strbld(sb, "(");
+                    subt_bbp(sb, ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, nvis);
+                    apnd_strbld(sb, ")");
                 }
             }
         }
     }
-    return sb.str;
 }
 
 Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
@@ -1285,11 +1279,9 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
                     if (vis[ni]) continue;
                     vis[ni] = true; nvis++;
 
-                    char* ss = subt_bbp(ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
                     apnd_strbld(&sbc, "(");
-                    apnd_strbld(&sbc, ss);
+                    subt_bbp(&sbc, ni, is_head, 0, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
                     apnd_strbld(&sbc, ")");
-                    free(ss);
                 }
             }
         }
@@ -1311,9 +1303,7 @@ Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
         dec(h, k, ts);
         apnd_strbld(&sbp, ts);
 
-        char* ss = subt_bbp(i, true, 1, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
-        apnd_strbld(&sbp, ss);
-        free(ss);
+        subt_bbp(&sbp, i, true, 1, km, ka, hd, tl, k, pp, ppb, vis, &nvis);
         apnd_strbld(&sbp, ",");
     }
     fin("embedding paths");

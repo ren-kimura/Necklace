@@ -53,6 +53,13 @@ nkl -m 1 -i input.fa -k 6 -d 0 -o 0 -f target.str
 ```
 This command constructs a k-mer set from `input.fa` with k-mer length 6, and compare with a k-mer set reconstructed from `target.fa` with k-mer length 6.
 
+## Troubleshoot
+Our implementation uses recursion in the source codes. It might cause stack overflow in some environment with some specific setting. In that case, the following is worth trying.
+
+```bash
+ulimit -s unlimited
+```
+
 ## Requirements
 - GCC supporting the C99 standard or later
 - Standard C libraries
