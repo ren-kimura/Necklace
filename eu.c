@@ -14,7 +14,7 @@ static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
             "\tgenerate: %s -i [in.fa] -k [k]\n"
-            "\tverify:   %s -m 1 -i [in.fa] -k [k] -f [target.fa]\n",
+            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n",
             s, s);
     exit(EXIT_FAILURE);
 }
@@ -30,10 +30,10 @@ static int parse_int(const char *s) {
 int main (int argc, char *argv[]) {
     const char *infile = NULL;
     const char *outfile = NULL;
-    int k, m, opt;
-    k = -1; m = 0;
+    int k, m, opt, di;
+    k = -1; m = 0; di = 0;
 
-    while ((opt = getopt(argc, argv, "i:k:m:f:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:k:m:f:d:")) != -1) {
         switch (opt) {
             case 'i':
                 if (infile) usage(argv[0]);
@@ -43,6 +43,10 @@ int main (int argc, char *argv[]) {
                 if (k != -1) usage(argv[0]);
                 k = parse_int(optarg);
                 if (k < 2 || k > 31) usage(argv[0]);
+                break;
+            case 'd':
+                di = parse_int(optarg);
+                if (di != 0 && di != 1) usage(argv[0]);
                 break;
             case 'm':
                 m = parse_int(optarg);
@@ -60,7 +64,7 @@ int main (int argc, char *argv[]) {
             fprintf(stderr, "Error: provide -i -k\n");
             usage(argv[0]);
         }
-        return veri_fa(infile, outfile, k);
+        return veri_fa(infile, outfile, k, di);
     } else {
         if (!infile || k == -1) {
             usage(argv[0]);

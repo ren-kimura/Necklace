@@ -279,7 +279,7 @@ int veri(const char* of, const char* tf, int k, int di, int out) {
     return fz ? 0 : -1;
 }
 
-int veri_fa(const char *of, const char *tf, int k) {
+int veri_fa(const char *of, const char *tf, int k, int di) {
     fprintf(stdout, "verification mode\n");
     fprintf(stdout, "original file: %s\n", of);
     fprintf(stdout, "target file: %s\n", tf);
@@ -287,7 +287,7 @@ int veri_fa(const char *of, const char *tf, int k) {
     fprintf(stdout, "\n[Step 1/3] extracting k-mers from original file\n");
     Hm *km = NULL;
     u64 *ka = NULL;
-    u64 no1 = extract(of, k, &km, &ka, 0);
+    u64 no1 = extract(of, k, &km, &ka, di);
     Hs *ks = NULL;
     Hm *s, *tmp;
     HASH_ITER(hh, km, s, tmp) { add_hs(&ks, s->key); }
@@ -297,7 +297,7 @@ int veri_fa(const char *of, const char *tf, int k) {
     fprintf(stdout, "\n[Step 2/3] reconstructing k-mers from target file\n");
     km = NULL;
     ka = NULL;
-    u64 no2 = extract(tf, k, &km, &ka, 0);
+    u64 no2 = extract(tf, k, &km, &ka, di);
     fprintf(stdout, "%ld k-mers in %s\n", no2, tf);
 
     fprintf(stdout, "\n[Step 3/3] final check\n");
