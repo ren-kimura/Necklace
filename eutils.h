@@ -18,6 +18,7 @@ Node* build(Hm *km, int k, u64 N);
 void balance(Node **g);
 void etigs(Node **g, VV *tt, int k);
 char** spell(VV *tt, int k, size_t *ns);
+void tt_to_cc_and_pp(VV *tt, Hm *km, VV *cc, VV *pp);
 
 void free_ss(char **ss, size_t ns);
 void free_g(Node **g);

@@ -239,6 +239,41 @@ char** spell(VV *tt, int k, size_t *ns) {
     return ss;
 }
 
+void tt_to_cc_and_pp(VV *tt, Hm *km, VV *cc, VV *pp) {
+    for (size_t i = 0; i < tt->size; i++) {
+        V *t = &tt->vs[i];
+        if (t->size < 2) continue; // there is no k-mer in t
+
+        V p; init_v(&p);
+        bool has_dummy = false;
+
+        for (size_t j = 0; j < t->size - 1; j++) {
+            u64 h = ((t->data[j] << 2) | (t->data[j + 1] & 3)); // edge hash
+            u64 id = find_hm(km, h);
+
+            if (id != INF) {
+                push_back(&p, id);
+            } else {
+                if (p.size > 0) {
+                    push_backv(pp, p);
+                    free_v(&p);
+                    init_v(&p);
+                }
+                has_dummy = true;
+            }
+        }
+
+        if (p.size > 0) {
+            if (!has_dummy && t->data[0] == t->data[t->size - 1]) {
+                push_backv(cc, p);
+            } else {
+                push_backv(pp, p);
+            }
+            free_v(&p);
+        }
+    }
+}
+
 void free_g(Node **g) {
     Node *s, *tmp;
     HASH_ITER(hh, *g, s, tmp) {

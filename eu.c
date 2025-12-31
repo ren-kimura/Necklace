@@ -9,11 +9,12 @@
 #include "write.h"
 #include "veri.h"
 #include "eutils.h"
+#include "out.h"
 
 static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
-            "\tgenerate: %s -i [in.fa] -k [k]\n"
+            "\tgenerate: %s -i [in.fa] -k [k] -o [o]\n"
             "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n",
             s, s);
     exit(EXIT_FAILURE);
@@ -30,10 +31,10 @@ static int parse_int(const char *s) {
 int main (int argc, char *argv[]) {
     const char *infile = NULL;
     const char *outfile = NULL;
-    int k, m, opt, di;
-    k = -1; m = 0; di = 0;
+    int k, m, opt, di, out;
+    k = -1; m = 0; di = 0; out = 0;
 
-    while ((opt = getopt(argc, argv, "i:k:m:f:d:")) != -1) {
+    while ((opt = getopt(argc, argv, "i:k:m:f:d:o:")) != -1) {
         switch (opt) {
             case 'i':
                 if (infile) usage(argv[0]);
@@ -47,6 +48,10 @@ int main (int argc, char *argv[]) {
             case 'd':
                 di = parse_int(optarg);
                 if (di != 0 && di != 1) usage(argv[0]);
+                break;
+            case 'o':
+                out = parse_int(optarg);
+                if (out != 0 && out != 1 && out != 2) usage(argv[0]);
                 break;
             case 'm':
                 m = parse_int(optarg);
@@ -82,14 +87,36 @@ int main (int argc, char *argv[]) {
         VV tt; init_vv(&tt);
         etigs(&g, &tt, k);
 
-        size_t ns = 0;
-        char **ss = spell(&tt, k, &ns);
-        char *b = rm_ext(infile);
-        if (ss) {
-            wrt_fa(b, k, ss, ns);
-            free_ss(ss, ns);
+        if (out == 0) { // yield FASTA
+            size_t ns = 0;
+            char **ss = spell(&tt, k, &ns);
+            char *b = rm_ext(infile);
+            if (ss) {
+                wrt_fa(b, k, ss, ns);
+                free_ss(ss, ns);
+            }
+            free(b);
+        } else { // yield .str (possibly plus .ptr)
+            VV cc, pp;
+            init_vv(&cc); init_vv(&pp);
+
+            tt_to_cc_and_pp(&tt, km, &cc, &pp);
+
+            Rep r; init_rep(&r);
+            if (out == 1) {
+                r = ptr(km, ka, &cc, &pp, k);
+            } else {
+                r = rbp(km, ka, &cc, &pp, k);
+            }
+
+            u64 np = pp.size;
+            char *b = rm_ext(infile);
+            wrt(b, &r, k, 0, 9, out, np);
+
+            free_rep(&r); free(b);
+            free_vv(&cc); free_vv(&pp);
         }
-        free(b);
+
         free(ka); free_hm(&km); free_g(&g); free_vv(&tt);
         return 0;
     }
