@@ -16,6 +16,14 @@ static void usage(const char *s) {
             "Usage:\n"
             "\tgenerate: %s -i [in.fa] -k [k] -o [o]\n"
             "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n",
+            "Modes:\n"
+            "\t-m MODE\t0:generate(default) 1:verify\n\n"
+            "Options:\n"
+	        "\t-i FILE\t\tinput FASTA file\n"
+	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
+            "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
+	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
+            "\t-f TARGET FILE\t target file of verification (***.fa)\n",
             s, s);
     exit(EXIT_FAILURE);
 }
