@@ -122,37 +122,48 @@ void etigs(Node **g, VV *tt, int k) {
         if (!ns) break; // visited all edges
 
         // Hierholzer
+        // two stacks to track nodes and the edges taken
+        St p; init_st(&p); // node stack
+        St es; init_st(&es); // edge stack
 
-        St p;
-        init_st(&p);
         push(&p, ns->key);
-        V t; init_v(&t);
+        push(&es, INF); // the starting node is reached via no edge
+
+        V t; init_v(&t); // stores k-mer hashes (edges)
 
         while (!is_empty_st(&p)) {
             u64 ku = p.top->data; // peek
             Node *nu;
             HASH_FIND(hh, *g, &ku, sizeof(u64), nu);
+
             if (nu && nu->o > 0) {
                 nu->o--;
                 nue++;
                 prog(nue, ne, "computing Eulertigs");
+
                 if (nu->dm.size > 0) {
                     u64 kv = pop_back(&nu->dm);
                     push(&p, kv);
+                    push(&es, INF); // dummy edge
                 } else {
                     for (uint8_t b = 0; b < 4; b++) {
                         if (nu->a & (1 << (b + 4))) {
                             u64 m = (1ULL << (2 * (k - 2))) - 1; // take k-2-mer
                             u64 kv = ((ku & m) << 2) | b;
+                            // real edge: store k-mer hash (ku << 2 | b)
+                            u64 hash = (ku << 2 | b);
                             push(&p, kv);
+                            push(&es, hash);
+
                             nu->a &= ~(1 << (b + 4));
                             break;
                         }
                     }
                 }
             } else {
-                ku = pop(&p);
-                push_back(&t, ku);
+                pop(&p);
+                u64 edge = pop(&es);
+                push_back(&t, edge);
             }
         }
 
@@ -176,65 +187,49 @@ char** spell(VV *tt, int k, size_t *ns) {
     *ns = 0;
     size_t scap = 8;
     char **ss = malloc(scap * sizeof(char*));
-    if (!ss) return NULL;
-
     size_t bufcap = 256;
     char *buf = malloc(bufcap);
-    if (!buf) { free(ss); return NULL; }
 
     for (size_t i = 0; i < tt->size; i++) {
         V *t = &tt->vs[i];
-        if (tt->size == 0) continue;
-        dec(t->data[0], k - 1, buf);
-        size_t buflen = strlen(buf);
+        if (t->size == 0) continue;
 
-        for (size_t j = 0; j < t->size - 1; j++) {
-            u64 ku = t->data[j];
-            u64 kv = t->data[j + 1];
-            u64 musuf = (1ULL << (2 * (k - 2))) - 1;
-            u64 usuf = ku & musuf;
-            u64 vpre = kv >> 2;
+        size_t buflen = 0;
+        buf[0] = '\0';
 
-            if (usuf == vpre) {
-                if (buflen + 1 + 1 > bufcap) {
-                    bufcap *= 2;
-                    buf = realloc(buf, bufcap);
-                    if (buf == NULL) {
-                        fprintf(stderr, "Error: realloc failed for buffer\n");
-                        exit(EXIT_FAILURE);
-                    }
+        for (size_t j = 0; j < t->size; j++) {
+            u64 edge = t->data[j];
+
+            if (edge == INF) {
+                // dummy edge: save current contig and reset
+                if (buflen > 0) {
+                    if (*ns >= scap) {scap *= 2; ss = realloc(ss, scap * sizeof(char*)); }
+                    ss[(*ns)++] = strdup(buf);
                 }
-                buf[buflen++] = B[kv & 3];
-                buf[buflen] = '\0';
+                buflen = 0;
+                buf[0] = '\0';
             } else {
-                if (*ns >= scap) {
-                    scap *= 2;
-                    ss = realloc(ss, scap * sizeof(char*));
-                    if (ss == NULL) {
-                        fprintf(stderr, "Error: realloc failed for contigs\n");
-                        exit(EXIT_FAILURE);
+                if (buflen == 0) {
+                    // start a new contig: full decode of k-mer
+                    dec(edge, k, buf);
+                    buflen = strlen(buf);
+                } else {
+                    // continue contig: append only the last base
+                    if (buflen + 2 > bufcap) {
+                        bufcap *= 2;
+                        buf = realloc(buf, bufcap);
                     }
+                    buf[buflen++] = B[edge & 3];
+                    buf[buflen] = '\0';
                 }
-                ss[*ns] = strdup(buf);
-                (*ns)++;
-
-                dec(kv, k - 1, buf);
-                buflen = strlen(buf);
             }
         }
-        
-        if (*ns >= scap) {
-            scap *= 2;
-            ss = realloc(ss, scap * sizeof(char*));
-            if (ss == NULL) {
-                fprintf(stderr, "Error: realloc failed for contigs\n");
-                exit(EXIT_FAILURE);
-            }
+        // save the last contig of the tour
+        if (buflen > 0) {
+            if (*ns >= scap) { scap *= 2; ss = realloc(ss, scap * sizeof(char*)); }
+            ss[(*ns)++] = strdup(buf);
         }
-        ss[*ns] = strdup(buf);
-        (*ns)++;
-    }
-        
+    }        
     free(buf);
     return ss;
 }
@@ -242,18 +237,21 @@ char** spell(VV *tt, int k, size_t *ns) {
 void tt_to_cc_and_pp(VV *tt, Hm *km, VV *cc, VV *pp) {
     for (size_t i = 0; i < tt->size; i++) {
         V *t = &tt->vs[i];
-        if (t->size < 2) continue; // there is no k-mer in t
+        if (t->size == 0) continue;
 
         V p; init_v(&p);
         bool has_dummy = false;
 
-        for (size_t j = 0; j < t->size - 1; j++) {
-            u64 h = ((t->data[j] << 2) | (t->data[j + 1] & 3)); // edge hash
-            u64 id = find_hm(km, h);
+        for (size_t j = 0; j < t->size; j++) {
+            u64 edge = t->data[j];
 
-            if (id != INF) {
-                push_back(&p, id);
+            if (edge != INF) {
+                u64 id = find_hm(km, edge);
+                if (id != INF) {
+                    push_back(&p, id);
+                }
             } else {
+                // break at dummy edge
                 if (p.size > 0) {
                     push_backv(pp, p);
                     free_v(&p);
@@ -264,7 +262,7 @@ void tt_to_cc_and_pp(VV *tt, Hm *km, VV *cc, VV *pp) {
         }
 
         if (p.size > 0) {
-            if (!has_dummy && t->data[0] == t->data[t->size - 1]) {
+            if (!has_dummy && t->size > 0) {
                 push_backv(cc, p);
             } else {
                 push_backv(pp, p);
