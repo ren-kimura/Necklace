@@ -88,7 +88,6 @@ int main (int argc, char *argv[]) {
         printf("k = %d\n", k);
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
-        N = extract(infile, k, &km, &ka, 0);
         Rep r; init_rep(&r);
         char *b = rm_ext(infile);
 
@@ -109,6 +108,7 @@ int main (int argc, char *argv[]) {
             }
             free_vv(&cc); free_vv(&pp); free_vvb(&ccb); free_vvb(&ppb);
         } else {
+            N = extract(infile, k, &km, &ka, 0);
             Node *g = build(km, k, N);
             balance(&g);
 
