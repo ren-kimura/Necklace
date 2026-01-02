@@ -15,7 +15,7 @@
 static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
-            "\tgenerate: %s -i [in.fa] -k [k] -o [o]\n"
+            "\tgenerate: %s -i [in.fa] -k [k] -d [d] -o [o]\n"
             "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n"
             "Modes:\n"
             "\t-m MODE\t0:generate(default) 1:verify\n\n"
