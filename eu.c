@@ -9,20 +9,21 @@
 #include "write.h"
 #include "veri.h"
 #include "eutils.h"
+#include "cov.h"
 #include "out.h"
 
 static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
             "\tgenerate: %s -i [in.fa] -k [k] -o [o]\n"
-            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n",
+            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -f [target.fa]\n"
             "Modes:\n"
             "\t-m MODE\t0:generate(default) 1:verify\n\n"
             "Options:\n"
 	        "\t-i FILE\t\tinput FASTA file\n"
 	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
             "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
+	        "\t-o OPTION\t0:flat (-d=0 only) 1:pointer (-d=0 only) 2:bp\n"
             "\t-f TARGET FILE\t target file of verification (***.fa)\n",
             s, s);
     exit(EXIT_FAILURE);
@@ -88,44 +89,63 @@ int main (int argc, char *argv[]) {
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
         N = extract(infile, k, &km, &ka, 0);
+        Rep r; init_rep(&r);
+        char *b = rm_ext(infile);
 
-        Node *g = build(km, k, N);
-        balance(&g);
+        if (di == 1) {
+            VV cc, pp; init_vv(&cc); init_vv(&pp);
+            VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
 
-        VV tt; init_vv(&tt);
-        etigs(&g, &tt, k);
+            // extract canonical k-mers from fasta input
+            // construct closed and open paths with strands at the same time
+            N = bdextract(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
 
-        if (out == 0) { // yield FASTA
-            size_t ns = 0;
-            char **ss = spell(&tt, k, &ns);
-            char *b = rm_ext(infile);
-            if (ss) {
-                wrt_fa(b, k, ss, ns);
-                free_ss(ss, ns);
-            }
-            free(b);
-        } else { // yield .str (possibly plus .ptr)
-            VV cc, pp;
-            init_vv(&cc); init_vv(&pp);
-
-            tt_to_cc_and_pp(&tt, km, &cc, &pp);
-
-            Rep r; init_rep(&r);
-            if (out == 1) {
-                r = ptr(km, ka, &cc, &pp, k);
+            if (out == 2) {
+                r = bbp(km, ka, &cc, &pp, &ccb, &ppb, k);
+                u64 np = pp.size;
+                wrt(b, &r, k, di, 9, out, np); // cov = 9 (Eulertigs) for convenience
             } else {
-                r = rbp(km, ka, &cc, &pp, k);
+                fprintf(stderr, "Error: out=%d is not supported for di=1 in eu\n", out);
             }
+            free_vv(&cc); free_vv(&pp); free_vvb(&ccb); free_vvb(&ppb);
+        } else {
+            Node *g = build(km, k, N);
+            balance(&g);
 
-            u64 np = pp.size;
-            char *b = rm_ext(infile);
-            wrt(b, &r, k, 0, 9, out, np);
+            VV tt; init_vv(&tt);
+            etigs(&g, &tt, k);
 
-            free_rep(&r); free(b);
-            free_vv(&cc); free_vv(&pp);
+            if (out == 0) { // yield FASTA
+                size_t ns = 0;
+                char **ss = spell(&tt, k, &ns);
+                char *b = rm_ext(infile);
+                if (ss) {
+                    wrt_fa(b, k, ss, ns);
+                    free_ss(ss, ns);
+                }
+            } else { // yield .str (possibly plus .ptr)
+                VV cc, pp;
+                init_vv(&cc); init_vv(&pp);
+
+                tt_to_cc_and_pp(&tt, km, &cc, &pp);
+
+                Rep r; init_rep(&r);
+                if (out == 1) {
+                    r = ptr(km, ka, &cc, &pp, k);
+                } else {
+                    r = rbp(km, ka, &cc, &pp, k);
+                }
+
+                u64 np = pp.size;
+                char *b = rm_ext(infile);
+                wrt(b, &r, k, 0, 9, out, np);
+
+                free_vv(&cc); free_vv(&pp);
+            }
+            free_vv(&tt); free_g(&g);
         }
 
-        free(ka); free_hm(&km); free_g(&g); free_vv(&tt);
+        free(ka); free_hm(&km); free(b); free_rep(&r);
         return 0;
     }
 }
