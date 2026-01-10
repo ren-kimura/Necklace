@@ -819,6 +819,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     Rep r; init_rep(&r);
     Strbld sb; init_strbld(&sb);
     u64 Np = pp->size;
+    u64 Nc = cc->size;
     
     // Setup Data Structures
     Link *links = NULL; // Map: Node ID -> List of Path IDs (children)
@@ -831,10 +832,15 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     }
     for(size_t i = 0; i < Np; i++) { parent[i] = INF; }
 
-    Hm *node2pid = NULL;
+    Hm *node2pid = NULL; // add Np to cycle id to distinguish paths and cycles
     for (u64 i = 0; i < Np; i++) {
         for (u64 j = 0; j < pp->vs[i].size; j++) {
             add_hm(&node2pid, pp->vs[i].data[j], i);
+        }
+    }
+    for (u64 i = 0; i < Nc; i++) {
+        for (u64 j = 0; j < cc->vs[i].size; j++) {
+            add_hm(&node2pid, cc->vs[i].data[j], Np + i);
         }
     }
 
@@ -859,6 +865,8 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
         }
     }
 
+    free_hm(&node2pid);
+
     size_t z = 0;
     printf("# of non-root open paths: %ld\n", Z);
 
@@ -873,7 +881,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     apnd_strbld(&sb, ","); // separator between open and closed necklaces
 
     // from closed paths
-    for (size_t i = 0; i < cc->size; i++) {
+    for (size_t i = 0; i < Nc; i++) {
         V *c = &cc->vs[i];
         if (c->size == 0) continue;
         
@@ -975,7 +983,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     }
 
     free(parent); free(vis); free_links(&links);
-    free(stack); free(in_stack); free_hm(&node2pid);
+    free(stack); free(in_stack);
 
     r.str = sb.str;
     r.arr = NULL;
