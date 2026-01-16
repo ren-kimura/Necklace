@@ -12,8 +12,12 @@ u64 rc(u64 h, int k);
 u64 can(u64 h, int k);
 void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di);
 u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di);
+void proc_sq_hs(const char *sq, int k, Hs **ks, int di);
+u64 extract_hs(const char* infile, int k, Hs **ks, int di);
 void disp_hm(Hm *hm, int k);
 u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd);
+u64 step_hs(Hs *ks, int k, u64 h, int c, bool is_fwd);
 u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool fromc, bool toc);
+u64 bstep_hs(Hs *ks, int k, u64 h, int c, bool is_fwd, bool fromc, bool toc);
 
 #endif // UTILS_H

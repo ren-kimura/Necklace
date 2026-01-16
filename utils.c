@@ -190,6 +190,97 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     return N; // number of k-mers
 }
 
+void proc_sq_hs(const char *sq, int k, Hs **ks, int di) {
+    u64 sq_len = (u64)strlen(sq);
+    if (sq_len < (u64)k) return;
+
+    u64 m = (1ULL << (2 * (k - 1))) - 1;
+    u64 j = next_pos(sq, 0, k);
+    
+    while (j != INF) {
+        char s[k + 1];
+        strncpy(s, sq + j, k);
+        s[k] = '\0';
+        u64 h = enc(s, k);
+        
+        if (di) {
+            add_hs(ks, can(h, k));
+        } else {
+            add_hs(ks, h);
+        }
+        
+        while (++j <= sq_len - k) {
+            char c = toupper(sq[j + k - 1]);
+            if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
+                h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
+                if (di) {
+                    add_hs(ks, can(h, k));
+                } else {
+                    add_hs(ks, h);
+                }
+            } else {
+                j = next_pos(sq, j, k);
+                goto nxt;
+            }
+        }
+        j = INF; 
+    nxt:;
+    }
+}
+
+u64 extract_hs(const char* infile, int k, Hs **ks, int di) {
+    FILE *fp = fopen(infile, "rb");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", infile);
+        exit(EXIT_FAILURE);
+    }
+    printf("file %s opened for sparsity analysis\n", infile);
+
+    struct stat st;
+    stat(infile, &st);
+    size_t fs = st.st_size;
+
+    char *ln = NULL;
+    size_t len = 0;
+    char *buff = NULL;
+    size_t buff_len = 0;
+    size_t buff_cap = 0;
+
+    while ((getline(&ln, &len, fp)) != -1) {
+        prog(ftell(fp), fs, "extracting k-mers into Hs");
+        if (ln[0] == '>') {
+            if (buff_len > 0) {
+                proc_sq_hs(buff, k, ks, di);
+            }
+            buff_len = 0;
+        } else {
+            ln[strcspn(ln, "\r\n")] = 0;
+            size_t ln_len = strlen(ln);
+            if (ln_len == 0) continue;
+            
+            if (buff_len + ln_len + 1 > buff_cap) {
+                size_t ncap = (buff_cap == 0) ? 256 : buff_cap * 2;
+                while (ncap < buff_len + ln_len + 1) ncap *= 2;
+                buff = realloc(buff, ncap);
+                if (!buff) { perror("realloc failed"); exit(EXIT_FAILURE); }
+                buff_cap = ncap;
+            }
+            memcpy(buff + buff_len, ln, ln_len);
+            buff_len += ln_len;
+            buff[buff_len] = '\0';
+        }
+    }
+    if (buff_len > 0) proc_sq_hs(buff, k, ks, di);
+
+    fin("extracting k-mers into Hs");
+    u64 N = (u64)HASH_COUNT(*ks);
+    printf("total unique k-mers = %ld\n", N);
+
+    free(ln); free(buff);
+    fclose(fp);
+    return N;
+}
+
 void disp_hm(Hm *hm, int k) {
     printf("key\t\tdec(key)\tval\n");
     printf("-----------------------------\n");
@@ -223,6 +314,24 @@ u64 step(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd) {
     return nid;
 }
 
+u64 step_hs(Hs *ks, int k, u64 h, int c, bool is_fwd) {
+    if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
+    if (is_fwd) {
+        u64 m = (1ULL << (2 * (k - 1))) - 1;
+        h = (h & m) << 2;
+        if      (c == 'C')  h |= 1;
+        else if (c == 'G')  h |= 2;
+        else if (c == 'T')  h |= 3;
+    } else {
+        h >>= 2;
+        if      (c == 'C')  h |= (1ULL << (2 * (k - 1)));
+        else if (c == 'G')  h |= (2ULL << (2 * (k - 1)));
+        else if (c == 'T')  h |= (3ULL << (2 * (k - 1)));
+    }
+
+    return find_hs(ks, h) ? h : INF;
+}
+
 u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool fromc, bool toc) {
     u64 h = ka[id]; // h is already canonical
     if (!fromc) h = rc(h, k); // take rc of h if starts from non-canonical
@@ -251,4 +360,30 @@ u64 bstep(Hm *km, const u64 *ka, const int k, u64 id, int c, bool is_fwd, bool f
         if ((ch == h) == toc) return nid; // not self-complement and arrived at the selected side of ch
     }
     return INF;
+}
+
+u64 bstep_hs(Hs *ks, int k, u64 h, int c, bool is_fwd, bool fromc, bool toc) {
+    if (!fromc) h = rc(h, k);
+    if (c != 'A' && c != 'C' && c != 'G' && c != 'T') return INF;
+
+    if (is_fwd) {
+        u64 m = (1ULL << (2 * (k - 1))) - 1;
+        h = (h & m) << 2;
+        if      (c == 'C')  h |= 1;
+        else if (c == 'G')  h |= 2;
+        else if (c == 'T')  h |= 3;
+    } else {
+        h >>= 2;
+        if      (c == 'C')  h |= (1ULL << (2 * (k - 1)));
+        else if (c == 'G')  h |= (2ULL << (2 * (k - 1)));
+        else if (c == 'T')  h |= (3ULL << (2 * (k - 1)));
+    }
+
+    u64 ch = can(h, k); // take can of h
+    if (!find_hs(ks, ch)) return INF;
+    
+    if (ch != rc(ch, k)) {
+        if ((ch == h) != toc) return INF;
+    }
+    return ch;
 }

@@ -8,6 +8,7 @@
 #include "utils.h"
 #include "cov.h"
 #include "out.h"
+#include "stat.h"
 #include "write.h"
 #include "veri.h"
 
@@ -15,7 +16,8 @@ static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
 	        "\tgenerate: %s -i [in.fa] -k [k] -d [d] -c [c] -o [o]\n"
-            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -o [0] -f [target.str]\n\n"
+            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -o [0] -f [target.str]\n"
+            "\tgraph sparsity: %s -m 2 -i [in.fa] -k [k] -d [d]\n\n"
             "Modes:\n"
             "\t-m MODE\t0:generate(default) 1:verify\n\n"
             "Options:\n"
@@ -25,7 +27,7 @@ static void usage(const char *s) {
             "\t-c COVER TYPE\t0:matching(under d=0) 1:linearscan 2:greedycover 3:greedydfs(under o=2)\n"
 	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
             "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
-	        s, s);
+	        s, s, s);
     exit(EXIT_FAILURE);
 }
 
@@ -73,7 +75,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 'm':
                 m = parse_int(optarg);
-                if (m != 0 && m != 1) usage(argv[0]);
+                if (m != 0 && m != 1 && m != 2) usage(argv[0]);
                 break;
             case 'f':
                 outfile = optarg;
@@ -82,12 +84,61 @@ int main(int argc, char *argv[]) {
                 usage(argv[0]);
 		}
 	}
-    if (m == 1) {
+    if (m == 1) { // verify
         if (!infile || !outfile ||  k == -1 || di == -1 || out == -1) {
             fprintf(stderr, "Error: provide -i -k -d -o -f\n");
             usage(argv[0]);
         }
         return veri(infile, outfile, k, di, out);
+    } else if (m == 2) { // graph stat
+        if (!infile || k == -1 || di == -1) {
+            fprintf(stderr, "Error: provide -i -k -d\n");
+            usage(argv[0]);
+        }
+        printf("sparsity analysis\n");
+        printf("infile = %s, k = %d, di = %s\n", infile, k, (di == 0) ? "uni" : "bi");
+
+        Hs *ks = NULL;
+        u64 N = extract_hs(infile, k, &ks, di);
+        if (N == 0) {
+            fprintf(stderr, "Error: no k-mers found\n");
+            return -1;
+        }
+
+        u64 M = 0; Hs *cur, *tmp; u64 z = 0;
+        
+        HASH_ITER (hh, ks, cur, tmp) {
+            prog(++z, N, "measuring sparsity");
+            u64 h = cur->key;
+
+            if (di == 0) {
+                for (int i = 0; i < 4; i++) {
+                    if (step_hs(ks, k, h, B[i], true) != INF) {
+                        M++;
+                    }
+                }
+            } else {
+                for (int from = 0; from < 2; from++) {
+                    for (int i = 0; i < 4; i++) {
+                        for (int to = 0; to < 2; to++) {
+                            if (bstep_hs(ks, k, h, B[i], true, from, to) != INF) {
+                                M++;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        fin("measuring sparsity");
+
+        printf("|V| (unique k-mers): %lu\n", N);
+        printf("|E| (total edges)  : %lu\n", M);
+        if (N > 0) {
+            printf("Sparsity (|E|/|V|) : %.4f\n", (double)M/N);
+        }
+
+        free_hs(&ks);
+        return 0;
     } else {
         if (!infile || k == -1 || di == -1 || cov == -1 || out == -1) {
             usage(argv[0]);
