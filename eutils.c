@@ -114,9 +114,17 @@ void etigs(Node **g, VV *tt, int k) {
     while (nue < ne) {
         Node *ns = NULL;
         HASH_ITER(hh, *g, s, tmp) {
-            if (s->o > 0) {
+            if (s->o > 0 && s->dm.size > 0) {
                 ns = s;
                 break;
+            }
+        }
+        if (!ns) {
+            HASH_ITER(hh, *g, s, tmp) {
+                if (s->o > 0) {
+                    ns = s;
+                    break;
+                }
             }
         }
         if (!ns) break; // visited all edges
@@ -242,7 +250,7 @@ void tt_to_cc_and_pp(VV *tt, Hm *km, VV *cc, VV *pp) {
         V p; init_v(&p);
         bool has_dummy = false;
 
-        for (size_t j = 0; j < t->size; j++) {
+        for (size_t j = (t->data[0] == INF ? 1 : 0); j < t->size; j++) {
             u64 edge = t->data[j];
 
             if (edge != INF) {
