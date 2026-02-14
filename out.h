@@ -55,6 +55,20 @@ int is_empty_fcst(FcSt *s);
 void push_fcst(FcSt *s, u64 nid, int side, bool wrn, int b_idx, int nc);
 void pop_fcst(FcSt *s);
 
+typedef struct Bl {
+    bool is_main;
+    struct Bl *next;
+} Bl;
+
+typedef struct {
+    Bl *top;
+} BlSt;
+
+void init_blst(BlSt *s);
+int is_empty_blst(BlSt *s);
+void push_blst(BlSt *s, bool is_main);
+void pop_blst(BlSt *s);
+
 typedef struct {
     char* str;
     size_t len;
@@ -86,6 +100,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 Rep gdfs(Hm *km, u64 *ka, int k);
+Rep gdfs_close(Hm *km, u64 *ka, int k);
 Rep bgdfs(Hm *km, u64 *ka, int k);
 
 Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);

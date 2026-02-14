@@ -101,6 +101,36 @@ void pop_fcst(FcSt *s) {
     free(tmp);
 }
 
+//---BlSt---
+void init_blst(BlSt *s) {
+    s->top = NULL;
+}
+
+int is_empty_blst(BlSt *s) {
+    return (s->top == NULL);
+}
+
+void push_blst(BlSt *s, bool is_main) {
+    Bl *nbl = (Bl*)malloc(sizeof(Bl));
+    if (nbl == NULL) {
+        fprintf(stderr, "Error: malloc failed for new Bool element\n");
+        exit(EXIT_FAILURE);
+    }
+    nbl->is_main = is_main;
+    nbl->next = s->top;
+    s->top = nbl;
+}
+
+void pop_blst(BlSt *s) {
+    if (is_empty_blst(s)) {
+        fprintf(stderr, "Error: pop_blst called on an empty stack\n");
+        return;
+    }
+    Bl *tmp = s->top;
+    s->top = s->top->next;
+    free(tmp);
+}
+
 // --- Helper Struct for rbp (Necklace Refined) ---
 typedef struct Link {
     u64 u_id;      // Node ID (Parent)
@@ -1041,6 +1071,70 @@ static void subt_gdfs(u64 tu, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
     }
 }
 
+static bool subt_gdfs_close(u64 tu, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
+    vis[tu] = true;
+    FcSt t; init_fcst(&t); BlSt b; init_blst(&b);
+    push_fcst(&t, tu, 0, false, 0, 0);
+    push_blst(&b, true);
+
+    bool main_is_cycle = false;
+
+    while (!is_empty_fcst(&t)) {
+        Fc* f = t.top; 
+        bool is_main = b.top->is_main;
+        u64 h = ka[f->nid];
+
+        if (!f->wrn) {
+            if (f->next == NULL) {
+                char ts[k + 1];
+                dec(h, k, ts);
+                apnd_strbld(s, ts);
+            } else {
+                if (f->nc > 0) apnd_strbld(s, "(");
+                apnd_strbld(s, dec_base(h % 4));
+            }
+            f->wrn = true;
+        }
+
+        if (f->b_idx > 0) {
+            pop_fcst(&t);
+            pop_blst(&b);
+            if (f->next != NULL && f->nc > 0) apnd_strbld(s, ")");
+            continue;
+        }
+
+        u64 chldn[4];
+        int nc = 0;
+        bool cycle_found_now = false;
+
+        for (uint8_t i = 0; i < 4; i++) {
+            u64 nxt = step(km, ka, k, f->nid, B[i], 1);
+            if (nxt == INF) continue;
+
+            if (is_main && nxt == tu) {
+                main_is_cycle = true;
+                cycle_found_now = true;
+                break; 
+            }
+
+            if (vis[nxt]) continue;
+            chldn[nc++] = nxt;
+        }
+
+        f->b_idx = 4;
+        if (cycle_found_now) continue;
+
+        for (int i = 0; i < nc; i++) {
+            vis[chldn[i]] = true; 
+            bool next_is_main = (is_main && i == 0);
+            push_fcst(&t, chldn[i], 0, false, 0, i);
+            push_blst(&b, next_is_main);
+        }
+    }
+
+    return main_is_cycle;
+}
+
 Rep gdfs(Hm *km, u64 *ka, int k) {
     Rep r; init_rep(&r);
     Strbld sb; init_strbld(&sb);
@@ -1069,6 +1163,52 @@ Rep gdfs(Hm *km, u64 *ka, int k) {
     }
 
     r.str = sb.str;
+    return r;
+}
+
+Rep gdfs_close(Hm *km, u64 *ka, int k) {
+    Rep r; init_rep(&r);
+    Strbld sb_p; init_strbld(&sb_p);
+    Strbld sb_c; init_strbld(&sb_c);
+
+    u64 N = HASH_COUNT(km);
+    bool* vis = (bool*)calloc(N, sizeof(bool));
+    if (!vis) { fprintf(stderr, "Error: calloc failed for vis\n"); exit(EXIT_FAILURE); }
+
+    for (u64 u = 0; u < N; u++) {
+        prog(u, N, "greedy BP dfs");
+        if (vis[u]) continue;
+
+        Strbld sb_tmp; init_strbld(&sb_tmp);
+        bool is_cycle = subt_gdfs_close(u, &sb_tmp, km, ka, k, vis);
+        if (is_cycle) {
+            apnd_strbld(&sb_c, sb_tmp.str + (k - 1));
+        } else {
+            apnd_strbld(&sb_p, sb_tmp.str);
+        }
+        apnd_strbld(&sb_p, ",");
+        free(sb_tmp.str);
+    }
+
+    Strbld final_sb; init_strbld(&final_sb);
+    apnd_strbld(&final_sb, sb_p.str);
+    apnd_strbld(&final_sb, ",");
+    apnd_strbld(&final_sb, sb_c.str);
+
+    fin("greedy BP dfs");
+    free(vis);
+    free(sb_p.str); free(sb_c.str);
+
+    if (final_sb.len > 0 && final_sb.str[final_sb.len - 1] == ',') {
+        final_sb.len--;
+        final_sb.str[final_sb.len] = '\0';
+    }
+    if (final_sb.len > 0 && final_sb.str[final_sb.len - 1] == ',') {
+        final_sb.len--;
+        final_sb.str[final_sb.len] = '\0';
+    }
+
+    r.str = final_sb.str;
     return r;
 }
 

@@ -197,7 +197,7 @@ int main(int argc, char *argv[]) {
                 r = ptr(km, ka, &cc, &pp, k);
             } else if (out == 2) { // bp
                 if (cov == 3) {
-                    r = gdfs(km, ka, k);
+                    r = gdfs_close(km, ka, k);
                 } else {
                     // r = bp(km, ka, &cc, &pp, k);
                     r = rbp(km, ka, &cc, &pp, k);
