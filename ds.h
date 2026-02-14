@@ -104,6 +104,7 @@ typedef struct {
 
 int add_hm(Hm **m, u64 k, u64 v);
 u64 find_hm(Hm *m, u64 k);
+void update_branch_hm(Hm **hm, u64 parent_key, int j);
 void del_hm(Hm **m, u64 k);
 void free_hm(Hm **m);
 

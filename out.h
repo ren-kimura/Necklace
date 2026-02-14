@@ -101,6 +101,9 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 Rep gdfs(Hm *km, u64 *ka, int k);
 Rep gdfs_close(Hm *km, u64 *ka, int k);
+
+Rep full_greedy(Hm *km, u64 *ka, int k);
+
 Rep bgdfs(Hm *km, u64 *ka, int k);
 
 Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);

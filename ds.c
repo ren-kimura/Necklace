@@ -277,6 +277,19 @@ u64 find_hm(Hm *hm, u64 k) {
     return e->val; 
 }
 
+void update_branch_hm(Hm **hm, u64 parent_key, int j) {
+    Hm *e;
+    HASH_FIND(hh, *hm, &parent_key, sizeof(parent_key), e);
+    if (!e) {
+        e = malloc(sizeof *e);
+        e->key = parent_key;
+        e->val = (1ULL << j); // the first branch
+        HASH_ADD(hh, *hm, key, sizeof(parent_key), e);
+    } else {
+        e->val |= (1ULL << j); // secondary branches
+    }
+}
+
 void del_hm(Hm **hm, u64 k) {
     Hm *e;
     HASH_FIND(hh, *hm, &k, sizeof(k), e);

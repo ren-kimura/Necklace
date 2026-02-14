@@ -2,7 +2,7 @@
 #include "stat.h"
 #include <string.h>
 
-//---FSt---
+//---frame stack---
 void init_fst(FSt *s) {
     s->top = NULL;
 }
@@ -34,7 +34,7 @@ void pop_fst(FSt *s) {
     free(tmp);
 }
 
-//---FbSt---
+//---frame stack---
 void init_fbst(FbSt *s) {
     s->top = NULL;
 }
@@ -67,7 +67,7 @@ void pop_fbst(FbSt *s) {
     free(tmp);
 }
 
-//---FcSt---
+//---frame stack---
 void init_fcst(FcSt *s) {
     s->top = NULL;
 }
@@ -101,7 +101,7 @@ void pop_fcst(FcSt *s) {
     free(tmp);
 }
 
-//---BlSt---
+//---bool stack---
 void init_blst(BlSt *s) {
     s->top = NULL;
 }
@@ -131,7 +131,7 @@ void pop_blst(BlSt *s) {
     free(tmp);
 }
 
-// --- Helper Struct for rbp (Necklace Refined) ---
+// --- incoming and outgoing edges of nodes in rbp ---
 typedef struct Link {
     u64 u_id;      // Node ID (Parent)
     V p_idxs;      // List of Path IDs starting from this node
@@ -233,42 +233,6 @@ Rep flat(u64 *ka, VV *cc, VV *pp, int k) {
         r.str[fl - 1] = '\0';
     }
      if (fl > 1 && r.str[fl - 2] == ',' && r.str[fl - 1] == '\0') {
-        r.str[fl - 2] = '\0';
-    }
-    return r;
-}
-
-Rep flat_w(W *w) {
-    Rep r; init_rep(&r);
-    Strbld sb; init_strbld(&sb);
-
-    size_t ncc = 0;
-    if (w->cc) for (ncc = 0; w->cc[ncc] != NULL; ncc++);
-    size_t npp = 0;
-    if (w->pp) for (npp = 0; w->pp[npp] != NULL; npp++);
-
-    printf("# of (cycles, paths) = (%ld, %ld)\n", ncc, npp);
-
-    if (w->cc) {
-        for (size_t i = 0; w->cc[i] != NULL; i++) {
-            apnd_strbld(&sb, w->cc[i]);
-            apnd_strbld(&sb, ",");
-        }
-    }
-    apnd_strbld(&sb, ",");
-    if (w->pp) {
-        for (size_t i = 0; w->pp[i] != NULL; i++) {
-            apnd_strbld(&sb, w->pp[i]);
-            apnd_strbld(&sb, ",");
-        }
-    }
-    r.str = sb.str;
-    size_t fl = sb.len;
-
-    if (fl > 0 && r.str[fl - 1] == ',') {
-        r.str[fl - 1] = '\0';
-    }
-    if (fl > 1 && r.str[fl - 2] == ',' && r.str[fl - 1] == '\0') {
         r.str[fl - 2] = '\0';
     }
     return r;
@@ -613,7 +577,7 @@ Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     return r;
 }
 
-char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi) {
+char* subr_bp(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi) {
     Strbld sb; init_strbld(&sb);
     FbSt s; init_fbst(&s);
 
@@ -692,7 +656,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     HASH_ITER(hh, rp, s, tmp) { // dfs from root paths
         char t[k]; // buffer for dec of head
         dec(ka[pp->vs[s->key].data[0]] >> 2, k - 1, t);
-        char* ss = subt(km, ka, hd, k, pp, vis, hi, s->key);
+        char* ss = subr_bp(km, ka, hd, k, pp, vis, hi, s->key);
         apnd_strbld(&sb, t);
         apnd_strbld(&sb, ss);
         apnd_strbld(&sb, ",");
@@ -710,7 +674,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 u64 ni = find_hm(hd, nxt);
                 if (ni == INF) continue;
                 if (vis[ni]) continue;
-                char* ss = subt(km, ka, hd, k, pp, vis, hi, ni);
+                char* ss = subr_bp(km, ka, hd, k, pp, vis, hi, ni);
                 apnd_strbld(&sb, "(");
                 apnd_strbld(&sb, ss);
                 apnd_strbld(&sb, ")");
@@ -764,7 +728,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                         u64 ni = find_hm(hd, nxt);
                         if (ni == INF) continue;
                         if (vis[ni]) continue;
-                        char* ss = subt(km, ka, hd, k, pp, vis, hi, ni);
+                        char* ss = subr_bp(km, ka, hd, k, pp, vis, hi, ni);
                         apnd_strbld(&sb, "(");
                         apnd_strbld(&sb, ss);
                         apnd_strbld(&sb, ")");
@@ -804,7 +768,7 @@ Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 
 // Recursive function to write path and its children
 // is_head_full: if true, print the full k-mer of the first node. Otherwise print only the last char.
-void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full, u64 *parent, size_t *z, size_t Z) {
+void subr_rbp(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full, u64 *parent, size_t *z, size_t Z) {
     if (vis[pid]) return;
     vis[pid] = true;
     if (parent[pid] != INF) {
@@ -837,7 +801,7 @@ void write_refined_dfs(u64 pid, VV *pp, Link **links, bool *vis, Strbld *sb, u64
                     // Their head is already represented by u's suffix. 
                     // But in standard notation, if we branch, we usually continue the sequence.
                     // Here, child starts with successor of u. We print it incrementally.
-                    write_refined_dfs(child_pid, pp, links, vis, sb, ka, k, false, parent, z, Z);
+                    subr_rbp(child_pid, pp, links, vis, sb, ka, k, false, parent, z, Z);
                     apnd_strbld(sb, ")");
                 }
             }
@@ -903,7 +867,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     // from root open paths
     for (size_t i = 0; i < Np; i++) {
         if (parent[i] == INF && !vis[i]) {
-            write_refined_dfs(i, pp, &links, vis, &sb, ka, k, true, parent, &z, Z);
+            subr_rbp(i, pp, &links, vis, &sb, ka, k, true, parent, &z, Z);
             apnd_strbld(&sb, ",");
         }
     }
@@ -927,7 +891,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                     u64 cpid = l->p_idxs.data[x];
                     if (!vis[cpid]) {
                         apnd_strbld(&sb, "(");
-                        write_refined_dfs(cpid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
+                        subr_rbp(cpid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
                         apnd_strbld(&sb, ")");
                     }
                 }
@@ -985,7 +949,7 @@ Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                                 to_next = true;
                             } else if (!vis[child_pid]) {
                                 apnd_strbld(&sb, "(");
-                                write_refined_dfs(child_pid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
+                                subr_rbp(child_pid, pp, &links, vis, &sb, ka, k, false, parent, &z, Z);
                                 apnd_strbld(&sb, ")");
                             }
                         }
@@ -1209,6 +1173,98 @@ Rep gdfs_close(Hm *km, u64 *ka, int k) {
     }
 
     r.str = final_sb.str;
+    return r;
+}
+
+void subr_full_greedy(u64 u, Hm **child, bool *vis, Strbld *sb, u64 *ka, int k, bool is_head_full, u64 *parent, size_t *n, size_t N) {
+    return;
+}
+
+Rep full_greedy(Hm *km, u64 *ka, int k) {
+    size_t N = HASH_COUNT(km);
+    Rep r; init_rep(&r);
+    Strbld sb; init_strbld(&sb);
+    Hm *child = NULL; // map: node id -> integer 0~15 representing branches
+    u64 *parent = (u64*)malloc(N * sizeof(u64));
+    bool *vis = (bool*)calloc(N, sizeof(bool));
+
+    if (!parent || !vis) exit(EXIT_FAILURE);
+    for (size_t i = 0; i < N; i++) { parent[i] = INF; }
+
+    for (size_t i = 0; i < N; i++) {
+        for (int j = 0; j < 4; j++) {
+            u64 pred = step(km, ka, k, i, B[j], 0); // 0: backward
+            if (pred != INF) {
+                parent[i] = pred;
+                update_branch_hm(&km, pred, j);
+                break;
+            }
+        }
+    }
+
+    size_t n = 0;
+
+    // from root nodes
+    for (size_t i = 0; i < N; i++) {
+        if (parent[i] == INF && !vis[i]) {
+            subr_full_greedy(i, &child, vis, &sb, ka, k, true, parent, &n, N);
+            apnd_strbld(&sb, ",");
+        }
+    }
+    apnd_strbld(&sb, ",");
+
+    // detect cycle and find necklace
+    for (size_t i = 0; i < N; i++) {
+        if (vis[i]) continue;
+        St s; init_st(&s); // for backtracking
+        Hs *in_s = NULL; // for backtracking
+        u64 ti = i; size_t z = 0;
+        while (ti != INF && !vis[ti] && !find_hs(in_s, ti)) {
+            add_hs(&in_s, ti);
+            push(&s, ti);
+            ti = parent[ti];
+            z++;
+        }
+        if (ti != INF && find_hs(in_s, ti)) {
+            u64 *c_ids = (u64*)malloc(z * sizeof(u64));
+            for (size_t j = 0; j < z; j++) c_ids[j] = pop(&s);
+
+            // build closed necklace
+            for (size_t j = 0; j < z; j++) {
+                u64 id = c_ids[j];
+                u64 nid = c_ids[(j + 1) % z];
+                vis[id] = true;
+                apnd_strbld(&sb, dec_base(ka[id] % 4));
+                prog(n++, N, "finding necklace");
+
+                for (int b = 0; b < 4; b++) {
+                    if (find_hm(child, id) & (1 << b)) {
+                        u64 cid = step(km, ka, k, id, B[b], 1);
+                        if (cid == nid) {
+                            continue;
+                        } else if (!vis[cid]) {
+                            apnd_strbld(&sb, "(");
+                            subr_full_greedy(cid, &child, vis, &sb, ka, k, false, parent, &n, N);
+                            apnd_strbld(&sb, ")");
+                        }
+                    }
+                }
+            }
+            apnd_strbld(&sb, ",");
+            free(c_ids);
+        }
+    }
+    fin("finding necklace");
+
+    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
+        sb.len--;
+        sb.str[sb.len] = '\0';
+    }
+
+    free(parent); free(vis); free_hm(&child);
+    
+    r.str = sb.str;
+    r.arr = NULL;
     return r;
 }
 
