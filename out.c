@@ -941,15 +941,25 @@ void subr_full_greedy(u64 u, Hm *child, bool *vis, Strbld *sb, Hm *km, u64 *ka, 
 
     u64 branches = find_hm(child, u);
     if (branches != INF) {
+        u64 children[4];
+        int child_count = 0;
+
         for (int b = 0; b < 4; b++) {
             if (branches & (1 << b)) {
-                u64 cid = step(km, ka, k, u, B[b], 1);
+                u64 cid = step (km, ka, k, u, B[b], 1);
                 if (cid != INF && !vis[cid]) {
-                    apnd_strbld(sb, "(");
-                    subr_full_greedy(cid, child, vis, sb, km, ka, k, false, parent, n, N);
-                    apnd_strbld(sb, ")");
+                    children[child_count++] = cid;
                 }
             }
+        }
+
+        if (child_count > 0) {
+            for (int i = 0; i < child_count - 1; i++) {
+                apnd_strbld(sb, "(");
+                subr_full_greedy(children[i], child, vis, sb, km, ka, k, false, parent, n, N);
+                apnd_strbld(sb, ")");
+            }
+            subr_full_greedy(children[child_count - 1], child, vis, sb, km, ka, k, false, parent, n, N);
         }
     }
 }
@@ -970,7 +980,7 @@ char* full_greedy(Hm *km, u64 *ka, int k) {
             u64 pred = step(km, ka, k, i, B[j], 0); // 0: backward
             if (pred != INF) {
                 parent[i] = pred;
-                update_branch_hm(&child, pred, j);
+                update_branch_hm(&child, pred, ka[i] % 4);
                 break;
             }
         }
@@ -1003,17 +1013,11 @@ char* full_greedy(Hm *km, u64 *ka, int k) {
         if (ti != INF && find_hs(in_s, ti)) {
             V c; init_v(&c);
             u64 cur;
-
-            V tmp; init_v(&tmp);
-            while (!is_empty_st(&s)) {
-                cur = pop(&s);
-                push_back(&tmp, cur);
-            }
             
-            for (int j = tmp.size - 1; j >= 0; j--) {
-                push_back(&c, tmp.data[j]);
-            }
-            free_v(&tmp);
+            do {
+                cur = pop(&s);
+                push_back(&c, cur);
+            } while (cur != ti && !is_empty_st(&s));
 
             // build closed necklace
             for (size_t j = 0; j < c.size; j++) {
