@@ -2,19 +2,15 @@ CC = gcc
 CFLAGS = -Wall -Wextra -O2 -g
 LDFLAGS = -lm
 
-TARGETS = nkl eu
+TARGETS = nkl
 
-BASE_OBJS = ds.o utils.o cov.o stat.o write.o veri.o out.o
+BASE_OBJS = ds.o utils.o cov.o stat.o write.o veri.o out.o eutils.o
 
 NKL_OBJS = nkl.o $(BASE_OBJS)
-EU_OBJS = eu.o $(BASE_OBJS) eutils.o
 
 all: $(TARGETS)
 
 nkl: $(NKL_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-eu: $(EU_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c

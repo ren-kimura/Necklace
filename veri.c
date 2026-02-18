@@ -4,12 +4,9 @@
 #include "veri.h"
 #include "utils.h"
 
-static bool proc_rm(const char* s, int k, int di, Hs** ks);
-static bool fveri(const char* cont, int k, int di, Hs** ks);
-
-static bool proc_rm(const char* s, int k, int di, Hs** ks) {
+static bool proc_rm(const char* s, int k, bool u_flg, Hs** ks) {
     u64 h = enc(s, k);
-    if (di) h = can(h, k);
+    if (!u_flg) h = can(h, k);
 
     if (find_hs(*ks, h)) {
         del_hs(ks, h);
@@ -22,7 +19,7 @@ static bool proc_rm(const char* s, int k, int di, Hs** ks) {
     }
 }
 
-static bool fveri(const char* ss, int k, int di, Hs** ks) {
+static bool fveri(const char* ss, int k, bool u_flg, Hs** ks) {
     char* tt = strdup(ss);
     if (!tt) return false;
 
@@ -50,7 +47,7 @@ static bool fveri(const char* ss, int k, int di, Hs** ks) {
             if (l > 0) {
                 for (size_t i = 0; i < l; ++i) {
                     for (int j = 0; j < k; ++j) buf[j] = to[(i + j) % l];
-                    if (!proc_rm(buf, k, di, ks)) {
+                    if (!proc_rm(buf, k, u_flg, ks)) {
                         free(tt);
                         return false;
                     }
@@ -68,7 +65,7 @@ static bool fveri(const char* ss, int k, int di, Hs** ks) {
             if (l >= (size_t)k) {
                 for (size_t i = 0; i <= l - k; ++i) {
                     strncpy(buf, to + i, k);
-                    if (!proc_rm(buf, k, di, ks)) {
+                    if (!proc_rm(buf, k, u_flg, ks)) {
                         free(tt);
                         return false;
                     }
@@ -82,7 +79,7 @@ static bool fveri(const char* ss, int k, int di, Hs** ks) {
     return true;
 }
 
-static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
+static bool proc_bp_to(const char* to, int k, bool u_flg, Hs** ks, bool closed) {
     size_t l = strlen(to);
     if (closed) {
         l += (k - 1);
@@ -117,7 +114,7 @@ static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
     strncpy(buf, toc, k); buf[k] = '\0';
     u64 h = enc(buf, k);
 
-    if (!proc_rm(buf, k, di, ks)) { // handle the very first k-mer
+    if (!proc_rm(buf, k, u_flg, ks)) { // handle the very first k-mer
         free(toc); return false;
     }
     u64 m = (1ULL << (2 * (k - 1))) - 1; // mask
@@ -141,7 +138,7 @@ static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
             }
             h = (h & m) << 2 | g;
             dec(h, k, buf);
-            if (!proc_rm(buf, k, di, ks)) {
+            if (!proc_rm(buf, k, u_flg, ks)) {
                 free(toc); return false;
             }
         }
@@ -151,7 +148,7 @@ static bool proc_bp_to(const char* to, int k, int di, Hs** ks, bool closed) {
     return true;
 }
 
-static bool bveri(const char* ss, int k, int di, Hs** ks) {
+static bool bveri(const char* ss, int k, bool u_flg, Hs** ks) {
     char* tt = strdup(ss); // Duplicate string for strtok
     if (!tt) {
         perror("strdup failed in bveri");
@@ -184,7 +181,7 @@ static bool bveri(const char* ss, int k, int di, Hs** ks) {
         char* to = strtok(op, ",");
         while (to != NULL) {
             if (*to != '\0') {
-                 if (!proc_bp_to(to, k, di, ks, false)) { // closed = false
+                 if (!proc_bp_to(to, k, u_flg, ks, false)) { // closed = false
                     vf = false;
                     goto clean;
                  }
@@ -198,7 +195,7 @@ static bool bveri(const char* ss, int k, int di, Hs** ks) {
         char* to = strtok(cp, ",");
         while (to != NULL) {
              if (*to != '\0') {
-                 if (!proc_bp_to(to, k, di, ks, true)) { // closed = true
+                 if (!proc_bp_to(to, k, u_flg, ks, true)) { // closed = true
                     vf = false;
                     goto clean;
                  }
@@ -212,14 +209,14 @@ clean:
     return vf;
 }
 
-int veri(const char* of, const char* tf, int k, int di, int out) {
+int veri(const char* of, const char* tf, int k, bool u_flg, bool p_flg) {
     fprintf(stdout, "verification mode\n");
     fprintf(stdout, "original file: %s\n", of);
     fprintf(stdout, "target file: %s\n", tf);
     fprintf(stdout, "\n[Step 1/3] extracting k-mers from original file\n");
     Hm *km = NULL;
     u64 *ka = NULL;
-    u64 no = extract(of, k, &km, &ka, di);
+    u64 no = extract(of, k, &km, &ka, u_flg);
     Hs *ks = NULL;
     Hm *s, *tmp;
     HASH_ITER(hh, km, s, tmp) { add_hs(&ks, s->key); }
@@ -250,11 +247,10 @@ int veri(const char* of, const char* tf, int k, int di, int out) {
         sc[fsize - 1] = '\0';
     }
     bool z = false;
-    switch (out) {
-        case 0: z = fveri(sc, k, di, &ks); break;
-        case 1:
-        case 2: z = bveri(sc, k, di, &ks); break;
-        default: fprintf(stderr, "veri for out=%d is not supported\n", out); break;
+    if (p_flg) {
+        z = bveri(sc, k, u_flg, &ks);
+    } else {
+        z = fveri(sc, k, u_flg, &ks);
     }
     free(sc);
     if (!z) { free_hs(&ks); return -1; }
@@ -279,7 +275,7 @@ int veri(const char* of, const char* tf, int k, int di, int out) {
     return fz ? 0 : -1;
 }
 
-int veri_fa(const char *of, const char *tf, int k, int di) {
+int veri_fa(const char *of, const char *tf, int k, bool u_flg) {
     fprintf(stdout, "verification mode\n");
     fprintf(stdout, "original file: %s\n", of);
     fprintf(stdout, "target file: %s\n", tf);
@@ -287,7 +283,7 @@ int veri_fa(const char *of, const char *tf, int k, int di) {
     fprintf(stdout, "\n[Step 1/3] extracting k-mers from original file\n");
     Hm *km = NULL;
     u64 *ka = NULL;
-    u64 no1 = extract(of, k, &km, &ka, di);
+    u64 no1 = extract(of, k, &km, &ka, u_flg);
     Hs *ks = NULL;
     Hm *s, *tmp;
     HASH_ITER(hh, km, s, tmp) { add_hs(&ks, s->key); }
@@ -297,7 +293,7 @@ int veri_fa(const char *of, const char *tf, int k, int di) {
     fprintf(stdout, "\n[Step 2/3] reconstructing k-mers from target file\n");
     km = NULL;
     ka = NULL;
-    u64 no2 = extract(tf, k, &km, &ka, di);
+    u64 no2 = extract(tf, k, &km, &ka, u_flg);
     fprintf(stdout, "%ld k-mers in %s\n", no2, tf);
 
     fprintf(stdout, "\n[Step 3/3] final check\n");

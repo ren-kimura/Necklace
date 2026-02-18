@@ -6,6 +6,7 @@
 #include <errno.h>
 #include "ds.h"
 #include "utils.h"
+#include "eutils.h"
 #include "cov.h"
 #include "out.h"
 #include "stat.h"
@@ -15,18 +16,17 @@
 static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
-	        "\tgenerate: %s -i [in.fa] -k [k] -d [d] -c [c] -o [o]\n"
-            "\tverify:   %s -m 1 -i [in.fa] -k [k] -d [d] -o [0] -f [target.str]\n"
-            "\tgraph sparsity: %s -m 2 -i [in.fa] -k [k] -d [d]\n\n"
-            "Modes:\n"
-            "\t-m MODE\t0:generate(default) 1:verify\n\n"
-            "Options:\n"
+	        "\tgenerate: %s -i [in.fa] -k [k] -a [a] (-p) (-u)\n"
+            "\tverify:   %s -i [in.fa] -k [k] (-p) (-u) -v [target.str]\n"
+            "\tgraph sparsity: %s -i [in.fa] -k [k] (-u) -s\n\n"
 	        "\t-i FILE\t\tinput FASTA file\n"
-	        "\t-k INT\t\tk-mer length (>=2 && <=31)\n"
-            "\t-d GRAPH TYPE\t0:unidirected 1:bidirected\n"
-            "\t-c COVER TYPE\t0:matching(under d=0) 1:linearscan 2:greedycover 3:greedydfs(under o=2)\n"
-	        "\t-o OPTION\t0:flat 1:pointer 2:bp\n"
-            "\t-f TARGET FILE\t target file of verification (will replace .str with .arr when o ==1)\n",
+            "\t-o FILE\t\toutput str file (optional)\n"
+	        "\t-k INT\t\tk-mer length (1 < k < 32)\n"
+            "\t-a ALGORITHM\teu:Eulertigs (fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)\n"
+            "\t-p parenthesis representation (fg and gb are forced to have this option)"
+            "\t-u distinguish a k-mer and its reverse complement\n\n"
+            "\t-v VERIFY\t specify target file\n"
+            "\t-s measure graph sparsity\n",
 	        s, s, s);
     exit(EXIT_FAILURE);
 }
@@ -41,65 +41,61 @@ static int parse_int(const char *s) {
 
 int main(int argc, char *argv[]) {
     const char *infile = NULL;
-    const char *outfile = NULL;
-    int k, di, cov, out, opt;
-    k = di = cov = out = -1;
-    int m = 0;
+    const char *target_file = NULL;
+    char *outfile = NULL;
+    const char *algo = "eu"; // default
+    int k = -1;
+    bool p_flg = false, u_flg = false, s_flg = false;
+    int opt;
 
-	while ((opt = getopt(argc, argv, "i:k:d:c:o:m:f:")) != -1) {
+	while ((opt = getopt(argc, argv, "i:o:k:a:puv:s")) != -1) {
 	    switch (opt) {
-		    case 'i':
-			    if (infile) usage(argv[0]);
-                infile = optarg;
-                break;
+		    case 'i': infile = optarg; break;
             case 'k':
-                if (k != -1) usage(argv[0]);
                 k = parse_int(optarg);
                 if (k < 2 || k > 31) usage(argv[0]);
                 break;
-            case 'd':
-                if (di != -1) usage(argv[0]);
-                di = parse_int(optarg);
-                if (di != 0 && di != 1) usage(argv[0]);
-                break;
-            case 'c':
-                if (cov != -1) usage(argv[0]);
-                cov = parse_int(optarg);
-                if (cov != 0 && cov != 1 && cov != 2 && cov != 3) usage(argv[0]);
-                break;
-            case 'o':
-                if (out != -1) usage(argv[0]);
-                out = parse_int(optarg);
-                if (out != 0 && out != 1 && out != 2)
-                    usage(argv[0]);
-                break;
-            case 'm':
-                m = parse_int(optarg);
-                if (m != 0 && m != 1 && m != 2) usage(argv[0]);
-                break;
-            case 'f':
-                outfile = optarg;
-                break;
-            default:
-                usage(argv[0]);
+            case 'a': algo = optarg; break;
+            case 'p': p_flg = true; break;
+            case 'u': u_flg = true; break;
+            case 'v': target_file = optarg; break;
+            case 's': s_flg = true; break;
+            case 'o': outfile = strdup(optarg); break;
+            default: usage(argv[0]);
 		}
 	}
-    if (m == 1) { // verify
-        if (!infile || !outfile ||  k == -1 || di == -1 || out == -1) {
-            fprintf(stderr, "Error: provide -i -k -d -o -f\n");
-            usage(argv[0]);
+
+    if (!infile || k == -1) usage(argv[0]);
+
+    if (outfile == NULL) {
+        // infile = "path/to/c.fa", k = 11 -> "c_11.str"
+        char *base = rm_ext(infile);
+        size_t out_len = strlen(base) + 12;
+        outfile = (char *)malloc(out_len);
+        if (!outfile) { perror("malloc"); exit(EXIT_FAILURE); }
+
+        sprintf(outfile, "%s_%d.str", base, k);
+        free(base);
+    }
+
+    if (strcmp(algo, "fg") == 0 || strcmp(algo, "gb") == 0) {
+        if (p_flg == false) {
+            fprintf(stderr, "Warning: this algorithm requires p_flg to be true. Overwritten\n");
+            p_flg = true;
         }
-        return veri(infile, outfile, k, di, out);
-    } else if (m == 2) { // graph stat
-        if (!infile || k == -1 || di == -1) {
-            fprintf(stderr, "Error: provide -i -k -d\n");
-            usage(argv[0]);
-        }
+    }
+
+    if (target_file) { // verify
+        if (!infile || !target_file ||  k == -1) usage(argv[0]);
+        if (strcmp(algo, "eu") == 0 && u_flg == false && p_flg == false) return veri_fa(infile, target_file, k, u_flg);
+        return veri(infile, target_file, k, u_flg, p_flg);
+    } else if (s_flg) { // graph stat
+        if (!infile || k == -1) usage(argv[0]);
         printf("sparsity analysis\n");
-        printf("infile = %s, k = %d, di = %s\n", infile, k, (di == 0) ? "uni" : "bi");
+        printf("infile = %s, k = %d, %s\n", infile, k, u_flg ? "uni-directional" : "bi-directional");
 
         Hs *ks = NULL;
-        u64 N = extract_hs(infile, k, &ks, di);
+        u64 N = extract_hs(infile, k, &ks, u_flg);
         if (N == 0) {
             fprintf(stderr, "Error: no k-mers found\n");
             return -1;
@@ -111,7 +107,7 @@ int main(int argc, char *argv[]) {
             prog(++z, N, "measuring sparsity");
             u64 h = cur->key;
 
-            if (di == 0) {
+            if (u_flg) {
                 for (int i = 0; i < 4; i++) {
                     if (step_hs(ks, k, h, B[i], true) != INF) {
                         M++;
@@ -138,125 +134,92 @@ int main(int argc, char *argv[]) {
         }
 
         free_hs(&ks);
-        return 0;
     } else {
-        if (!infile || k == -1 || di == -1 || cov == -1 || out == -1) {
-            usage(argv[0]);
-        }
+        if (!infile || k == -1) usage(argv[0]);
 
         printf("infile = %s\n", infile);
         printf("k = %d\n", k);
-        printf("di = %s\n", (di == 0) ? "uni" : "bi");
-        printf("cov = %s\n", (cov == 0) ? "matching" : (cov == 1) ? "linearscan" : (cov == 2) ? "greedycover" : "greedydfs");
-        printf("out = %s\n", (out == 0) ? "flat" : (out == 1) ? "pointer" : "bp");
+        printf("algorithm = %s\n", algo);
+        printf("%s\n", u_flg ? "uni-directional" : "bi-directional");
+        if (p_flg) printf("parenthesis represenation\n");
 
         Hm *km = NULL; u64 *ka = NULL; u64 N;
-        
-        if (di == 0) {
-            VV cc, pp; init_vv(&cc); init_vv(&pp);
-            if (cov == 0) { // maximum matching
-                N = extract(infile, k, &km, &ka, di);        
-                u64 *mu = (u64*)malloc(N * sizeof(u64));
-                u64 *mv = (u64*)malloc(N * sizeof(u64));
-                if (mu == NULL || mv == NULL) {
-                    fprintf(stderr, "Error: malloc failed for array mu or mv\n");
-                    free(ka); free(mu); free(mv);
-                    free_hm(&km);
-                    return -1;
-                }
-                u64 M = mbm(km, ka, mu, mv, k, N);
-                if (M == INF) {
-                    fprintf(stderr, "Warning: too large matching\n");
-                    free(ka); free(mu); free(mv);
-                    free_hm(&km);
-                    exit(EXIT_FAILURE);
-                }
-                decompose(mu, mv, &cc, &pp, N);
-                free(mu); free(mv);
-            } else if (cov == 1) { // directly find cover from infile
-                N = dextract(infile, k, &km, &ka, &cc, &pp);
-            } else if (cov == 2) { // greedy dfs from unvisited vertices
-                N = extract(infile, k, &km, &ka, di);
-                gcov(km, ka, &cc, &pp, k);
-            } else if (cov == 3) {
-                if (out != 2) {
-                    fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");
-                    fprintf(stderr, "Overwritten out=%d -> 2\n", out);
-                    out = 2;
-                }
-                N = extract(infile, k, &km, &ka, di);
-            } else {
-                fprintf(stderr, "Error: invalid cover type\n");
-                exit(EXIT_FAILURE);
-            }
-            
-            Rep r; init_rep(&r);
-            if (out == 0) { // flat
-                r = flat(ka, &cc, &pp, k);
-            } else if (out == 1) { // pointer
-                r = ptr(km, ka, &cc, &pp, k);
-            } else if (out == 2) { // bp
-                if (cov == 3) {
-                    r = gdfs_close(km, ka, k);
-                } else {
-                    // r = bp(km, ka, &cc, &pp, k);
-                    r = rbp(km, ka, &cc, &pp, k);
-                }
-            } else {
-                fprintf(stderr, "Error: invalid out arg\n");
-                exit(EXIT_FAILURE);
-            }
-            u64 np = pp.size;
-            free_vv(&cc); free_vv(&pp); 
-            char* b = rm_ext(infile);
-            wrt(b, &r, k, di, cov, out, np);
-            free_rep(&r); free(b);
-        } else {
-            VV cc, pp; init_vv(&cc); init_vv(&pp);
-            VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
-            if (cov == 0) { // greedy dfs
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
-            } else if (cov == 1) { // directly find cover from infile
-                N = bdextract(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
-            } else if (cov == 2) { // greedy covering from unvisited vertices
-                N = extract(infile, k, &km, &ka, di);
-                bgcov(km, ka, &cc, &pp, &ccb, &ppb, k);
-            } else if (cov == 3) {
-                if (out != 2) {
-                    fprintf(stderr, "Error: cov=3 (greedydfs) is only compatible with out=2(bp)\n");
-                    fprintf(stderr, "Overwritten out=%d -> 2\n", out);
-                    out = 2;
-                }
-                N = extract(infile, k, &km, &ka, di);
-            } else {
-                fprintf(stderr, "Error: invalid cover type\n");
-                exit(EXIT_FAILURE);
-            }
-            Rep r; init_rep(&r);
-            if (out == 0) {
-                r = bflat(ka, &cc, &pp, &ccb, &ppb, k);
-            } else if (out == 1) {
-                fprintf(stderr, "under construction\n");
-                exit(EXIT_FAILURE);
-            } else if (out == 2) {
-                if (cov == 3) {
-                    r = bgdfs(km, ka, k);
-                } else {
-                    r = bbp(km, ka, &cc, &pp, &ccb, &ppb, k);
-                }
-            } else {
-                fprintf(stderr, "Error: invalid out arg\n");
-                exit(EXIT_FAILURE);
-            }
-            u64 np = pp.size;
-            free_vv(&cc); free_vv(&pp); free_vvb(&ccb); free_vvb(&ppb);
-            char* b = rm_ext(infile);
-            wrt(b, &r, k, di, cov, out, np);
-            free_rep(&r); free(b);
-        }
+        char* r = NULL;
 
-        free(ka); free_hm(&km);   
-        return 0;
+        if (u_flg) {
+            if (strcmp(algo, "fg") == 0 || strcmp(algo, "gb") == 0) {
+                N = extract(infile, k, &km, &ka, u_flg);
+                if (strcmp(algo, "fg") == 0) {
+                    r = full_greedy(km, ka, k);
+                } else {
+                    r = greedy_baseline_close(km, ka, k);
+                }
+            } else {
+                VV cc, pp; init_vv(&cc); init_vv(&pp);
+                if (strcmp(algo, "ba") == 0) {
+                    N = baseline_a(infile, k, &km, &ka, &cc, &pp);
+                } else {
+                    N = extract(infile, k, &km, &ka, u_flg);
+                    if (strcmp(algo, "eu") == 0) {
+                        Node *g = build(km, k, N);
+                        balance(&g);
+                        VV tt; init_vv(&tt);
+                        etigs(&g, &tt, k);
+                        tt_to_cc_and_pp(&tt, km, &cc, &pp);
+                        free_vv(&tt);
+                    } else if (strcmp(algo, "gc") == 0) {
+                        greedy_cover(km, ka, &cc, &pp, k);
+                    }
+                }
+                if (p_flg) {
+                    r = necklace_cover2(km, ka, &cc, &pp, k);
+                } else {
+                    r = pccover_to_cspss(ka, &cc, &pp, k);
+                }
+                free_vv(&cc); free_vv(&pp);
+            }
+        } else {
+            if (strcmp(algo, "gb") == 0) {
+                N = extract(infile, k, &km, &ka, u_flg);
+                r = bi_greedy_baseline(km, ka, k);
+            } else {
+                VV cc, pp; init_vv(&cc); init_vv(&pp);
+                VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
+                if (strcmp(algo, "ba") == 0) {
+                    N = bi_baseline_a(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
+                } else {
+                    N = extract(infile, k, &km, &ka, u_flg);
+                    if (strcmp(algo, "eu") == 0) {
+                        printf("This option assumes an input be precomputed BiEulertigs. Proceed [y/n]: ");
+                        fflush(stdout);
+                        int c = getchar();
+                        if (c != '\n' && c != EOF) {
+                            int tmp;
+                            while((tmp = getchar()) != '\n' && tmp != EOF);
+                        }
+                        if (c == 'y' || c == 'Y') {
+                            N = bi_baseline_a(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
+                        } else {
+                            return 0;
+                        }
+                    } else if (strcmp(algo, "gc") == 0) {
+                        bi_greedy_cover(km, ka, &cc, &pp, &ccb, &ppb, k);
+                    }
+                }
+                if (p_flg) {
+                    r = bi_necklace_cover(km, ka, &cc, &pp, &ccb, &ppb, k);
+                } else {
+                    r = bi_pccover_to_cspss(ka, &cc, &pp, &ccb, &ppb, k);
+                }
+                free_vv(&cc); free_vv(&pp); free_vvb(&ccb); free_vvb(&ppb);
+            }
+        }
+        free(ka); free_hm(&km);
+
+        wrt(outfile, r);
+        free(r);
     }
+
+    free((char*)outfile);
+    return 0;
 }

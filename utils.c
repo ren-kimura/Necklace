@@ -67,7 +67,7 @@ u64 can(u64 h, int k) {
     return (h <= rh) ? h : rh;
 }
 
-void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
+void proc_sq(const char *sq, int k, Hm **km, u64 *id, bool u_flg) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
     
@@ -79,7 +79,7 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
         strncpy(s, sq + j, k);
         s[k] = '\0';
         u64 h = enc(s, k);
-        if (di) {
+        if (!u_flg) {
             u64 ch = can(h, k);
             if (add_hm(km, ch, *id)) (*id)++;
         } else {
@@ -91,7 +91,7 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
             char c = toupper(sq[j + k - 1]);
             if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
                 h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
-                if (di) {
+                if (!u_flg) {
                     u64 ch = can(h, k);
                     if (add_hm(km, ch, *id)) (*id)++;
                 } else {
@@ -108,7 +108,7 @@ void proc_sq(const char *sq, int k, Hm **km, u64 *id, int di) {
     }
 }
 
-u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
+u64 extract(const char* infile, int k, Hm **km, u64 **ka, bool u_flg) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Error: Could not open file %s\n", infile);
@@ -133,7 +133,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
         if (ln[0] == '>') {
             if (buff_len > 0) {
                 // process the sequence accumulated so far
-                proc_sq(buff, k, km, &id, di);
+                proc_sq(buff, k, km, &id, u_flg);
             }
             buff_len = 0;
         } else {
@@ -163,7 +163,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
 
     // process the very last sequence in the file
     if (buff_len > 0) {
-        proc_sq(buff, k, km, &id, di);
+        proc_sq(buff, k, km, &id, u_flg);
     }
 
     fin("extracting k-mers");
@@ -190,7 +190,7 @@ u64 extract(const char* infile, int k, Hm **km, u64 **ka, int di) {
     return N; // number of k-mers
 }
 
-void proc_sq_hs(const char *sq, int k, Hs **ks, int di) {
+void proc_sq_hs(const char *sq, int k, Hs **ks, bool u_flg) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return;
 
@@ -203,7 +203,7 @@ void proc_sq_hs(const char *sq, int k, Hs **ks, int di) {
         s[k] = '\0';
         u64 h = enc(s, k);
         
-        if (di) {
+        if (!u_flg) {
             add_hs(ks, can(h, k));
         } else {
             add_hs(ks, h);
@@ -213,7 +213,7 @@ void proc_sq_hs(const char *sq, int k, Hs **ks, int di) {
             char c = toupper(sq[j + k - 1]);
             if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
                 h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3);
-                if (di) {
+                if (!u_flg) {
                     add_hs(ks, can(h, k));
                 } else {
                     add_hs(ks, h);
@@ -228,7 +228,7 @@ void proc_sq_hs(const char *sq, int k, Hs **ks, int di) {
     }
 }
 
-u64 extract_hs(const char* infile, int k, Hs **ks, int di) {
+u64 extract_hs(const char* infile, int k, Hs **ks, bool u_flg) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Error: Could not open file %s\n", infile);
@@ -250,7 +250,7 @@ u64 extract_hs(const char* infile, int k, Hs **ks, int di) {
         prog(ftell(fp), fs, "extracting k-mers into Hs");
         if (ln[0] == '>') {
             if (buff_len > 0) {
-                proc_sq_hs(buff, k, ks, di);
+                proc_sq_hs(buff, k, ks, u_flg);
             }
             buff_len = 0;
         } else {
@@ -270,7 +270,7 @@ u64 extract_hs(const char* infile, int k, Hs **ks, int di) {
             buff[buff_len] = '\0';
         }
     }
-    if (buff_len > 0) proc_sq_hs(buff, k, ks, di);
+    if (buff_len > 0) proc_sq_hs(buff, k, ks, u_flg);
 
     fin("extracting k-mers into Hs");
     u64 N = (u64)HASH_COUNT(*ks);

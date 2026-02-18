@@ -78,34 +78,23 @@ typedef struct {
 void init_strbld(Strbld *s);
 void apnd_strbld(Strbld *s, const char* t);
 
-typedef struct {
-    char *str;
-    u64 *arr;
-} Rep;
+char* pccover_to_cspss(u64 *ka, VV *cc, VV *pp, int k);
+char* bi_pccover_to_cspss(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
 
-void init_rep(Rep *r);
-void free_rep(Rep *r);
+V* find_new_cycle(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from);
+u64 num_falses(bool *v, size_t l);
 
-Rep flat(u64 *ka, VV *cc, VV *pp, int k);
-Rep flat_w(W *w);
-Rep bflat(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
+char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi);
+char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+char* necklace_cover2(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
-V* findc(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from);
-u64 nf(bool *v, size_t l);
+char* greedy_baseline(Hm *km, u64 *ka, int k);
+char* greedy_baseline_close(Hm *km, u64 *ka, int k);
 
-Rep ptr(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+char* full_greedy(Hm *km, u64 *ka, int k);
 
-char* subt(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi);
-Rep bp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
-Rep rbp(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
+char* bi_greedy_baseline(Hm *km, u64 *ka, int k);
 
-Rep gdfs(Hm *km, u64 *ka, int k);
-Rep gdfs_close(Hm *km, u64 *ka, int k);
-
-Rep full_greedy(Hm *km, u64 *ka, int k);
-
-Rep bgdfs(Hm *km, u64 *ka, int k);
-
-Rep bbp(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
+char* bi_necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
 
 #endif // REP_UTILS_H

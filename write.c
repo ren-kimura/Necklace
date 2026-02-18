@@ -3,40 +3,6 @@
 #include <string.h>
 #include "write.h"
 
-static void wrt_vle(FILE *fp, u64 val) {
-    unsigned char buf[10];
-    int i = 0;
-    if (val == 0) { // handle the case of zero
-        fputc(0, fp);
-        return;
-    }
-    while (val > 0) {
-        buf[i] = val & 0x7F; // get lower 7 bits
-        val >>= 7;
-        if (val > 0) {
-            buf[i] |= 0x80; // set continuation bi
-        }
-        i++;
-    }
-    fwrite(buf, 1, i, fp);
-}
-
-u64 read_vle(FILE *fp) {
-    u64 val = 0, s = 0;
-    unsigned char byte;
-    while (fread(&byte, 1, 1, fp) == 1) {
-        val |= (u64)(byte & 0x7F) << s;
-        if ((byte & 0x80) == 0) {
-            return val;
-        }
-        s += 7;
-        if (s >= 64) {
-            return INF;
-        }
-    }
-    return INF;
-}
-
 char* rm_ext(const char* f) {
     if (f == NULL) {
         return NULL;
@@ -56,71 +22,12 @@ char* rm_ext(const char* f) {
     return b;
 }
 
-void wrt(const char* f, const Rep* r, int k, int di, int cov, int out, u64 np) {
-    char sf[FILENAME_MAX];
-    snprintf(sf, sizeof(sf), "%s-%d-%d-%d-%d.str", f, k, di, cov, out);
-    FILE *sfp = fopen(sf, "w");
-    if (sfp == NULL) {
-        fprintf(stderr, "Error: cannot open string file for writing\n");
-        return;
-    }
-    fprintf(sfp, "%s\n", r->str);
-    fclose(sfp);
-    printf("%s written\n", sf);
+void wrt(const char* outfile, const char* r) {
+    if (r == NULL) return;
+    FILE *fp = fopen(outfile, "w");
+    if (fp == NULL) { fprintf(stderr, "Error: cannot open %s for writing\n", outfile); return; }
 
-    if (r->arr != NULL && np > 0) {
-        char af[FILENAME_MAX];
-        snprintf(af, sizeof(af), "%s-%d-%d-%d-%d.arr", f, k, di, cov, out);
-        FILE *afp = fopen(af, "w");
-        if (afp == NULL) {
-            fprintf(stderr, "Error: cannot open array file for writing\n");
-            return;
-        }
-        wrt_vle(afp, np);
-        for (u64 i = 0; i < np; i++) {
-            wrt_vle(afp, r->arr[i]);
-        }
-        fclose(afp);
-        printf("%s written\n", af);
-    }
-}
-
-void vread(const char* f) {
-    FILE *fp = fopen(f, "rb");
-    if (fp == NULL) {
-        fprintf(stderr, "Error: cannot open array file\n");
-        return;
-    }
-    u64 c = read_vle(fp);
-    if (c == INF) {
-        fprintf(stderr, "Error or file is empty\n");
-        fclose(fp);
-        return;
-    }
-    printf("%ld nums in arr\n", c);
-    for (u64 i = 0; i < c; i++) {
-        u64 v = read_vle(fp);
-        if (v == INF) {
-            fprintf(stderr, "Error: reached end of file prematurely\n");
-            break;
-        }
-        printf("%ld ", v);
-    }
-    printf("\n");
+    fprintf(fp, "%s\n", r);
     fclose(fp);
-}
-
-void wrt_fa(const char *f, int k, char** ss, size_t ns) {
-    char of[100];
-    snprintf(of, 100, "%s-%d.fa", f, k);
-    FILE *ofp = fopen(of, "w");
-    if (ofp == NULL) {
-        fprintf(stderr, "Error: cannot open %s in w mode\n", of);
-        return;
-    } 
-    for (size_t i = 0; i < ns; ++i) {
-        fprintf(ofp, ">%ld\n%s\n", i + 1, ss[i]);
-    }
-    fclose(ofp);
-    printf("\nEulertigs written to %s\n", of);
+    printf("%s written\n", outfile);
 }

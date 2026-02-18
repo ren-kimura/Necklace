@@ -5,6 +5,7 @@
 #include <ctype.h>
 #include <sys/stat.h>
 
+// Hopcroft-Karp maximum matching algorithm
 int bfs(Hm *km, u64 *ka, const u64 *mu, const u64 *mv, u64 *dt, int k, u64 N) {
     Q q;
     init_q(&q);
@@ -48,7 +49,7 @@ int dfs(Hm *km, u64 *ka, u64 *mu, u64 *mv, u64 *dt, u64 u, int k) {
     return 0;
 }
 
-u64 mbm(Hm *km, u64 *ka, u64 *mu, u64 *mv, int k, u64 N) {
+u64 maximum_matching(Hm *km, u64 *ka, u64 *mu, u64 *mv, int k, u64 N) {
     u64 *dt = malloc(N * sizeof(u64));
     if (dt == NULL) {
         printf("Error: malloc failed for array dt\n");
@@ -131,7 +132,8 @@ void decompose(u64 *mu, u64 *mv, VV *cc, VV *pp, u64 N){
     free(su); free(sv);
 }
 
-void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
+// Baseline A
+void subr_baseline_a(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
 
@@ -199,7 +201,96 @@ void dproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp) {
     free_v(&v);
 }
 
-void bdproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
+u64 baseline_a(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
+    FILE *fp = fopen(infile, "rb");
+    if (fp == NULL) {
+        fprintf(stderr, "Error: Could not open file %s\n", infile);
+        exit(EXIT_FAILURE);
+    }
+    printf("file %s opened\n", infile);
+
+    struct stat st;
+    stat(infile, &st);
+    size_t fs = st.st_size;
+
+    u64 id = 0;
+    char *ln = NULL;
+    size_t len = 0;
+
+    char *buff = NULL;
+    size_t buff_len = 0; // current len of the string in the buffer
+    size_t buff_cap = 0; // current allocated capacity for the buffer
+
+    while ((getline(&ln, &len, fp)) != -1) {
+        prog(ftell(fp), fs, "extracting k-mers into cycles and paths");
+        if (ln[0] == '>') {
+            if (buff_len > 0) {
+                // process the sequence accumulated so far
+                subr_baseline_a(buff, k, km, &id, cc, pp);
+            }
+            buff_len = 0;
+        } else {
+            ln[strcspn(ln, "\r\n")] = 0; // remove carriage returns and newlines
+            size_t ln_len = strlen(ln);
+            if (ln_len == 0) continue;
+            // check if the buffer has enough capacity
+            if (buff_len + ln_len + 1 > buff_cap) {
+                size_t ncap = (buff_cap == 0) ? 256 : buff_cap * 2;
+                while (ncap < buff_len + ln_len + 1) {
+                    ncap *= 2;
+                }
+                char *nbuff = realloc(buff, ncap);
+                if (nbuff == NULL) {
+                    fprintf(stderr, "Error: realloc failed for sq_buff\n");
+                    exit(EXIT_FAILURE);
+                }
+                buff = nbuff;
+                buff_cap = ncap;
+            }
+            // append the line to the buffer
+            memcpy(buff + buff_len, ln, ln_len);
+            buff_len += ln_len;
+            buff[buff_len] = '\0';
+        }
+    }
+
+    // process the very last sequence in the file
+    if (buff_len > 0) {
+        subr_baseline_a(buff, k, km, &id, cc, pp);
+    }
+
+    fin("extracting k-mers into cycles and paths");
+    const u64 N = (u64)HASH_COUNT(*km);
+    printf("total unique k-mers = %ld\n", N);
+
+    *ka = malloc(N * sizeof(u64));
+    if (ka == NULL) {
+        fprintf(stderr, "Error: malloc failed for ka\n");
+        exit(EXIT_FAILURE);
+    }
+    Hm *s, *tmp;
+    HASH_ITER(hh, *km, s, tmp) {
+        (*ka)[s->val] = s->key;
+    }
+
+    free(ln);
+    free(buff);
+    fclose(fp);
+    printf("file %s closed\n", infile);
+
+    u64 Z = 0;
+    for (size_t i = 0; i < cc->size; i++) Z += cc->vs[i].size;
+    for (size_t i = 0; i < pp->size; i++) Z += pp->vs[i].size;
+    if (N != Z) {
+        fprintf(stderr, "Error: total nodes in cycles and paths is not equal to k-mers count\n");
+        exit(EXIT_FAILURE);
+    }
+
+    return N; // number of k-mers
+}
+
+// Baseline A (bi-directed)
+void subr_bi_baseline_a(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
     u64 sq_len = (u64)strlen(sq);
     if (sq_len < (u64)k) return; // too short
 
@@ -282,7 +373,7 @@ void bdproc_sq(const char *sq, int k, Hm **km, u64 *id, VV *cc, VV *pp, VVb *ccb
     free_vb(&vb);
 }
 
-u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
+u64 bi_baseline_a(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
     FILE *fp = fopen(infile, "rb");
     if (fp == NULL) {
         fprintf(stderr, "Error: Could not open file %s\n", infile);
@@ -307,7 +398,7 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
         if (ln[0] == '>') {
             if (buff_len > 0) {
                 // process the sequence accumulated so far
-                dproc_sq(buff, k, km, &id, cc, pp);
+                subr_bi_baseline_a(buff, k, km, &id, cc, pp, ccb, ppb);
             }
             buff_len = 0;
         } else {
@@ -337,7 +428,7 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
 
     // process the very last sequence in the file
     if (buff_len > 0) {
-        dproc_sq(buff, k, km, &id, cc, pp);
+        subr_bi_baseline_a(buff, k, km, &id, cc, pp, ccb, ppb);
     }
 
     fin("extracting k-mers into cycles and paths");
@@ -370,95 +461,8 @@ u64 dextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp) {
     return N; // number of k-mers
 }
 
-u64 bdextract(const char* infile, int k, Hm **km, u64 **ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb) {
-    FILE *fp = fopen(infile, "rb");
-    if (fp == NULL) {
-        fprintf(stderr, "Error: Could not open file %s\n", infile);
-        exit(EXIT_FAILURE);
-    }
-    printf("file %s opened\n", infile);
-
-    struct stat st;
-    stat(infile, &st);
-    size_t fs = st.st_size;
-
-    u64 id = 0;
-    char *ln = NULL;
-    size_t len = 0;
-
-    char *buff = NULL;
-    size_t buff_len = 0; // current len of the string in the buffer
-    size_t buff_cap = 0; // current allocated capacity for the buffer
-
-    while ((getline(&ln, &len, fp)) != -1) {
-        prog(ftell(fp), fs, "extracting k-mers into cycles and paths");
-        if (ln[0] == '>') {
-            if (buff_len > 0) {
-                // process the sequence accumulated so far
-                bdproc_sq(buff, k, km, &id, cc, pp, ccb, ppb);
-            }
-            buff_len = 0;
-        } else {
-            ln[strcspn(ln, "\r\n")] = 0; // remove carriage returns and newlines
-            size_t ln_len = strlen(ln);
-            if (ln_len == 0) continue;
-            // check if the buffer has enough capacity
-            if (buff_len + ln_len + 1 > buff_cap) {
-                size_t ncap = (buff_cap == 0) ? 256 : buff_cap * 2;
-                while (ncap < buff_len + ln_len + 1) {
-                    ncap *= 2;
-                }
-                char *nbuff = realloc(buff, ncap);
-                if (nbuff == NULL) {
-                    fprintf(stderr, "Error: realloc failed for sq_buff\n");
-                    exit(EXIT_FAILURE);
-                }
-                buff = nbuff;
-                buff_cap = ncap;
-            }
-            // append the line to the buffer
-            memcpy(buff + buff_len, ln, ln_len);
-            buff_len += ln_len;
-            buff[buff_len] = '\0';
-        }
-    }
-
-    // process the very last sequence in the file
-    if (buff_len > 0) {
-        bdproc_sq(buff, k, km, &id, cc, pp, ccb, ppb);
-    }
-
-    fin("extracting k-mers into cycles and paths");
-    const u64 N = (u64)HASH_COUNT(*km);
-    printf("total unique k-mers = %ld\n", N);
-
-    *ka = malloc(N * sizeof(u64));
-    if (ka == NULL) {
-        fprintf(stderr, "Error: malloc failed for ka\n");
-        exit(EXIT_FAILURE);
-    }
-    Hm *s, *tmp;
-    HASH_ITER(hh, *km, s, tmp) {
-        (*ka)[s->val] = s->key;
-    }
-
-    free(ln);
-    free(buff);
-    fclose(fp);
-    printf("file %s closed\n", infile);
-
-    u64 Z = 0;
-    for (size_t i = 0; i < cc->size; i++) Z += cc->vs[i].size;
-    for (size_t i = 0; i < pp->size; i++) Z += pp->vs[i].size;
-    if (N != Z) {
-        fprintf(stderr, "Error: total nodes in cycles and paths is not equal to k-mers count\n");
-        exit(EXIT_FAILURE);
-    }
-
-    return N; // number of k-mers
-}
-
-void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
+// Greedy cover
+void greedy_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) { vis[u] = false; }
@@ -515,7 +519,8 @@ void gcov(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     free(vis);
 }
 
-void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
+// Greedy cover (bi-directed)
+void bi_greedy_cover(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     u64 N = (u64)HASH_COUNT(km);
     bool* vis = (bool*)malloc(sizeof(bool) * N);
     for (u64 u = 0; u < N; u++) vis[u] = false;
@@ -628,48 +633,4 @@ void bgcov(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
     }
     fin("greedy cover");
     free(vis);
-}
-
-void disp_cp(u64 *ka, VV *cc, VV *pp, int k) {
-    printf("---------------------------------\n");
-    printf("---cycles---\n");
-    for (size_t i = 0; i < cc->size; i++) {
-        V* c = &cc->vs[i];
-        for (size_t j = 0; j < c->size; j++) {
-            char s[k + 1];
-            memset(s, 0, k + 1);
-            dec(ka[c->data[j]], k, s);
-            printf("%s ", s);
-        }
-        printf("\n");
-    }
-    printf("---paths---\n");
-    for (size_t i = 0; i < pp->size; i++) {
-        V* p = &pp->vs[i];
-        for (size_t j = 0; j < p->size; j++) {
-            char s[k + 1];
-            memset(s, 0, k + 1);
-            dec(ka[p->data[j]], k, s);
-            printf("%s ", s);
-        }
-        printf("\n");
-    }
-    printf("---------------------------------\n");
-}
-
-void disp_w(W *w) {
-    printf("---------------------------------\n"); 
-    printf("---cycles---\n");
-    if (w->cc != NULL) {
-        for (size_t i = 0; w->cc[i] != NULL; i++) {
-            printf("%s\n", w->cc[i]);
-        }
-    }
-    printf("---paths---\n");
-    if (w->pp != NULL) {
-        for (size_t i = 0; w->pp[i] != NULL; i++) {
-            printf("%s\n", w->pp[i]);
-        }
-    }
-    printf("---------------------------------\n"); 
 }
