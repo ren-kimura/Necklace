@@ -18,15 +18,16 @@ static void usage(const char *s) {
             "Usage:\n"
 	        "\tgenerate: %s -i [in.fa] -k [k] -a [a] (-p) (-u)\n"
             "\tverify:   %s -i [in.fa] -k [k] (-p) (-u) -v [target.str]\n"
-            "\tgraph sparsity: %s -i [in.fa] -k [k] (-u) -s\n\n"
-	        "\t-i FILE\t\tinput FASTA file\n"
-            "\t-o FILE\t\toutput str file (optional)\n"
-	        "\t-k INT\t\tk-mer length (1 < k < 32)\n"
-            "\t-a ALGORITHM\teu:Eulertigs (fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)\n"
-            "\t-p parenthesis representation (fg and gb are forced to have this option)"
-            "\t-u distinguish a k-mer and its reverse complement\n\n"
-            "\t-v VERIFY\t specify target file\n"
-            "\t-s measure graph sparsity\n",
+            "\tsparsity: %s -i [in.fa] -k [k] (-u) -s\n\n"
+	        "\t-i: set a path to an input FASTA file\n"
+            "\t-o: specify output str filename (optional, default:in_k.str)\n"
+	        "\t-k: choose k-mer length k s.t. 1 < k < 32\n"
+            "\t-a: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)\n"
+            "\t-p: parenthesis representation (optional except -a fg and gb)\n"
+            "\t-u: distinguish a k-mer and its reverse complement (optional)\n\n"
+            "\t-v: verify the specified output\n"
+            "\t-s: measure the dBG sparsity as average outdegree\n"
+            "\t-h: print help\n",
 	        s, s, s);
     exit(EXIT_FAILURE);
 }
@@ -48,7 +49,7 @@ int main(int argc, char *argv[]) {
     bool p_flg = false, u_flg = false, s_flg = false;
     int opt;
 
-	while ((opt = getopt(argc, argv, "i:o:k:a:puv:s")) != -1) {
+	while ((opt = getopt(argc, argv, "i:o:k:a:puv:sh")) != -1) {
 	    switch (opt) {
 		    case 'i': infile = optarg; break;
             case 'k':
@@ -61,6 +62,7 @@ int main(int argc, char *argv[]) {
             case 'v': target_file = optarg; break;
             case 's': s_flg = true; break;
             case 'o': outfile = strdup(optarg); break;
+            case 'h': usage(argv[0]); break;
             default: usage(argv[0]);
 		}
 	}

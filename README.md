@@ -3,7 +3,7 @@
 - This project uses `uthash`, which is licensed under the 1-clause BSD license. The license text is included in the `uthash.h` file.
 
 ## About
-This project implements uni-directed/bi-directed node-centric de Bruijn Graphs and generates a cycle/path cover from FASTA-format input.
+This project implements uni-directed/bi-directed node-centric de Bruijn Graphs and generates a cycle/path cover and a necklace cover from FASTA-format input.
 
 ## Building
 Run the following command in the same directory as `nkl.c` to compile the code:
@@ -12,46 +12,28 @@ Run the following command in the same directory as `nkl.c` to compile the code:
 make
 ```
 
-This will generate the executable `nkl`.
+This will generate the executable(s) `nkl` (and `vfa`).
 
 ## Usage
 To run the program, use the following command after adding a PATH to the directory (or simply specify the full or relative path to the execution file):
 ### generate a representation
 ```bash
-nkl -i [in.fa] -k [k] -d [d] -c [c] -o [o]
+nkl -i [in.fa] -k [k] -a [a] (-p) (-u)
 ```
-- `-i`: set a path to an input FASTA file after this
-- `-k`: choose $k$ s.t. $2\leq k\leq 31$
-- `-d`: choose either 0: uni-directed or 1: bi-directed
-- `-c`: choose how to cover the de Bruijn graph, 0: maximum matching (ONLY WHEN d == 0) 1: greedy linear scan of `infile`
-- `-o`: choose representation 0: flat 1: pointer 2: balanced parentheses
+- `-i`: set a path to an input FASTA file
+- `-o`: specify output str filename (optional, default:`in_k.str`)
+- `-k`: choose k-mer length $k$ s.t. $2\leq k\leq 31$
+- `-a`: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)
+- `-p`: parenthesis representation (optional except -a fg and gb)
+- `-u`: distinguish a k-mer and its reverse complement (optional)
+
+- `-h`: print help
+
 ### verify an output
 ```bash
-nkl -m 1 -i [in.fa] -k [k] -d [d] -o [o] -f [target.str]
+nkl -i [in.fa] -k [k] (-p) (-u) -v [target.str]
 ```
-- `-m`: set 1 for verification (default: 0)
-- `-f`: set a path to a target file for verification
-
-## Example
-```bash
-nkl -i input.fa -k 11 -d 0 -c 0 -o 2
-```
-This command processes the input file `input.fa` with k-mer length 11, finds a path cover of uni-directed de Bruijn graph with maximum matching and generates a balanced parentheses representation.
-
-```bash
-nkl -i input.fa -k 31 -d 0 -c 1 -o 0
-```
-This command processes the input file `input.fa` with k-mer length 31, finds a path cover of uni-directed de Bruijn graph by greedy linear scan of `input.fa` and generates a flat representation.
-
-```bash
-nkl -i input.fa -k 11 -d 1 -c 2 -o 1
-```
-This command processes the input file `input.fa` with k-mer length 11, finds a path cover of bi-directed de Bruijn graph by greedy dfs and generates a pointer representation.
-
-```bash
-nkl -m 1 -i input.fa -k 6 -d 0 -o 0 -f target.str
-```
-This command constructs a k-mer set from `input.fa` with k-mer length 6, and compare with a k-mer set reconstructed from `target.fa` with k-mer length 6.
+- `-v`: verify the specified output
 
 ## Troubleshoot
 Our implementation uses recursion in the source codes. It might cause stack overflow in some environment with some specific setting. In that case, the following is worth trying.
