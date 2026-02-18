@@ -1316,5 +1316,6 @@ char* bi_necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int
     free(vis);
     free_hm(&hd);
     free_hm(&tl);
+    r = sbp.str;
     return r;
 }

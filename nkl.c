@@ -87,7 +87,6 @@ int main(int argc, char *argv[]) {
 
     if (target_file) { // verify
         if (!infile || !target_file ||  k == -1) usage(argv[0]);
-        if (strcmp(algo, "eu") == 0 && u_flg == false && p_flg == false) return veri_fa(infile, target_file, k, u_flg);
         return veri(infile, target_file, k, u_flg, p_flg);
     } else if (s_flg) { // graph stat
         if (!infile || k == -1) usage(argv[0]);
