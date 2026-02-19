@@ -31,7 +31,7 @@ nkl -i [in.fa] -k [k] -a [a] (-p) (-u)
 
 ### verify an output
 ```bash
-nkl -i [in.fa] -k [k] (-p) (-u) -v [target.str]
+nkl -i [in.fa] -k [k] (-u) -v [target.str]
 ```
 - `-v`: verify the specified output
 

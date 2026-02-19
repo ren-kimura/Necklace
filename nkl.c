@@ -17,7 +17,7 @@ static void usage(const char *s) {
     fprintf(stderr,
             "Usage:\n"
 	        "\tgenerate: %s -i [in.fa] -k [k] -a [a] (-p) (-u)\n"
-            "\tverify:   %s -i [in.fa] -k [k] (-p) (-u) -v [target.str]\n"
+            "\tverify:   %s -i [in.fa] -k [k] (-u) -v [target.str]\n"
             "\tsparsity: %s -i [in.fa] -k [k] (-u) -s\n\n"
 	        "\t-i: set a path to an input FASTA file\n"
             "\t-o: specify output str filename (optional, default:in_k.str)\n"
