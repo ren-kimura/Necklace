@@ -1,8 +1,12 @@
 #include <stdio.h>
 #include <string.h>
 #include <ctype.h>
+#include <sys/stat.h>
 #include "veri.h"
 #include "utils.h"
+#include "stat.h"
+
+static bool proc_rm_from_u64(u64 h, int k, bool u_flg, Hs **ks);
 
 static bool proc_rm(const char* s, int k, bool u_flg, Hs** ks) {
     u64 h = enc(s, k);
@@ -210,63 +214,104 @@ int veri(const char* of, const char* tf, int k, bool u_flg) {
     return fz ? 0 : -1;
 }
 
-int veri_fa(const char *of, const char *tf, int k, bool u_flg) {
-    fprintf(stdout, "verification mode\n");
-    fprintf(stdout, "original file: %s\n", of);
-    fprintf(stdout, "target file: %s\n", tf);
-
-    fprintf(stdout, "\n[Step 1/3] extracting k-mers from original file\n");
-    Hm *km = NULL;
-    u64 *ka = NULL;
-    u64 no1 = extract(of, k, &km, &ka, u_flg);
-    Hs *ks = NULL;
-    Hm *s, *tmp;
-    HASH_ITER(hh, km, s, tmp) { add_hs(&ks, s->key); }
-    free(ka); free_hm(&km);
-    fprintf(stdout, "%ld k-mers in %s\n", no1, of); 
+static bool proc_rm_rolling(const char *sq, size_t sq_len, int k, bool u_flg, Hs **ks) {
+    u64 m = (1ULL << (2 * (k - 1))) - 1; //
+    u64 j = next_pos(sq, 0, k); //
     
-    fprintf(stdout, "\n[Step 2/3] reconstructing k-mers from target file\n");
-    km = NULL;
-    ka = NULL;
-    u64 no2 = extract(tf, k, &km, &ka, u_flg);
-    fprintf(stdout, "%ld k-mers in %s\n", no2, tf);
+    while (j != INF && j <= sq_len - k) {
+        char s[k + 1];
+        strncpy(s, sq + j, k); s[k] = '\0';
+        u64 h = enc(s, k); //
+
+        if (!proc_rm_from_u64(h, k, u_flg, ks)) return false;
+
+        while (++j <= sq_len - k) {
+            char c = toupper(sq[j + k - 1]);
+            if (c == 'A' || c == 'C' || c == 'G' || c == 'T') {
+                h = ((h & m) << 2) | (c == 'A' ? 0 : c == 'C' ? 1 : c == 'G' ? 2 : 3); //
+                if (!proc_rm_from_u64(h, k, u_flg, ks)) return false;
+            } else {
+                j = next_pos(sq, j, k);
+                break;
+            }
+        }
+    }
+    return true;
+}
+
+static bool proc_rm_from_u64(u64 h, int k, bool u_flg, Hs **ks) {
+    if (!u_flg) h = can(h, k); //
+    if (find_hs(*ks, h)) { //
+        del_hs(ks, h); //
+        return true;
+    } else {
+        char t[k + 1]; dec(h, k, t); //
+        fprintf(stderr, "Error: target file has extra/duplicate k-mer: %s\n", t);
+        return false;
+    }
+}
+
+int veri_fa(const char *of, const char *tf, int k, bool u_flg) {
+    fprintf(stdout, "verification mode (FASTA vs FASTA)\n");
+
+    Hm *km = NULL; u64 *ka = NULL;
+    extract(of, k, &km, &ka, u_flg);
+    
+    Hs *ks = NULL;
+    Hm *s, *tmp_hm;
+    HASH_ITER(hh, km, s, tmp_hm) { add_hs(&ks, s->key); }
+    free(ka); free_hm(&km);
+
+    fprintf(stdout, "\n[Step 2/3] verifying target k-mers with rolling hash\n");
+    FILE *fp = fopen(tf, "rb");
+    if (!fp) { free_hs(&ks); return -1; }
+
+    struct stat st; stat(tf, &st);
+    size_t fs = st.st_size;
+
+    char *ln = NULL; size_t len = 0;
+    char *buff = NULL; size_t buff_len = 0; size_t buff_cap = 0;
+    bool success = true;
+
+    while ((getline(&ln, &len, fp)) != -1) {
+        prog(ftell(fp), fs, "verifying"); //
+        if (ln[0] == '>') {
+            if (buff_len >= (size_t)k) {
+                if (!proc_rm_rolling(buff, buff_len, k, u_flg, &ks)) {
+                    success = false; break;
+                }
+            }
+            buff_len = 0;
+        } else {
+            ln[strcspn(ln, "\r\n")] = 0;
+            size_t ln_len = strlen(ln);
+            if (ln_len == 0) continue;
+            
+            if (buff_len + ln_len + 1 > buff_cap) {
+                size_t ncap = (buff_cap == 0) ? 1024 : buff_cap * 2;
+                while (ncap < buff_len + ln_len + 1) ncap *= 2;
+                buff = realloc(buff, ncap);
+                buff_cap = ncap;
+            }
+            memcpy(buff + buff_len, ln, ln_len);
+            buff_len += ln_len;
+            buff[buff_len] = '\0';
+        }
+    }
+    // handle the last buffer
+    if (success && buff_len >= (size_t)k) {
+        success = proc_rm_rolling(buff, buff_len, k, u_flg, &ks);
+    }
+
+    free(ln); free(buff); fclose(fp);
+    if (!success) { free_hs(&ks); return -1; }
 
     fprintf(stdout, "\n[Step 3/3] final check\n");
-    bool fz = true;
-
-    HASH_ITER(hh, km, s, tmp) {
-        if (find_hs(ks, s->key)) {
-            del_hs(&ks, s->key);
-        } else {
-            char t[k + 1];
-            dec(s->key, k, t);
-            fprintf(stderr, "Error: found a k-mer not in original: %s\n", t);
-            fz = false;
-            break;
-        }
-    }
-    free(ka); free_hm(&km);
-
-    if (fz && HASH_COUNT(ks) > 0) {
-        fprintf(stderr, "Error: target file is missing %d k-mers from original\n", HASH_COUNT(ks));
-        Hs* it;
-        int c = 0;
-        for (it = ks; it != NULL; it = it->hh.next) {
-            char t[k + 1];
-            dec(it->key, k, t);
-            fprintf(stderr, "  - missing: %s\n", t);
-            c++;
-        }
-        fz = false;
-    }
-
-    free_hs(&ks);
-
-    if (fz) {
-        fprintf(stdout, "All original k-mers were found\n");
-        return 0;
+    if (HASH_COUNT(ks) == 0) {
+        fprintf(stdout, "All original k-mers found exactly once.\n");
+        free_hs(&ks); return 0;
     } else {
-        fprintf(stderr, "spectrum not identical\n");
-        return -1;
+        fprintf(stderr, "Error: %d k-mers missing.\n", HASH_COUNT(ks));
+        free_hs(&ks); return -1;
     }
 }

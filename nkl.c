@@ -192,24 +192,22 @@ int main(int argc, char *argv[]) {
                 VVb ccb, ppb; init_vvb(&ccb); init_vvb(&ppb);
                 if (strcmp(algo, "ba") == 0) {
                     N = bi_baseline_a(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
-                } else {
-                    N = extract(infile, k, &km, &ka, u_flg);
-                    if (strcmp(algo, "eu") == 0) {
-                        printf("This option assumes an input be precomputed BiEulertigs. Proceed [y/n]: ");
-                        fflush(stdout);
-                        int c = getchar();
-                        if (c != '\n' && c != EOF) {
-                            int tmp;
-                            while((tmp = getchar()) != '\n' && tmp != EOF);
-                        }
-                        if (c == 'y' || c == 'Y') {
-                            N = bi_baseline_a(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
-                        } else {
-                            return 0;
-                        }
-                    } else if (strcmp(algo, "gc") == 0) {
-                        bi_greedy_cover(km, ka, &cc, &pp, &ccb, &ppb, k);
+                } else if (strcmp(algo, "eu") == 0) {
+                    printf("This option assumes an input be precomputed BiEulertigs. Proceed [y/n]: ");
+                    fflush(stdout);
+                    int c = getchar();
+                    if (c != '\n' && c != EOF) {
+                        int tmp;
+                        while((tmp = getchar()) != '\n' && tmp != EOF);
                     }
+                    if (c == 'y' || c == 'Y') {
+                        N = bi_baseline_a(infile, k, &km, &ka, &cc, &pp, &ccb, &ppb);
+                    } else {
+                        return 0;
+                    }
+                } else if (strcmp(algo, "gc") == 0) {
+                    N = extract(infile, k, &km, &ka, u_flg);
+                    bi_greedy_cover(km, ka, &cc, &pp, &ccb, &ppb, k);
                 }
                 if (p_flg) {
                     r = bi_necklace_cover(km, ka, &cc, &pp, &ccb, &ppb, k);
