@@ -23,8 +23,8 @@ nkl -i [in.fa] -k [k] -a [a] (-p) (-u)
 - `-i`: set a path to an input FASTA file
 - `-o`: specify output str filename (optional, default:`in_k.str`)
 - `-k`: choose k-mer length $k$ s.t. $2\leq k\leq 31$
-- `-a`: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)
-- `-p`: parenthesis representation (optional except -a fg and gb)
+- `-a`: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy (needs -u -p) gb:GreedyBaseline (needs -p) ba:BaselineA gc:GreedyCover)
+- `-p`: parenthesis representation (optional)
 - `-u`: distinguish a k-mer and its reverse complement (optional)
 
 - `-h`: print help

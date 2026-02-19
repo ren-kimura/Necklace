@@ -22,8 +22,8 @@ static void usage(const char *s) {
 	        "\t-i: set a path to an input FASTA file\n"
             "\t-o: specify output str filename (optional, default:in_k.str)\n"
 	        "\t-k: choose k-mer length k s.t. 1 < k < 32\n"
-            "\t-a: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy gb:GreedyBaseline ba:BaselineA gc:GreedyCover)\n"
-            "\t-p: parenthesis representation (optional except -a fg and gb)\n"
+            "\t-a: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy (needs -u -p) gb:GreedyBaseline (needs -p) ba:BaselineA gc:GreedyCover)\n"
+            "\t-p: parenthesis representation (optional)\n"
             "\t-u: distinguish a k-mer and its reverse complement (optional)\n\n"
             "\t-v: verify the specified output\n"
             "\t-s: measure the dBG sparsity as average outdegree\n"
@@ -81,6 +81,10 @@ int main(int argc, char *argv[]) {
     }
 
     if (strcmp(algo, "fg") == 0 || strcmp(algo, "gb") == 0) {
+        if (strcmp(algo, "fg") == 0 && u_flg == false) {
+            fprintf(stderr, "Warning: this algorithm requires u_flg to be true. Overwritten\n");
+            u_flg = true;
+        }
         if (p_flg == false) {
             fprintf(stderr, "Warning: this algorithm requires p_flg to be true. Overwritten\n");
             p_flg = true;
