@@ -194,16 +194,7 @@ char* pccover_to_cspss(u64 *ka, VV *cc, VV *pp, int k) {
     char* r;
     Strbld sb; init_strbld(&sb);
 
-    printf("# of (cycles, paths) = (%ld, %ld)\n", cc->size, pp->size);
-
-    for (size_t i = 0; i < cc->size; i++) {
-        V *cur = &cc->vs[i];
-        for (size_t j = 0; j < cur->size; j++) {
-            apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
-        }
-        apnd_strbld(&sb, ",");
-    }
-    apnd_strbld(&sb, ",");
+    printf("# of (cycles, paths) = (%ld, %ld)\n", cc->size, pp->size);    
 
     for (size_t i = 0; i < pp->size; i++) {
         V *cur = &pp->vs[i];
@@ -211,6 +202,15 @@ char* pccover_to_cspss(u64 *ka, VV *cc, VV *pp, int k) {
         dec(ka[cur->data[0]], k, s);
         apnd_strbld(&sb, s);
         for (size_t j = 1; j < cur->size; j++) {
+            apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
+        }
+        apnd_strbld(&sb, ",");
+    }
+    apnd_strbld(&sb, ",");
+
+    for (size_t i = 0; i < cc->size; i++) {
+        V *cur = &cc->vs[i];
+        for (size_t j = 0; j < cur->size; j++) {
             apnd_strbld(&sb, dec_base(ka[cur->data[j]] % 4));
         }
         apnd_strbld(&sb, ",");
@@ -233,17 +233,6 @@ char* bi_pccover_to_cspss(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
 
     printf("# of (cycles, paths) = (%ld, %ld)\n", cc->size, pp->size);
 
-    for (size_t i = 0; i < cc->size; i++) {
-        V *cur = &cc->vs[i]; Vb *curb = &ccb->vs[i];
-        for (size_t j = 0; j < cur->size; j++) {
-            u64 h = ka[cur->data[j]];
-            if (curb->data[j] == false) h = rc(h, k);
-            apnd_strbld(&sb, dec_base(h % 4));
-        }
-        apnd_strbld(&sb, ",");
-    }
-    apnd_strbld(&sb, ",");
-
     for (size_t i = 0; i < pp->size; i++) {
         V *cur = &pp->vs[i]; Vb *curb = &ppb->vs[i];
         char s[k + 1];
@@ -252,6 +241,17 @@ char* bi_pccover_to_cspss(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k) {
         dec(h, k, s);
         apnd_strbld(&sb, s);
         for (size_t j = 1; j < cur->size; j++) {
+            u64 h = ka[cur->data[j]];
+            if (curb->data[j] == false) h = rc(h, k);
+            apnd_strbld(&sb, dec_base(h % 4));
+        }
+        apnd_strbld(&sb, ",");
+    }
+    apnd_strbld(&sb, ",");
+
+    for (size_t i = 0; i < cc->size; i++) {
+        V *cur = &cc->vs[i]; Vb *curb = &ccb->vs[i];
+        for (size_t j = 0; j < cur->size; j++) {
             u64 h = ka[cur->data[j]];
             if (curb->data[j] == false) h = rc(h, k);
             apnd_strbld(&sb, dec_base(h % 4));

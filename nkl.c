@@ -89,7 +89,7 @@ int main(int argc, char *argv[]) {
 
     if (target_file) { // verify
         if (!infile || !target_file ||  k == -1) usage(argv[0]);
-        return veri(infile, target_file, k, u_flg, p_flg);
+        return veri(infile, target_file, k, u_flg);
     } else if (s_flg) { // graph stat
         if (!infile || k == -1) usage(argv[0]);
         printf("sparsity analysis\n");

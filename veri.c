@@ -19,66 +19,6 @@ static bool proc_rm(const char* s, int k, bool u_flg, Hs** ks) {
     }
 }
 
-static bool fveri(const char* ss, int k, bool u_flg, Hs** ks) {
-    char* tt = strdup(ss);
-    if (!tt) return false;
-
-    char* ct = NULL;
-    char* pt = NULL;
-    
-    char* sp = strstr(tt, ",,");
-    if (sp != NULL) {
-        *sp = '\0';
-        ct = tt;
-        pt = sp + 2;
-    } else {
-        pt = (tt[0] == ',') ? tt + 1 : NULL;
-        ct = (tt[0] != ',') ? tt : NULL;
-    }
-
-    char buf[k + 1];
-    buf[k] = '\0';
-
-    // process circular strings
-    if (ct && *ct != '\0') {
-        char* to = strtok(ct, ",");
-        while (to) {
-            size_t l = strlen(to);
-            if (l > 0) {
-                for (size_t i = 0; i < l; ++i) {
-                    for (int j = 0; j < k; ++j) buf[j] = to[(i + j) % l];
-                    if (!proc_rm(buf, k, u_flg, ks)) {
-                        free(tt);
-                        return false;
-                    }
-                }
-            }
-            to = strtok(NULL, ",");
-        }
-    }
-
-    // process non-circular strings
-    if (pt && *pt != '\0') {
-        char* to = strtok(pt, ",");
-        while (to) {
-            size_t l = strlen(to);
-            if (l >= (size_t)k) {
-                for (size_t i = 0; i <= l - k; ++i) {
-                    strncpy(buf, to + i, k);
-                    if (!proc_rm(buf, k, u_flg, ks)) {
-                        free(tt);
-                        return false;
-                    }
-                }
-            }
-            to = strtok(NULL, ",");
-        }
-    }
-
-    free(tt);
-    return true;
-}
-
 static bool proc_bp_to(const char* to, int k, bool u_flg, Hs** ks, bool closed) {
     size_t l = strlen(to);
     if (closed) {
@@ -209,7 +149,7 @@ clean:
     return vf;
 }
 
-int veri(const char* of, const char* tf, int k, bool u_flg, bool p_flg) {
+int veri(const char* of, const char* tf, int k, bool u_flg) {
     fprintf(stdout, "verification mode\n");
     fprintf(stdout, "original file: %s\n", of);
     fprintf(stdout, "target file: %s\n", tf);
@@ -246,14 +186,9 @@ int veri(const char* of, const char* tf, int k, bool u_flg, bool p_flg) {
     if (fsize > 0 && sc[fsize - 1] == '\n') {
         sc[fsize - 1] = '\0';
     }
-    bool z = false;
-    if (p_flg) {
-        z = bveri(sc, k, u_flg, &ks);
-    } else {
-        z = fveri(sc, k, u_flg, &ks);
-    }
+
+    if (!bveri(sc, k, u_flg, &ks)) { free_hs(&ks); free(sc); return -1; }
     free(sc);
-    if (!z) { free_hs(&ks); return -1; }
 
     fprintf(stdout, "\n[Step 3/3] final check\n");
     bool fz = false;
