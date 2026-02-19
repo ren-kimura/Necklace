@@ -157,7 +157,7 @@ int main(int argc, char *argv[]) {
                 if (strcmp(algo, "fg") == 0) {
                     r = full_greedy(km, ka, k);
                 } else {
-                    r = greedy_baseline_close(km, ka, k);
+                    r = greedy_baseline(km, ka, k);
                 }
             } else {
                 VV cc, pp; init_vv(&cc); init_vv(&pp);

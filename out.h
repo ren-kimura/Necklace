@@ -89,7 +89,6 @@ char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 char* necklace_cover2(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 
 char* greedy_baseline(Hm *km, u64 *ka, int k);
-char* greedy_baseline_close(Hm *km, u64 *ka, int k);
 
 char* full_greedy(Hm *km, u64 *ka, int k);
 

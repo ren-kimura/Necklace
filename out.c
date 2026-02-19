@@ -730,89 +730,7 @@ char* necklace_cover2(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
 }
 
 // greedy baseline: iterate DFS from any unvisited vertex to form necklaces
-static void subr_greedy_baseline(u64 tu, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
-    FcSt t; init_fcst(&t);
-    if (vis[tu]) return;
-
-    vis[tu] = true;
-    push_fcst(&t, tu, 0, false, 0, 0);
-
-    while (!is_empty_fcst(&t)) {
-        Fc* f = t.top; // PEEK
-
-        u64 h = ka[f->nid];
-        if (!f->wrn) {
-            if (f->next == NULL) { // root vertex
-                char ts[k + 1];
-                dec(h, k, ts);
-                apnd_strbld(s, ts);
-            } else {
-                if (f->nc > 0) apnd_strbld(s, "(");
-                apnd_strbld(s, dec_base(h % 4));
-            }
-            f->wrn = true;
-        }
-
-        if (f->b_idx > 0) {
-            pop_fcst(&t);
-            if (f->next != NULL && f->nc > 0) {
-                apnd_strbld(s, ")");
-            }
-            continue;
-        }
-        u64 chldn[4];
-        int nc = 0;
-
-        for (uint8_t i = 0; i < 4; i++) {
-            u64 nxt = step(km, ka, k, f->nid, B[i], 1);
-            if (nxt == INF) continue;
-            if (vis[nxt]) continue;
-
-            chldn[nc] = nxt;
-            nc++;
-        }
-
-        f->b_idx = 4;
-
-        for (int i = 0; i < nc; i++) {
-            vis[chldn[i]] = true;
-            push_fcst(&t, chldn[i], 0, false, 0, i);
-        }
-    }
-}
-
-char* greedy_baseline(Hm *km, u64 *ka, int k) {
-    char* r;
-    Strbld sb; init_strbld(&sb);
-
-    u64 N = HASH_COUNT(km);
-    bool* vis = (bool*)calloc(N, sizeof(bool));
-    if (!vis) { fprintf(stderr, "Error: calloc failed for vis\n"); exit(EXIT_FAILURE); }
-
-    for (u64 u = 0; u < N; u++) {
-        prog(u, N, "greedy BP dfs");
-        if (vis[u]) continue;
-        subr_greedy_baseline(u, &sb, km ,ka, k, vis);
-        apnd_strbld(&sb, ",");
-    }
-
-    fin("greedy BP dfs");
-    free(vis);
-
-    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
-        sb.len--;
-        sb.str[sb.len] = '\0';
-    }
-    if (sb.len > 0 && sb.str[sb.len - 1] == ',') {
-        sb.len--;
-        sb.str[sb.len] = '\0';
-    }
-
-    r = sb.str;
-    return r;
-}
-
-static bool subr_greedy_baseline_close(u64 tu, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
+static bool subr_greedy_baseline(u64 tu, Strbld *s, Hm *km, u64 *ka, int k, bool* vis) {
     vis[tu] = true;
     FcSt t; init_fcst(&t); BlSt b; init_blst(&b);
     push_fcst(&t, tu, 0, false, 0, 0);
@@ -876,7 +794,7 @@ static bool subr_greedy_baseline_close(u64 tu, Strbld *s, Hm *km, u64 *ka, int k
     return main_is_cycle;
 }
 
-char* greedy_baseline_close(Hm *km, u64 *ka, int k) {
+char* greedy_baseline(Hm *km, u64 *ka, int k) {
     char* r;
     Strbld sb_p; init_strbld(&sb_p);
     Strbld sb_c; init_strbld(&sb_c);
@@ -890,7 +808,7 @@ char* greedy_baseline_close(Hm *km, u64 *ka, int k) {
         if (vis[u]) continue;
 
         Strbld sb_tmp; init_strbld(&sb_tmp);
-        bool is_cycle = subr_greedy_baseline_close(u, &sb_tmp, km, ka, k, vis);
+        bool is_cycle = subr_greedy_baseline(u, &sb_tmp, km, ka, k, vis);
         if (is_cycle) {
             apnd_strbld(&sb_c, sb_tmp.str + (k - 1));
         } else {
