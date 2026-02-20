@@ -323,11 +323,11 @@ u64 num_falses(bool *v, u64 l) {
     return n;
 }
 
-char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi) {
-    Strbld sb; init_strbld(&sb);
+void find_subtree(Strbld *sb, Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi, size_t *z, size_t Z) {
     FbSt s; init_fbst(&s);
 
     vis[rpi] = true;
+    prog((*z)++, Z, "embedding");
     push_fbst(&s, rpi, hi[rpi], 0, false);
     while (!is_empty_fbst(&s)) {
         Fb* f = s.top;
@@ -335,13 +335,13 @@ char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 
         if (f->idx >= p->size) {
             pop_fbst(&s);
             if (!is_empty_fbst(&s)) {
-                apnd_strbld(&sb, ")");
+                apnd_strbld(sb, ")");
             }
             continue;
         }
         u64 cur = p->data[f->idx];
         if (!f->wrn) {
-            apnd_strbld(&sb, dec_base(ka[cur] % 4));
+            apnd_strbld(sb, dec_base(ka[cur] % 4));
             f->wrn = true;
             f->b_idx = 0;
         }
@@ -353,8 +353,9 @@ char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 
             if (cpi == INF) continue;
             if (vis[cpi]) continue;
             vis[cpi] = true;
+            prog((*z)++, Z, "embedding");
             f->b_idx++;
-            apnd_strbld(&sb, "(");
+            apnd_strbld(sb, "(");
             push_fbst(&s, cpi, hi[cpi], 0, false);
             d = true;
             break;
@@ -364,7 +365,6 @@ char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 
             f->wrn = false;
         }
     }
-    return sb.str;
 }
 
 char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
@@ -401,12 +401,9 @@ char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
     HASH_ITER(hh, rp, s, tmp) { // dfs from root paths
         char t[k]; // buffer for dec of head
         dec(ka[pp->vs[s->key].data[0]] >> 2, k - 1, t);
-        char* ss = find_subtree(km, ka, hd, k, pp, vis, hi, s->key);
         apnd_strbld(&sb, t);
-        apnd_strbld(&sb, ss);
+        find_subtree(&sb, km, ka, hd, k, pp, vis, hi, s->key, &z, Z);
         apnd_strbld(&sb, ",");
-        free(ss);
-        z++; prog(z, Z, "embedding");
     }
     apnd_strbld(&sb, ","); // extra delim between open and closed necklaces
     for (size_t i = 0; i < cc->size; i++) {
@@ -419,15 +416,12 @@ char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                 u64 ni = find_hm(hd, nxt);
                 if (ni == INF) continue;
                 if (vis[ni]) continue;
-                char* ss = find_subtree(km, ka, hd, k, pp, vis, hi, ni);
                 apnd_strbld(&sb, "(");
-                apnd_strbld(&sb, ss);
+                find_subtree(&sb, km, ka, hd, k, pp, vis, hi, ni, &z, Z);
                 apnd_strbld(&sb, ")");
-                free(ss);
             }
         }
         apnd_strbld(&sb, ",");
-        z++; prog(z, Z, "embedding");
     }
 
     u64 l;
@@ -473,18 +467,15 @@ char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k) {
                         u64 ni = find_hm(hd, nxt);
                         if (ni == INF) continue;
                         if (vis[ni]) continue;
-                        char* ss = find_subtree(km, ka, hd, k, pp, vis, hi, ni);
                         apnd_strbld(&sb, "(");
-                        apnd_strbld(&sb, ss);
+                        find_subtree(&sb, km, ka, hd, k, pp, vis, hi, ni, &z, Z);
                         apnd_strbld(&sb, ")");
-                        free(ss);
                     }
                 }
                 apnd_strbld(&sb, ",");
                 free_v(&nc);
                 free_v(pis);
                 free(pis);
-                z++; prog(z, Z, "embedding");
                 break;
             }
             if (pis) { free_v(pis); free(pis); }

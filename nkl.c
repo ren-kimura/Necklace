@@ -23,7 +23,8 @@ static void usage(const char *s) {
             "\t-o: specify output str filename (optional, default:in_k.str)\n"
 	        "\t-k: choose k-mer length k s.t. 1 < k < 32\n"
             "\t-a: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy (needs -u -p) gb:GreedyBaseline (needs -p) ba:BaselineA gc:GreedyCover)\n"
-            "\t-p: parenthesis representation (optional)\n"
+            "\t-p: parenthesis representation (optional, computed with necklace_cover2)\n"
+            "\t-P: parenthesis representation (optional, computed with necklace_cover(alg1))\n"
             "\t-u: distinguish a k-mer and its reverse complement (optional)\n\n"
             "\t-v: verify the specified output\n"
             "\t-s: measure the dBG sparsity as average outdegree\n"
@@ -46,10 +47,10 @@ int main(int argc, char *argv[]) {
     char *outfile = NULL;
     const char *algo = "eu"; // default
     int k = -1;
-    bool p_flg = false, u_flg = false, s_flg = false;
+    bool p_flg = false, P_flg = false, u_flg = false, s_flg = false;
     int opt;
 
-	while ((opt = getopt(argc, argv, "i:o:k:a:puv:sh")) != -1) {
+	while ((opt = getopt(argc, argv, "i:o:k:a:pPuv:sh")) != -1) {
 	    switch (opt) {
 		    case 'i': infile = optarg; break;
             case 'k':
@@ -58,6 +59,7 @@ int main(int argc, char *argv[]) {
                 break;
             case 'a': algo = optarg; break;
             case 'p': p_flg = true; break;
+            case 'P': P_flg = true; break;
             case 'u': u_flg = true; break;
             case 'v': target_file = optarg; break;
             case 's': s_flg = true; break;
@@ -88,6 +90,17 @@ int main(int argc, char *argv[]) {
         if (p_flg == false) {
             fprintf(stderr, "Warning: this algorithm requires p_flg to be true. Overwritten\n");
             p_flg = true;
+        }
+    }
+
+    if (P_flg) {
+        if (!u_flg) {
+            fprintf(stderr, "Error: necklace_cover(alg1) is only available for uni-directional (-u)\n");
+            exit(EXIT_FAILURE);
+        }
+        if (p_flg) {
+            fprintf(stderr, "Error: options -p and -P can not be specified at the same time\n");
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -178,6 +191,8 @@ int main(int argc, char *argv[]) {
                 }
                 if (p_flg) {
                     r = necklace_cover2(km, ka, &cc, &pp, k);
+                } else if (P_flg) {
+                    r = necklace_cover(km, ka, &cc, &pp, k);
                 } else {
                     r = pccover_to_cspss(ka, &cc, &pp, k);
                 }

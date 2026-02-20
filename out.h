@@ -84,7 +84,6 @@ char* bi_pccover_to_cspss(u64 *ka, VV *cc, VV *pp, VVb *ccb, VVb *ppb, int k);
 V* find_new_cycle(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *ino, bool *vis, u64 from);
 u64 num_falses(bool *v, size_t l);
 
-char* find_subtree(Hm *km, u64 *ka, Hm *hd, int k, VV *pp, bool *vis, const u64 *hi, u64 rpi);
 char* necklace_cover(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 char* necklace_cover2(Hm *km, u64 *ka, VV *cc, VV *pp, int k);
 

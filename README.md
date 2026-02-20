@@ -24,7 +24,8 @@ nkl -i [in.fa] -k [k] -a [a] (-p) (-u)
 - `-o`: specify output str filename (optional, default:`in_k.str`)
 - `-k`: choose k-mer length $k$ s.t. $2\leq k\leq 31$
 - `-a`: specify an algorithm to be run (eu:Eulertigs(default) fg:FullGreedy (needs -u -p) gb:GreedyBaseline (needs -p) ba:BaselineA gc:GreedyCover)
-- `-p`: parenthesis representation (optional)
+- `-p`: parenthesis representation (optional, computed with necklace_cover2)
+- `-P`: parenthesis representation (optional, computed with necklace_cover(alg1))
 - `-u`: distinguish a k-mer and its reverse complement (optional)
 
 - `-h`: print help
